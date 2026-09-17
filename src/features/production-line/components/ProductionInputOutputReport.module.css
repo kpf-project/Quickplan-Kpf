@@ -1,0 +1,455 @@
+.reportRoot :global(.input-output-sheet) {
+  width: 100%;
+  min-height: 210mm;
+  padding: 9mm;
+  flex: 0 0 auto;
+}
+
+.reportRoot :global(.input-output-technical-grid) {
+  width: calc(100% + 10mm) !important;
+  margin-right: -5mm;
+  margin-left: -5mm;
+  color: #0f172a !important;
+}
+
+.reportRoot :global(.input-output-report-pages) {
+  padding-right: 0 !important;
+  padding-left: 0 !important;
+}
+
+.reportRoot :global(.input-output-technical-grid th),
+.reportRoot :global(.input-output-technical-grid td) {
+  border: 1px solid #e2e8f0;
+}
+
+.reportRoot :global(.input-output-technical-grid th) {
+  padding: 8px 4px;
+  text-align: center;
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 1.25;
+  color: #0f172a !important;
+}
+
+.reportRoot :global(.input-output-technical-grid td) {
+  padding: 8px 6px;
+  font-size: 10.5px;
+  line-height: 1.25;
+  vertical-align: middle;
+  color: #0f172a !important;
+}
+
+.reportRoot :global(.input-output-product-name) {
+  display: -webkit-box;
+  overflow: hidden;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.reportRoot :global(.input-output-lot-breakdown) {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.reportRoot :global(.input-output-lot-line),
+.reportRoot :global(.input-output-lot-header) {
+  display: grid;
+  grid-template-columns: minmax(0, 42%) 4% minmax(0, 20%) 4% minmax(0, 30%);
+  align-items: baseline;
+  gap: 0;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.reportRoot :global(.input-output-lot-header) {
+  font-size: 10px;
+  letter-spacing: -0.02em;
+  overflow: visible;
+}
+
+.reportRoot :global(.input-output-lot-header span) {
+  min-width: max-content;
+}
+
+.reportRoot :global(.input-output-lot-header span:first-child),
+.reportRoot :global(.input-output-lot-no) {
+  min-width: 0;
+  overflow: hidden;
+  padding-right: 3px;
+  text-align: left;
+  text-overflow: clip;
+}
+
+.reportRoot :global(.input-output-lot-quantity),
+.reportRoot :global(.input-output-lot-weight) {
+  min-width: 0;
+  overflow: hidden;
+  padding-left: 2px;
+  text-align: right;
+}
+
+.reportRoot :global(.input-output-lot-separator) {
+  overflow: hidden;
+  text-align: center;
+}
+
+.reportRoot :global(.input-output-lot-cell) {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.reportRoot :global(.input-output-lot-line strong) {
+  color: #102c57;
+}
+
+.reportRoot :global(.input-output-technical-grid tbody tr) {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.reportRoot :global(.input-output-data-row) {
+  min-height: 42px;
+}
+
+.reportRoot :global(.input-output-technical-grid tfoot td) {
+  border-color: #cbd5e1;
+  background: #e2e8f0;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  color: #0f172a !important;
+}
+
+.reportRoot :global(.input-output-technical-grid .input-output-waste-cell) {
+  background: #fee2e2 !important;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+.compactPrint,
+.dailyPrint {
+  display: block;
+}
+
+.reportRoot :global(.input-output-print-only) {
+  display: none;
+}
+
+.reportRoot :global(.input-output-screen-report) {
+  width: 100%;
+  padding: 0;
+}
+
+.reportRoot :global(.input-output-compact-report) {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  padding: 0 12px 40px;
+}
+
+.reportRoot :global(.input-output-compact-print-table) {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  color: #0f172a;
+  background: #ffffff;
+}
+
+.reportRoot :global(.input-output-compact-print-table th),
+.reportRoot :global(.input-output-compact-print-table td) {
+  border: 1px solid #dbe3ee;
+  padding: 7px 6px;
+  font-size: 10.5px;
+  line-height: 1.25;
+  vertical-align: middle;
+}
+
+.reportRoot :global(.input-output-compact-print-table th) {
+  text-align: center;
+  font-weight: 800;
+}
+
+.reportRoot :global(.input-output-print-report-header th) {
+  border: 0;
+  border-bottom: 2px solid #102c57;
+  padding: 10px 4px;
+}
+
+.reportRoot :global(.input-output-print-report-meta th) {
+  border-top: 0;
+  background: #ffffff;
+  font-size: 10px;
+}
+
+.reportRoot :global(.input-output-print-table-header th) {
+  background: #f8fafc;
+}
+
+.reportRoot :global(.input-output-print-date-row td) {
+  background: #102c57;
+  color: #ffffff;
+  padding: 6px 8px;
+  font-weight: 900;
+}
+
+.reportRoot :global(.input-output-print-total-row td) {
+  background: #e2e8f0;
+  font-weight: 900;
+}
+
+.reportRoot :global(.input-output-compact-print-table .input-output-waste-cell) {
+  background: #fee2e2;
+}
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 3mm;
+  }
+
+  .reportRoot {
+    background: #fff !important;
+  }
+
+  .reportRoot :global(.input-output-screen-only) {
+    display: none !important;
+  }
+
+  .reportRoot :global(.input-output-screen-report) {
+    display: none !important;
+  }
+
+  .reportRoot :global(.input-output-report-pages) {
+    display: block !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  .reportRoot :global(.input-output-sheet) {
+    width: 297mm !important;
+    min-height: 210mm !important;
+    margin: 0 !important;
+    padding: 8mm !important;
+    box-shadow: none !important;
+    break-after: page;
+    page-break-after: always;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .reportRoot :global(.input-output-sheet:last-child) {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .compactPrint :global(.input-output-report-pages) {
+    display: none !important;
+  }
+
+  .compactPrint :global(.input-output-print-only) {
+    display: block !important;
+  }
+
+  .dailyPrint :global(.input-output-print-only) {
+    display: none !important;
+  }
+
+  .compactPrint :global(.input-output-compact-report) {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+
+  .compactPrint :global(.input-output-compact-print-table) {
+    width: 100% !important;
+    table-layout: fixed !important;
+    border-collapse: collapse !important;
+    color: #0f172a !important;
+    font-size: 7px !important;
+    line-height: 1.15 !important;
+  }
+
+  .compactPrint :global(.input-output-compact-print-table col:nth-child(1)) { width: 2.5% !important; }
+  .compactPrint :global(.input-output-compact-print-table col:nth-child(2)) { width: 11.5% !important; }
+  .compactPrint :global(.input-output-compact-print-table col:nth-child(3)) { width: 14% !important; }
+  .compactPrint :global(.input-output-compact-print-table col:nth-child(4)) { width: 3.5% !important; }
+  .compactPrint :global(.input-output-compact-print-table col:nth-child(5)) { width: 5% !important; }
+  .compactPrint :global(.input-output-compact-print-table col:nth-child(6)) { width: 7% !important; }
+  .compactPrint :global(.input-output-compact-print-table col:nth-child(7)) { width: 12% !important; }
+  .compactPrint :global(.input-output-compact-print-table col:nth-child(8)) { width: 3.5% !important; }
+  .compactPrint :global(.input-output-compact-print-table col:nth-child(9)) { width: 5% !important; }
+  .compactPrint :global(.input-output-compact-print-table col:nth-child(10)) { width: 18% !important; }
+  .compactPrint :global(.input-output-compact-print-table col:nth-child(11)) { width: 4% !important; }
+  .compactPrint :global(.input-output-compact-print-table col:nth-child(12)) { width: 6.5% !important; }
+  .compactPrint :global(.input-output-compact-print-table col:nth-child(13)),
+  .compactPrint :global(.input-output-compact-print-table col:nth-child(14)),
+  .compactPrint :global(.input-output-compact-print-table col:nth-child(15)) { width: 2.5% !important; }
+
+  .compactPrint :global(.input-output-compact-print-table thead) {
+    display: table-header-group;
+  }
+
+  .compactPrint :global(.input-output-compact-print-table th),
+  .compactPrint :global(.input-output-compact-print-table td) {
+    border: 0.5px solid #cbd5e1 !important;
+    padding: 0.8mm 0.6mm !important;
+    vertical-align: middle !important;
+    overflow-wrap: anywhere;
+  }
+
+  .compactPrint :global(.input-output-compact-print-table th) {
+    text-align: center !important;
+    font-weight: 800 !important;
+  }
+
+  .compactPrint :global(.input-output-compact-print-table .input-output-print-report-header th) {
+    border: 0 !important;
+    border-bottom: 1px solid #0f172a !important;
+    padding: 0 0 1.5mm !important;
+  }
+
+  .compactPrint :global(.input-output-compact-print-table .input-output-print-report-meta th) {
+    border-top: 0 !important;
+    background: #ffffff !important;
+    font-size: 7px !important;
+  }
+
+  .compactPrint :global(.input-output-compact-print-table .input-output-print-table-header th) {
+    background: #f8fafc !important;
+    overflow: hidden !important;
+    overflow-wrap: normal !important;
+  }
+
+  .compactPrint :global(.input-output-lot-header),
+  .compactPrint :global(.input-output-lot-line) {
+    grid-template-columns: max-content auto max-content auto max-content !important;
+    gap: 2px !important;
+    justify-content: start !important;
+    overflow: hidden !important;
+    font-size: inherit !important;
+    letter-spacing: normal;
+    white-space: nowrap !important;
+  }
+
+  .compactPrint :global(.input-output-lot-header span),
+  .compactPrint :global(.input-output-lot-no),
+  .compactPrint :global(.input-output-lot-quantity),
+  .compactPrint :global(.input-output-lot-weight) {
+    overflow: hidden !important;
+    padding-right: 1px !important;
+    padding-left: 1px !important;
+    text-overflow: clip !important;
+    white-space: nowrap !important;
+  }
+
+  .compactPrint :global(.input-output-lot-cell),
+  .compactPrint :global(.input-output-lot-breakdown) {
+    overflow: hidden !important;
+  }
+
+  .compactPrint :global(.input-output-lot-no) {
+    overflow: visible !important;
+    min-width: max-content !important;
+  }
+
+  .compactPrint :global(.input-output-print-data-row td:nth-child(2)),
+  .compactPrint :global(.input-output-print-data-row td:nth-child(10)) {
+    overflow: hidden !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+    white-space: normal !important;
+    line-height: 1.15 !important;
+  }
+
+  .compactPrint :global(.input-output-print-product-name) {
+    max-width: 100% !important;
+    display: block !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+    line-height: 1.15 !important;
+    max-height: 3.45em !important;
+    overflow: hidden !important;
+  }
+
+  .compactPrint :global(.input-output-compact-print-table .input-output-print-date-row td) {
+    background: #102c57 !important;
+    color: #ffffff !important;
+    font-weight: 900 !important;
+    padding: 1mm 1.4mm !important;
+    text-align: left !important;
+  }
+
+  .compactPrint :global(.input-output-compact-print-table thead),
+  .compactPrint :global(.input-output-compact-print-table thead tr) {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .compactPrint :global(.input-output-compact-print-table tbody tr) {
+    break-before: auto !important;
+    break-after: auto !important;
+    break-inside: auto !important;
+    page-break-before: auto !important;
+    page-break-after: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  .compactPrint :global(.input-output-compact-print-table tbody.input-output-print-day-group) {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .compactPrint :global(.input-output-compact-print-table tbody tr.input-output-print-data-row) {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .compactPrint :global(.input-output-compact-print-table tbody tr.input-output-print-last-data-row) {
+    break-after: auto !important;
+    page-break-after: auto !important;
+  }
+
+  .compactPrint :global(.input-output-compact-print-table tbody tr.input-output-print-total-row) {
+    break-before: auto !important;
+    page-break-before: auto !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .compactPrint :global(.input-output-compact-print-table .input-output-print-data-row td) {
+    white-space: nowrap !important;
+  }
+
+  .compactPrint :global(.input-output-compact-print-table .input-output-print-data-row td:nth-child(3)),
+  .compactPrint :global(.input-output-compact-print-table .input-output-print-data-row td:nth-child(6)),
+  .compactPrint :global(.input-output-compact-print-table .input-output-print-data-row td:nth-child(7)) {
+    white-space: normal !important;
+  }
+
+  .compactPrint :global(.input-output-compact-print-table .input-output-print-total-row td) {
+    background: #e2e8f0 !important;
+    font-weight: 900 !important;
+  }
+
+  .compactPrint :global(.input-output-compact-print-table .input-output-print-warning-row td) {
+    background: #fff1f2 !important;
+    color: #9f1239 !important;
+    font-weight: 700 !important;
+  }
+
+  .compactPrint :global(.input-output-compact-print-table .input-output-waste-cell) {
+    background: #fee2e2 !important;
+  }
+
+}

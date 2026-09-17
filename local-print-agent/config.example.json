@@ -1,0 +1,11 @@
+{
+  "host": "127.0.0.1",
+  "port": 41951,
+  "printerName": "",
+  "pieceRatePrinterName": "",
+  "documentName": "KPF Weight Scale Label",
+  "paper": {
+    "widthMm": 80,
+    "heightMm": 50
+  }
+}

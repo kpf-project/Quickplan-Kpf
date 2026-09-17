@@ -1,0 +1,117 @@
+flowchart TD
+  subgraph R["บทบาท"]
+    R1["UAT_PLN_MGR"]
+    R2["UAT_QA_DEPT_A"]
+    R3["UAT_QA_DEPT_B"]
+    R4["UAT_VIEWER"]
+    R5["UAT_EXCEPTION_MGR"]
+  end
+
+  subgraph S["เตรียมก่อนทดสอบ"]
+    S1["หน้า admin settings: สร้างบทบาทและผู้ใช้"]
+    S2["หน้า department products: ผูกผู้ใช้กับแผนก และตั้งเจ้าของ SKU"]
+    S3["หน้า material owners: ผูกวัตถุดิบกับแผนกเจ้าของ"]
+    S4["ตรวจ BOM เป็นสถานะ approved"]
+    S5["ตรวจข้อมูล ERP พร้อม: Stock, Open PO ETA, Min Max, Lead Time"]
+    S6["พร้อมเริ่ม UAT"]
+  end
+  S1 --> S2 --> S3 --> S4 --> S5 --> S6
+
+  subgraph M["Phase A วางแผนหลัก"]
+    M1["หน้า planning master: สร้าง Master Plan No"]
+    M2["บันทึกแผนหลัก"]
+    M3["Publish Master Plan"]
+    M4["สถานะแผนหลักถูกเผยแพร่แล้ว"]
+  end
+  S6 --> M1 --> M2 --> M3 --> M4
+  R1 -.-> M1
+  R1 -.-> M3
+
+  subgraph P["Phase B C แผนย่อยและคำนวณ"]
+    P1["หน้า planning inbox หรือ plan: เปิด Plan No"]
+    P2["โหลดแถวตามสิทธิ์ แก้ไขได้หรืออ่านอย่างเดียว"]
+    P3["กดคำนวณ"]
+    P4["แตก BOM จาก FG ไป WIP ไป RAW"]
+    P5["รวมปริมาณที่ต้องใช้ต่อวัตถุดิบ"]
+    P6["ดึง Stock สุทธิ และ Open PO ETA และ Min Max"]
+    P7{"Stock เพียงพอหรือไม่"}
+    P8["กำหนดสถานะ ready"]
+    P9["คำนวณปริมาณขาด"]
+    P10{"มี Open PO ETA หรือไม่"}
+    P11["ใช้ ETA จาก PO แล้วเป็น partial หรือ backorder"]
+    P12["ใช้ Lead Time fallback แล้วเป็น blocked หรือ backorder"]
+    P13["บันทึกผลคำนวณ"]
+    P14["ยืนยันแผนย่อย"]
+  end
+  M4 --> P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7
+  P7 -- "พอ" --> P8 --> P13 --> P14
+  P7 -- "ไม่พอ" --> P9 --> P10
+  P10 -- "มี PO" --> P11 --> P13
+  P10 -- "ไม่มี PO" --> P12 --> P13
+
+  R2 -.-> P1
+  R3 -.-> P1
+  R2 -.-> P3
+  R3 -.-> P3
+  R4 -.-> P1
+
+  subgraph Q["Phase D ใบเบิก"]
+    Q1["ส่งออกใบเบิกรายสัปดาห์หรือรายวัน"]
+    Q2["แยกรายการตามเจ้าของวัตถุดิบ"]
+    Q3["สร้างเลขเอกสารใบเบิก"]
+    Q4["หน้า requisition: ตรวจรายการและเอกสาร"]
+    Q5["พร้อมนำเข้า ERP"]
+  end
+  P14 --> Q1 --> Q2 --> Q3 --> Q4 --> Q5
+  R2 -.-> Q1
+  R3 -.-> Q1
+  R1 -.-> Q4
+
+  subgraph E["Phase E Exception และ Replan"]
+    E1["หน้า control tower"]
+    E2["พบความเสี่ยง delayed short backorder"]
+    E3["บันทึก ETA Feedback"]
+    E4["สั่ง Replan"]
+    E5["แผนถูกปรับตาม ETA ใหม่"]
+  end
+  P13 --> E1 --> E2 --> E3 --> E4 --> E5
+  E5 --> P14
+  R5 -.-> E1
+  R5 -.-> E3
+  R5 -.-> E4
+
+  subgraph T["Trace และ Report"]
+    T1["หน้า trace: main ไป sub ไป material impact"]
+    T2["หน้า report และ expired"]
+    T3["ปิด UAT และสรุปหลักฐาน"]
+  end
+  Q5 --> T1 --> T2 --> T3
+  E5 --> T1
+  R1 -.-> T1
+  R4 -.-> T2
+
+  subgraph V["เกณฑ์ตรวจความถูกต้อง"]
+    V1["สิทธิ์และขอบเขตถูกต้อง: QA A แก้ B ไม่ได้ และ Viewer เขียนข้อมูลไม่ได้"]
+    V2["BOM ถูกต้อง: ปริมาณต้องสัมพันธ์กับสูตรที่ approved"]
+    V3["Availability ถูกต้อง: ใช้ Stock ก่อน แล้ว PO ETA แล้ว Lead Time fallback"]
+    V4["Owner split ถูกต้อง: ใบเบิกต้องแยกตามเจ้าของวัตถุดิบ"]
+    V5["เลขเอกสารถูกต้อง: ใช้เลขใบเบิก ไม่ใช่ Plan No"]
+  end
+  P2 --> V1
+  P4 --> V2
+  P6 --> V3
+  Q2 --> V4
+  Q3 --> V5
+
+  subgraph D["แหล่งข้อมูล"]
+    D1["Supabase: แผน ผลคำนวณ owner mapping"]
+    D2["ERP Gateway: raw materials summary by skus"]
+    D3["ERP Gateway: open po eta by sku"]
+    D4["ERP Gateway: sku min max by sku"]
+  end
+  P2 -.-> D1
+  P13 -.-> D1
+  Q2 -.-> D1
+  P6 -.-> D2
+  P6 -.-> D3
+  P6 -.-> D4

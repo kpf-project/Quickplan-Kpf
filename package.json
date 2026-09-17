@@ -1,0 +1,50 @@
+{
+  "name": "production-line",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --webpack",
+    "build": "node scripts/generate-deployment-id.mjs && next build --webpack",
+    "start": "next start",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test",
+    "lint": "eslint",
+    "gen:types": "node scripts/gen-types.js",
+    "repair:subplan-snapshots": "node scripts/repair-subplan-snapshots.js",
+    "repair:subplan-nos": "node scripts/repair-subplan-nos.js",
+    "repair:bom-item-units": "node scripts/repair-bom-item-units.js",
+    "repair:subplan-shifts": "node scripts/repair-subplan-shifts.js",
+    "repair:piece-rate-employee-codes": "node scripts/repair-piece-rate-employee-codes.js",
+    "repair:attendance-scan-employee-codes": "node scripts/repair-attendance-scan-employee-codes.js",
+    "import:employee-photos": "node scripts/import-employee-photos.mjs",
+    "repair:stock-product-miscoding": "node scripts/repair-production-stock-product-miscoding.mjs",
+    "repair:voided-weight-receipts": "node scripts/restore-voided-weight-receipts.mjs"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.5.2",
+    "@supabase/supabase-js": "^2.45.4",
+    "@tanstack/react-virtual": "^3.13.18",
+    "exceljs": "^4.4.0",
+    "html-to-image": "^1.11.13",
+    "html2canvas": "^1.4.1",
+    "html5-qrcode": "^2.3.8",
+    "jsbarcode": "^3.12.3",
+    "lucide-react": "^0.562.0",
+    "modbus-serial": "^8.0.25",
+    "mssql": "^10.0.2",
+    "next": "16.1.6",
+    "next-pwa": "^5.6.0",
+    "react": "19.2.1",
+    "react-barcode": "^1.6.1",
+    "react-dom": "19.2.1",
+    "react-qr-code": "^2.0.18",
+    "swr": "^2.3.8",
+    "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "babel-plugin-react-compiler": "^1.0.0",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.6",
+    "tailwindcss": "^4"
+  }
+}

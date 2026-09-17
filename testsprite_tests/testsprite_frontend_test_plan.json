@@ -1,0 +1,1670 @@
+[
+  {
+    "id": "TC001",
+    "title": "Create draft master plan, run calculation, and publish successfully",
+    "description": "Verifies a planner can create a master plan draft, calculate materials, and publish a master snapshot that generates sub-plans.",
+    "category": "Master Plan Creation & Publish (Production Planning - Master)",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Production Planning\" in the app navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Master\" view/tab"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Master\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC002",
+    "title": "Create master plan with planning period selection",
+    "description": "Verifies the planning period (start/end date) can be selected during master plan creation.",
+    "category": "Master Plan Creation & Publish (Production Planning - Master)",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Production Planning\" in the app navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Master\" view/tab"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Create Master Plan\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Planning Period\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC003",
+    "title": "Add FG products and enter planned batch quantities (draft)",
+    "description": "Verifies FG products can be selected and batch quantities can be entered in a draft master plan.",
+    "category": "Master Plan Creation & Publish (Production Planning - Master)",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Production Planning\" in the app navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Master\" view/tab"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Create Master Plan\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Add Product\" or \"Select FG\" control"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"FG\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC004",
+    "title": "Run calculation and view material demand results sections",
+    "description": "Verifies running calculation produces visible result sections for FG demand, WIP demand, raw requisition, and warnings.",
+    "category": "Master Plan Creation & Publish (Production Planning - Master)",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Production Planning\" in the app navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Master\" view/tab"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Run calculation\" button"
+      },
+      {
+        "type": "action",
+        "description": "Wait for calculation results to appear"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"FG Demand\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"WIP Demand\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"RAW\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Warnings\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC005",
+    "title": "Review feasibility values after calculation",
+    "description": "Verifies feasibility indicators (feasible/short/backorder) are visible after calculation to support review before publish.",
+    "category": "Master Plan Creation & Publish (Production Planning - Master)",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Production Planning\" in the app navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Master\" view/tab"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Run calculation\" button"
+      },
+      {
+        "type": "action",
+        "description": "Wait for calculation results to appear"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Feasible\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Short\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Backorder\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC006",
+    "title": "Publish master plan after successful calculation and see confirmation",
+    "description": "Verifies publishing is available after calculation and the UI shows a confirmation that a master snapshot was created.",
+    "category": "Master Plan Creation & Publish (Production Planning - Master)",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Production Planning\" in the app navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Master\" view/tab"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Run calculation\" button"
+      },
+      {
+        "type": "action",
+        "description": "Wait for calculation results to appear"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Publish Master Plan\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Published\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Snapshot\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC007",
+    "title": "Attempt to publish with shortages triggers publish-block policy and options",
+    "description": "Verifies that when shortages/warnings exist, the system blocks full publish and presents options such as backorder or schedule adjustment.",
+    "category": "Master Plan Creation & Publish (Production Planning - Master)",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Production Planning\" in the app navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Master\" view/tab"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Run calculation\" button"
+      },
+      {
+        "type": "action",
+        "description": "Wait for calculation results to appear"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Warnings\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Publish Master Plan\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"blocked\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Backorder\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC008",
+    "title": "From publish-block dialog, choose create backorder and publish partial",
+    "description": "Verifies a user can select the backorder option and complete a partial publish when full publish is blocked.",
+    "category": "Master Plan Creation & Publish (Production Planning - Master)",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Production Planning\" in the app navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Master\" view/tab"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Run calculation\" button"
+      },
+      {
+        "type": "action",
+        "description": "Wait for calculation results to appear"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Publish Master Plan\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Create backorder\" option"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Publish partial\" or \"Confirm\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Backorder\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Published\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC009",
+    "title": "From publish-block dialog, cancel publish and remain in draft state",
+    "description": "Verifies that canceling out of a blocked publish does not publish and keeps the user in the master planning draft screen.",
+    "category": "Master Plan Creation & Publish (Production Planning - Master)",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Production Planning\" in the app navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Master\" view/tab"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Run calculation\" button"
+      },
+      {
+        "type": "action",
+        "description": "Wait for calculation results to appear"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Publish Master Plan\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Cancel\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Draft\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Publish Master Plan\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC010",
+    "title": "Confirm a sub-plan for an owned plan item after running calculation",
+    "description": "Verifies a user can filter to their own plan item, run calculation, view feasibility outputs, and confirm the sub-plan with a visible success state and updated status.",
+    "category": "Department Workbench / Inbox (Production Planning - Workbench/Inbox)",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Production Planning\" in the app navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Inbox\" in the production planning navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/production-line/planning/inbox\""
+      },
+      {
+        "type": "action",
+        "description": "Select \"Own\" from the scope filter dropdown"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Editable\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC011",
+    "title": "Run calculation on an owned inbox row and view feasibility outputs",
+    "description": "Verifies feasibility and ETA output fields become visible after running calculation on an editable row.",
+    "category": "Department Workbench / Inbox (Production Planning - Workbench/Inbox)",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Production Planning\" in the app navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Inbox\" in the production planning navigation"
+      },
+      {
+        "type": "action",
+        "description": "Select \"Own\" from the scope filter dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Click on the first plan row marked \"Editable\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Run calculation\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Feasible Batch\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Short Batch\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Backorder Batch\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Earliest material ETA\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC012",
+    "title": "Confirm sub-plan updates row status to confirmed",
+    "description": "Verifies confirming a sub-plan results in a visible success message and an updated confirmed status on the row or detail view.",
+    "category": "Department Workbench / Inbox (Production Planning - Workbench/Inbox)",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Production Planning\" in the app navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Inbox\" in the production planning navigation"
+      },
+      {
+        "type": "action",
+        "description": "Select \"Own\" from the scope filter dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Click on the first plan row marked \"Editable\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Run calculation\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Confirm Sub Plan\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Success\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Confirmed\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC013",
+    "title": "Filter inbox by Plan No and view matching results",
+    "description": "Verifies the user can filter the inbox by Plan No and see a filtered list reflecting the selection.",
+    "category": "Department Workbench / Inbox (Production Planning - Workbench/Inbox)",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Production Planning\" in the app navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Inbox\" in the production planning navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/production-line/planning/inbox\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Plan No\" filter control"
+      },
+      {
+        "type": "action",
+        "description": "Select the first available Plan No option from the Plan No list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Inbox plan items list\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC014",
+    "title": "Read-only plan item shows lock and prevents editing",
+    "description": "Verifies a plan item owned by another department is marked read-only and shows a lock indicator/tooltip when attempting to edit.",
+    "category": "Department Workbench / Inbox (Production Planning - Workbench/Inbox)",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Production Planning\" in the app navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Inbox\" in the production planning navigation"
+      },
+      {
+        "type": "action",
+        "description": "Select \"All\" from the scope filter dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Click on a plan row marked \"Read-only\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Read-only\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the lock icon or lock indicator on the row/detail"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Locked\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC015",
+    "title": "Confirm Sub Plan on read-only item is blocked with permission denial",
+    "description": "Verifies confirming a sub-plan for a non-owned item is denied via visible error and no confirmation status is applied.",
+    "category": "Department Workbench / Inbox (Production Planning - Workbench/Inbox)",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Production Planning\" in the app navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Inbox\" in the production planning navigation"
+      },
+      {
+        "type": "action",
+        "description": "Select \"All\" from the scope filter dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Click on a plan row marked \"Read-only\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Confirm Sub Plan\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Permission denied\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC016",
+    "title": "Unauthorized redirect occurs when attempting restricted confirmation",
+    "description": "Verifies the app redirects to the unauthorized page when the user attempts a restricted action on a non-owned plan item (if redirect behavior is used).",
+    "category": "Department Workbench / Inbox (Production Planning - Workbench/Inbox)",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Production Planning\" in the app navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Inbox\" in the production planning navigation"
+      },
+      {
+        "type": "action",
+        "description": "Select \"All\" from the scope filter dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Click on a plan row marked \"Read-only\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Confirm Sub Plan\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/unauthorized\""
+      }
+    ]
+  },
+  {
+    "id": "TC017",
+    "title": "Calculation results persist on screen after opening and closing a row",
+    "description": "Verifies that after running calculation, the displayed feasibility outputs remain visible for the currently opened row until the user changes context.",
+    "category": "Department Workbench / Inbox (Production Planning - Workbench/Inbox)",
+    "priority": "Low",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Production Planning\" in the app navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Inbox\" in the production planning navigation"
+      },
+      {
+        "type": "action",
+        "description": "Select \"Own\" from the scope filter dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Click on the first plan row marked \"Editable\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Run calculation\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Feasible Batch\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Close\" or \"Back to list\" control on the row detail panel"
+      },
+      {
+        "type": "action",
+        "description": "Click on the same plan row again"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Feasible Batch\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC018",
+    "title": "Load Control Tower and verify consolidated RAW demand is visible",
+    "description": "Verifies the Control Tower page loads successfully post-login and shows consolidated RAW demand and late-availability indicators.",
+    "category": "Material Control Tower (Production Planning - Control Tower)",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Production Planning\" navigation item"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Control Tower\" navigation item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Control Tower\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC019",
+    "title": "Filter Control Tower by Master Plan number and verify results update",
+    "description": "Verifies filtering by masterPlanNo updates the consolidated demand list for the selected plan.",
+    "category": "Material Control Tower (Production Planning - Control Tower)",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Production Planning\" navigation item"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Control Tower\" navigation item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Master Plan\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Type \"MP\" into the \"Master Plan\" filter field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Filtered\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC020",
+    "title": "Filter Control Tower by date range and verify consolidated demand list refreshes",
+    "description": "Verifies date-range filtering refreshes consolidated RAW demand within the selected planning window.",
+    "category": "Material Control Tower (Production Planning - Control Tower)",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Production Planning\" navigation item"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Control Tower\" navigation item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Date Range\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Date Range\" start date field"
+      },
+      {
+        "type": "action",
+        "description": "Press Enter"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Date Range\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC021",
+    "title": "Identify late ETA items and trigger replan for selected materials",
+    "description": "Verifies a user can select affected items with ETA beyond the planning bucket and trigger a replan action.",
+    "category": "Material Control Tower (Production Planning - Control Tower)",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Production Planning\" navigation item"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Control Tower\" navigation item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Late\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on the first visible row that shows a late-availability indicator"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Trigger Replan\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Replan triggered\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC022",
+    "title": "After Trigger Replan, verify updated feasibility messaging is shown",
+    "description": "Verifies the UI shows recalculation/updated feasibility feedback after a replan is triggered.",
+    "category": "Material Control Tower (Production Planning - Control Tower)",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Production Planning\" navigation item"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Control Tower\" navigation item"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Trigger Replan\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Calculating\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Updated\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC023",
+    "title": "Missing ETA warning appears and affected items list is visible",
+    "description": "Verifies that when the filter yields missing ETA data, a warning and a list of affected items are shown.",
+    "category": "Material Control Tower (Production Planning - Control Tower)",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Production Planning\" navigation item"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Control Tower\" navigation item"
+      },
+      {
+        "type": "action",
+        "description": "Type \"NO-ETA\" into the \"Master Plan\" filter field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"ETA missing\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"No scheduled receipts\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC024",
+    "title": "Recommend Action displays suggested actions for missing ETA items",
+    "description": "Verifies the Recommend Action workflow presents suggested actions such as expedite PO, reassign stock, or mark exception.",
+    "category": "Material Control Tower (Production Planning - Control Tower)",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Production Planning\" navigation item"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Control Tower\" navigation item"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Recommend Action\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Suggested actions\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Expedite\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC025",
+    "title": "Mark exception with audit reason from Recommend Action",
+    "description": "Verifies a user can mark an item as an exception and must provide an audit reason visible on confirmation.",
+    "category": "Material Control Tower (Production Planning - Control Tower)",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Production Planning\" navigation item"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Control Tower\" navigation item"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Recommend Action\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Mark exception\" option"
+      },
+      {
+        "type": "action",
+        "description": "Type \"ETA unavailable from supplier\" into the \"Audit reason\" field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Confirm\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Exception marked\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC026",
+    "title": "View BOM list and open BOM details for a SKU",
+    "description": "Verifies a planner can find a SKU in the BOM list and open its BOM details page to view versions and material lines.",
+    "category": "Production BOM (View + Approval)",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Production BOM\" in the navigation menu"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/production-line/bom"
+      },
+      {
+        "type": "action",
+        "description": "Type \"SKU\" into the SKU search field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the first visible SKU row in the results list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"BOM Versions\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC027",
+    "title": "Filter BOMs by status and verify results update",
+    "description": "Verifies the BOM list can be filtered by status and the visible results reflect the selected filter.",
+    "category": "Production BOM (View + Approval)",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Production BOM\" in the navigation menu"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/production-line/bom"
+      },
+      {
+        "type": "action",
+        "description": "Select \"Pending\" from the BOM status dropdown"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Pending\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC028",
+    "title": "Review BOM version details including base_batch and base_output_boxes",
+    "description": "Verifies BOM detail view shows key version fields and material lines, including base_batch and base_output_boxes values.",
+    "category": "Production BOM (View + Approval)",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Production BOM\" in the navigation menu"
+      },
+      {
+        "type": "action",
+        "description": "Type \"SKU\" into the SKU search field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the first visible SKU row in the results list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"base_batch\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"base_output_boxes\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Material\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC029",
+    "title": "Approve a BOM version successfully and see status updated",
+    "description": "Verifies a user can approve an eligible BOM version and the UI reflects the approval success and updated status.",
+    "category": "Production BOM (View + Approval)",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Production BOM\" in the navigation menu"
+      },
+      {
+        "type": "action",
+        "description": "Type \"SKU\" into the SKU search field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the first visible SKU row in the results list"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Approve\" button for the first visible BOM version"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Approved\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC030",
+    "title": "Approval is blocked when base_batch (or required fields) are missing",
+    "description": "Verifies policy validation prevents approval and a clear validation error is shown when required fields are missing.",
+    "category": "Production BOM (View + Approval)",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Production BOM\" in the navigation menu"
+      },
+      {
+        "type": "action",
+        "description": "Type \"SKU\" into the SKU search field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the first visible SKU row in the results list"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Approve\" button for a BOM version that shows missing required fields"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"validation\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"base_batch\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC031",
+    "title": "Reject a BOM version and see rejected status in the UI",
+    "description": "Verifies a user can reject a BOM version and the UI reflects the rejected status.",
+    "category": "Production BOM (View + Approval)",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Production BOM\" in the navigation menu"
+      },
+      {
+        "type": "action",
+        "description": "Type \"SKU\" into the SKU search field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the first visible SKU row in the results list"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Reject\" button for the first visible BOM version"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Rejected\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC032",
+    "title": "Open BOM Approval workflow page and verify it loads",
+    "description": "Verifies the BOM approval workflow UI is accessible and shows approval-related content.",
+    "category": "Production BOM (View + Approval)",
+    "priority": "Low",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Production BOM\" in the navigation menu"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Approval\" in the BOM page navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/production-line/bom/approval"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Approval\" is visible"
+      }
+    ]
+  }
+]

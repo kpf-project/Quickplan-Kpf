@@ -1,0 +1,27 @@
+﻿sequenceDiagram
+  autonumber
+  participant PM as UAT_PLN_MGR
+  participant QA as UAT_QA_DEPT_A/B
+  participant APP as Planning UI/API
+  participant SB as Supabase
+  participant ERP as ERP Gateway
+
+  PM->>APP: สร้าง Master Plan (Plan No)
+  APP->>SB: บันทึก production_plan_status (plan_kind=main)
+  PM->>APP: Publish Master
+  APP->>SB: stamp master_plan_no + published_at
+
+  QA->>APP: เปิด Inbox/Plan ตาม Plan No
+  APP->>SB: โหลดแถวตาม scope (owner/editable)
+  QA->>APP: กด Calculate
+  APP->>SB: โหลด BOM approved + snapshot context
+  APP->>ERP: ดึง Stock + Open PO ETA + MinMax
+  APP->>APP: BOM explosion + netting + ETA resolve
+  APP->>SB: บันทึกผล status ready/partial/backorder/blocked
+
+  QA->>APP: Confirm แผนย่อย
+  APP->>SB: freeze bom_snapshot ของแผนนั้น
+
+  QA->>APP: Export Requisition (weekly/daily)
+  APP->>SB: split by material owner + สร้างเลขใบเบิก
+  APP-->>QA: ส่งออกเอกสารใบเบิก (doc_ref)

@@ -1,0 +1,329 @@
+
+> production-line@0.1.0 build
+> node scripts/generate-deployment-id.mjs && next build --webpack
+
+Generated deployment id: kpf-20260721021954692-c89b2b22
+(node:20044) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Riew/Desktop/KPF/Production-Line/Production-Line/src/lib/deploymentVersion.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\Riew\Desktop\KPF\Production-Line\Production-Line\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+▲ Next.js 16.1.6 (webpack)
+- Environments: .env.local
+- Experiments (use with caution):
+  · optimizePackageImports
+
+  Creating an optimized production build ...
+> [PWA] Compile server
+> [PWA] Compile server
+> [PWA] Compile client (static)
+> [PWA] Custom worker found: C:\Users\Riew\Desktop\KPF\Production-Line\Production-Line\worker\index.js
+> [PWA] Build custom worker: C:\Users\Riew\Desktop\KPF\Production-Line\Production-Line\public\worker-IB7QT5mDlYVS6axlk7a5H.js
+> [PWA] Auto register service worker is disabled, please call following code in componentDidMount callback or useEffect hook
+> [PWA]   window.workbox.register()
+> [PWA] Service worker: C:\Users\Riew\Desktop\KPF\Production-Line\Production-Line\public\sw.js
+> [PWA]   url: /sw.js
+> [PWA]   scope: /
+> [PWA] Fallback to precache routes when fetch failed from cache or network:
+> [PWA]   document (page): /~offline
+> [PWA]   data (/_next/data/**/*.json): /_next/data/IB7QT5mDlYVS6axlk7a5H/fallback.json
+Browserslist: browsers data (caniuse-lite) is 7 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+✓ Compiled successfully in 16.5s
+  Running TypeScript ...
+  Collecting page data using 11 workers ...
+  Generating static pages using 11 workers (0/47) ...
+  Generating static pages using 11 workers (11/47) 
+  Generating static pages using 11 workers (23/47) 
+  Generating static pages using 11 workers (35/47) 
+✓ Generating static pages using 11 workers (47/47) in 1582.6ms
+  Finalizing page optimization ...
+  Collecting build traces ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ○ /~offline
+├ ƒ /admin/attendance
+├ ƒ /admin/department-lookup-27
+├ ƒ /admin/employees
+├ ƒ /admin/performance
+├ ƒ /admin/products
+├ ƒ /admin/products/trade-codes
+├ ƒ /admin/raw-material-requisitions
+├ ƒ /admin/raw-material-requisitions/[tab]
+├ ƒ /admin/schedule-config
+├ ƒ /admin/settings
+├ ƒ /admin/sku-min-max
+├ ƒ /admin/suppliers
+├ ƒ /api/admin/audit-logs
+├ ƒ /api/admin/bom-approval-settings
+├ ƒ /api/admin/departments
+├ ƒ /api/admin/line-approvers
+├ ƒ /api/admin/performance
+├ ƒ /api/admin/permissions
+├ ƒ /api/admin/roles
+├ ƒ /api/admin/roles/[id]
+├ ƒ /api/admin/users
+├ ƒ /api/attendance
+├ ƒ /api/attendance/daily-work
+├ ƒ /api/attendance/daily-work/[id]
+├ ƒ /api/attendance/daily-work/employee
+├ ƒ /api/attendance/daily-work/options
+├ ƒ /api/attendance/pallet-scan
+├ ƒ /api/attendance/piece-rate
+├ ƒ /api/attendance/piece-rate/[id]
+├ ƒ /api/attendance/piece-rate/[id]/revisions
+├ ƒ /api/attendance/piece-rate/employee
+├ ƒ /api/attendance/piece-rate/employee-summary
+├ ƒ /api/attendance/piece-rate/export
+├ ƒ /api/attendance/piece-rate/group-documents
+├ ƒ /api/attendance/piece-rate/offline-master
+├ ƒ /api/attendance/piece-rate/print-document
+├ ƒ /api/attendance/piece-rate/product
+├ ƒ /api/attendance/piece-rate/products
+├ ƒ /api/attendance/piece-rate/waste
+├ ƒ /api/attendance/scan-event
+├ ƒ /api/attendance/scan-events
+├ ƒ /api/attendance/snack-yield
+├ ƒ /api/attendance/snack-yield/[id]
+├ ƒ /api/attendance/snack-yield/employee
+├ ƒ /api/attendance/snack-yield/product
+├ ƒ /api/attendance/snack-yield/products
+├ ƒ /api/auth/authorize
+├ ƒ /api/auth/login
+├ ƒ /api/auth/logout
+├ ƒ /api/auth/permissions
+├ ƒ /api/auth/profile
+├ ƒ /api/auth/refresh
+├ ƒ /api/brand-types
+├ ƒ /api/client-diagnostics
+├ ƒ /api/consolidated
+├ ƒ /api/debug/fix-admin-role
+├ ƒ /api/debug/line-verify
+├ ƒ /api/department-lookup-27
+├ ƒ /api/employees
+├ ƒ /api/hr-departments
+├ ƒ /api/iccat-types
+├ ƒ /api/line/notify
+├ ƒ /api/notifications/push/public-key
+├ ƒ /api/notifications/push/subscriptions
+├ ƒ /api/pallet-barcodes
+├ ƒ /api/performance/web-vitals
+├ ƒ /api/production-bom-approvals
+├ ƒ /api/production-bom-approvals/reissue
+├ ƒ /api/production-bom-products
+├ ƒ /api/production-bom-settings
+├ ƒ /api/production-bom-versions/[id]
+├ ƒ /api/production-bom-versions/[id]/revert
+├ ƒ /api/production-boms/[skuCode]
+├ ƒ /api/production-boms/import-batch
+├ ƒ /api/production-boms/import-batch/preview
+├ ƒ /api/production-categories
+├ ƒ /api/production-categories/[id]
+├ ƒ /api/production-category-products
+├ ƒ /api/production-delivery-points
+├ ƒ /api/production-delivery-points/[id]
+├ ƒ /api/production-department-products
+├ ƒ /api/production-department-users
+├ ƒ /api/production-departments
+├ ƒ /api/production-departments/[id]
+├ ƒ /api/production-line-settings/material-owners
+├ ƒ /api/production-material-owners
+├ ƒ /api/production-piece-rate-settings
+├ ƒ /api/production-planning/calculate
+├ ƒ /api/production-planning/catalog
+├ ƒ /api/production-planning/departments
+├ ƒ /api/production-planning/explosion/preview
+├ ƒ /api/production-planning/inbox
+├ ƒ /api/production-planning/master-note
+├ ƒ /api/production-planning/master-plan-options
+├ ƒ /api/production-planning/master-publish
+├ ƒ /api/production-planning/material-claims/claim
+├ ƒ /api/production-planning/material-claims/my
+├ ƒ /api/production-planning/material-claims/pool
+├ ƒ /api/production-planning/material-claims/reassign
+├ ƒ /api/production-planning/material-claims/release
+├ ƒ /api/production-planning/material-claims/replace
+├ ƒ /api/production-planning/material-claims/update
+├ ƒ /api/production-planning/material-claims/workspace
+├ ƒ /api/production-planning/material-verify
+├ ƒ /api/production-planning/material-verify/action
+├ ƒ /api/production-planning/material-verify/confirm
+├ ƒ /api/production-planning/material-verify/confirm-date
+├ ƒ /api/production-planning/material-verify/material-options
+├ ƒ /api/production-planning/material-verify/replace
+├ ƒ /api/production-planning/material-verify/summary
+├ ƒ /api/production-planning/material-verify/update
+├ ƒ /api/production-planning/requisition/confirm-daily
+├ ƒ /api/production-planning/requisition/draft
+├ ƒ /api/production-planning/requisition/export
+├ ƒ /api/production-planning/requisition/groups
+├ ƒ /api/production-planning/requisition/groups/[groupId]
+├ ƒ /api/production-planning/requisition/patterns
+├ ƒ /api/production-planning/requisition/preview
+├ ƒ /api/production-planning/requisition/supplemental/export
+├ ƒ /api/production-planning/schedule/column-defs/[id]
+├ ƒ /api/production-planning/schedule/inbox
+├ ƒ /api/production-planning/schedule/master-report-detail
+├ ƒ /api/production-planning/schedule/plan-detail
+├ ƒ /api/production-planning/schedule/plans
+├ ƒ /api/production-planning/schedule/plans/[id]
+├ ƒ /api/production-planning/schedule/plans/[id]/rows
+├ ƒ /api/production-planning/schedule/rows/[id]
+├ ƒ /api/production-planning/schedule/section-defs/[id]
+├ ƒ /api/production-planning/schedule/section-defs/[id]/columns
+├ ƒ /api/production-planning/schedule/sku-catalog
+├ ƒ /api/production-planning/schedule/templates
+├ ƒ /api/production-planning/schedule/templates/[id]
+├ ƒ /api/production-planning/schedule/templates/[id]/sections
+├ ƒ /api/production-planning/status
+├ ƒ /api/production-planning/subplan/confirm
+├ ƒ /api/production-planning/wip-plan/confirmed-subplans
+├ ƒ /api/production-planning/wip-plan/draft
+├ ƒ /api/production-planning/wip-products
+├ ƒ /api/production-planning/wip-sufficiency
+├ ƒ /api/production-routing-components
+├ ƒ /api/production-routing-components/completeness
+├ ƒ /api/production-routing-components/explode
+├ ƒ /api/production-routings
+├ ƒ /api/production-section-shifts
+├ ƒ /api/production-section-shifts/[id]
+├ ƒ /api/production-shifts
+├ ƒ /api/production-shifts/[id]
+├ ƒ /api/production-snack-wage-settings
+├ ƒ /api/production-stock/balance
+├ ƒ /api/production-stock/balance/summary
+├ ƒ /api/production-stock/issues
+├ ƒ /api/production-stock/issues/[issueItemId]/cancel
+├ ƒ /api/production-stock/issues/available
+├ ƒ /api/production-stock/issues/batch
+├ ƒ /api/production-stock/issues/cancelable
+├ ƒ /api/production-stock/issues/report
+├ ƒ /api/production-stock/issues/report-summary
+├ ƒ /api/production-stock/opening-balances/import
+├ ƒ /api/production-stock/prison/balance/lot
+├ ƒ /api/production-stock/prison/balance/summary
+├ ƒ /api/production-stock/prison/inbound/[inboundItemId]/cancel
+├ ƒ /api/production-stock/prison/inbound/cancelable
+├ ƒ /api/production-stock/prison/issues
+├ ƒ /api/production-stock/prison/issues/[issueItemId]/cancel
+├ ƒ /api/production-stock/prison/issues/available
+├ ƒ /api/production-stock/prison/issues/batch
+├ ƒ /api/production-stock/prison/issues/cancelable
+├ ƒ /api/production-stock/prison/issues/report
+├ ƒ /api/production-stock/prison/issues/report-summary
+├ ƒ /api/production-stock/returns
+├ ƒ /api/production-stock/waste
+├ ƒ /api/production-unique-categories
+├ ƒ /api/production-users
+├ ƒ /api/production-wip-policies
+├ ƒ /api/production-work-centers
+├ ƒ /api/production-work-centers/[id]
+├ ƒ /api/production-work-types
+├ ƒ /api/production-work-types/[id]
+├ ƒ /api/products
+├ ƒ /api/products-cache
+├ ƒ /api/raw-material-lots-by-parent
+├ ƒ /api/raw-material-requisitions
+├ ƒ /api/raw-material-returns
+├ ƒ /api/raw-materials
+├ ƒ /api/raw-materials-movement
+├ ƒ /api/raw-materials-summary
+├ ƒ /api/raw-materials-summary-by-skus
+├ ƒ /api/raw-materials-with-deduction
+├ ƒ /api/requisitions/reconcile
+├ ƒ /api/runtime-version
+├ ƒ /api/scale/current
+├ ƒ /api/scale/lots
+├ ƒ /api/scale/product-config
+├ ƒ /api/scale/products
+├ ƒ /api/scale/receipts
+├ ƒ /api/scale/receipts/[receiptId]/cancel
+├ ƒ /api/scale/receipts/cancelable
+├ ƒ /api/scale/receipts/erp-export
+├ ƒ /api/scale/receipts/erp-export/preview
+├ ƒ /api/scale/receipts/report
+├ ƒ /api/scale/receipts/report-summary
+├ ƒ /api/scale/stable
+├ ƒ /api/scale/stream
+├ ƒ /api/sku-min-max
+├ ƒ /api/sku-min-max-by-sku
+├ ƒ /api/suppliers
+├ ƒ /api/trade-codes
+├ ○ /apk
+├ ƒ /hr
+├ ƒ /hr/consolidated
+├ ○ /login
+├ ƒ /production-line/attendance
+├ ƒ /production-line/attendance/daily-scan
+├ ƒ /production-line/attendance/pallet-scan
+├ ƒ /production-line/attendance/piece-rate-scan
+├ ƒ /production-line/attendance/report
+├ ƒ /production-line/attendance/report/daily-work
+├ ƒ /production-line/attendance/report/input-output
+├ ƒ /production-line/attendance/report/pallet-scan
+├ ƒ /production-line/attendance/report/piece-rate
+├ ƒ /production-line/attendance/report/scan-events
+├ ƒ /production-line/attendance/report/snack-yield
+├ ƒ /production-line/attendance/scan
+├ ƒ /production-line/attendance/snack-yield-scan
+├ ƒ /production-line/bom
+├ ƒ /production-line/bom/approval
+├ ƒ /production-line/bom/approval/liff
+├ ƒ /production-line/planning
+├ ƒ /production-line/planning/[view]
+├ ƒ /production-line/planning/capacity-planner
+├ ƒ /production-line/planning/claims
+├ ƒ /production-line/planning/material-verification
+├ ƒ /production-line/planning/material-verify
+├ ƒ /production-line/planning/notifications
+├ ƒ /production-line/planning/report
+├ ƒ /production-line/planning/requisition-preview
+├ ƒ /production-line/planning/schedule
+├ ƒ /production-line/planning/schedule-report
+├ ƒ /production-line/planning/subplan-report
+├ ƒ /production-line/planning/trace
+├ ƒ /production-line/settings
+├ ƒ /production-line/settings/[tab]
+├ ƒ /production-line/stock
+├ ƒ /production-line/stock/balance
+├ ƒ /production-line/stock/balance/lot
+├ ƒ /production-line/stock/balance/summary
+├ ƒ /production-line/stock/issues
+├ ƒ /production-line/stock/issues/cancel
+├ ƒ /production-line/stock/issues/report
+├ ƒ /production-line/stock/issues/report-summary
+├ ƒ /production-line/stock/opening-balance
+├ ƒ /production-line/stock/prison/balance/lot
+├ ƒ /production-line/stock/prison/balance/summary
+├ ƒ /production-line/stock/prison/inbound/cancel
+├ ƒ /production-line/stock/prison/issues
+├ ƒ /production-line/stock/prison/issues/cancel
+├ ƒ /production-line/stock/prison/issues/report
+├ ƒ /production-line/stock/prison/issues/report-summary
+├ ƒ /production-line/stock/prison/report
+├ ƒ /production-line/stock/prison/report-summary
+├ ƒ /production-line/weight-scale
+├ ƒ /production-line/weight-scale/cancel
+├ ƒ /production-line/weight-scale/report
+├ ƒ /production-line/weight-scale/report-summary
+├ ƒ /production-line/weight-scale/return
+├ ƒ /production-line/weight-scale/waste
+├ ○ /production-planning
+├ ƒ /raw-material-requisitions
+├ ƒ /raw-material-requisitions/[tab]
+├ ƒ /raw-material-requisitions/export
+├ ƒ /raw-materials
+├ ƒ /raw-materials/[view]
+├ ƒ /stock-inventory
+├ ƒ /stock-inventory/[view]
+├ ○ /unauthorized
+├ ƒ /weight-scale
+├ ƒ /weight-scale/report
+└ ƒ /weight-scale/report-summary
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

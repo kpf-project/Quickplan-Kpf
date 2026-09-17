@@ -1,0 +1,13 @@
+{
+  "taskId": "bash-8183cato",
+  "description": "Next.js production build",
+  "status": "completed",
+  "detached": true,
+  "startedAt": 1784600394144,
+  "endedAt": 1784600431180,
+  "timeoutMs": 3000000,
+  "kind": "process",
+  "command": "npm run build",
+  "pid": 19968,
+  "exitCode": 0
+}

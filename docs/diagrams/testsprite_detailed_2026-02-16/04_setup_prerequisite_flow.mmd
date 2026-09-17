@@ -1,0 +1,7 @@
+﻿flowchart TD
+  S1[ตั้ง Role + User ใน /admin/settings] --> S2[ผูก User-Department ใน /production-line/settings/department-products]
+  S2 --> S3[ผูก SKU Owner ใน department-products]
+  S3 --> S4[ผูก Material Owner ใน /production-line/settings/material-owners]
+  S4 --> S5[ตรวจ BOM approved]
+  S5 --> S6[ตรวจ ERP data: Stock/PO ETA/MinMax]
+  S6 --> S7[พร้อมเริ่ม UAT]

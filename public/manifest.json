@@ -1,0 +1,16 @@
+{
+  "name": "Quickplan PWA",
+  "short_name": "ProdLine",
+  "description": "Employee scan and weighing workflow",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f1ea",
+  "theme_color": "#0f2a2b",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

@@ -1,0 +1,80 @@
+[
+  {
+    "id": "2e079955-1a66-4df8-a281-14656f73ddf4",
+    "request_id": "manual-waste-BL0-4004-20260718-2615",
+    "product_barcode_snapshot": "8859771700563",
+    "product_code_snapshot": "BL0-4004",
+    "product_goods_code_snapshot": "BL0-4004",
+    "product_sku_code_snapshot": "BL0-4004",
+    "product_name_snapshot": "ขนมปังกรอบ แยมสับปะรด 400 ก. (12ปี๊บ)",
+    "product_brand_code_snapshot": "KL",
+    "product_brand_name_snapshot": "ระฆังทอง",
+    "product_unit_snapshot": "กล่อง*12",
+    "waste_weight_kg": 2.615,
+    "machine_code": "MANUAL",
+    "raw_product_barcode_payload": "8859771700563",
+    "actual_weighed_at": "2026-07-18T05:00:00+00:00",
+    "logged_at": "2026-07-18T05:00:00+00:00",
+    "operator_user_id": null,
+    "status": "confirmed",
+    "cancelled_at": null,
+    "cancelled_by": null,
+    "metadata": {
+      "reason": "เพิ่มยอดของเสียย้อนหลัง",
+      "source": "manual_correction",
+      "goodsCode": "BL0-4004"
+    }
+  },
+  {
+    "id": "9a31234d-a08c-4f9d-91c4-f149be291e5c",
+    "request_id": "manual-waste-BL0-4004-20260716-2465",
+    "product_barcode_snapshot": "8859771700563",
+    "product_code_snapshot": "BL0-4004",
+    "product_goods_code_snapshot": "BL0-4004",
+    "product_sku_code_snapshot": "BL0-4004",
+    "product_name_snapshot": "ขนมปังกรอบ แยมสับปะรด 400 ก. (12ปี๊บ)",
+    "product_brand_code_snapshot": "KL",
+    "product_brand_name_snapshot": "ระฆังทอง",
+    "product_unit_snapshot": "กล่อง*12",
+    "waste_weight_kg": 2.465,
+    "machine_code": "MANUAL",
+    "raw_product_barcode_payload": "8859771700563",
+    "actual_weighed_at": "2026-07-16T05:00:00+00:00",
+    "logged_at": "2026-07-16T05:00:00+00:00",
+    "operator_user_id": null,
+    "status": "confirmed",
+    "cancelled_at": null,
+    "cancelled_by": null,
+    "metadata": {
+      "reason": "เพิ่มยอดของเสียย้อนหลัง",
+      "source": "manual_correction",
+      "goodsCode": "BL0-4004"
+    }
+  },
+  {
+    "id": "ef051ba6-6248-45c1-8740-4d82511a2258",
+    "request_id": "manual-waste-BL0-4004-20260717-3590",
+    "product_barcode_snapshot": "8859771700563",
+    "product_code_snapshot": "BL0-4004",
+    "product_goods_code_snapshot": "BL0-4004",
+    "product_sku_code_snapshot": "BL0-4004",
+    "product_name_snapshot": "ขนมปังกรอบ แยมสับปะรด 400 ก. (12ปี๊บ)",
+    "product_brand_code_snapshot": "KL",
+    "product_brand_name_snapshot": "ระฆังทอง",
+    "product_unit_snapshot": "กล่อง*12",
+    "waste_weight_kg": 3.59,
+    "machine_code": "MANUAL",
+    "raw_product_barcode_payload": "8859771700563",
+    "actual_weighed_at": "2026-07-17T05:00:00+00:00",
+    "logged_at": "2026-07-17T05:00:00+00:00",
+    "operator_user_id": null,
+    "status": "confirmed",
+    "cancelled_at": null,
+    "cancelled_by": null,
+    "metadata": {
+      "reason": "เพิ่มยอดของเสียย้อนหลัง",
+      "source": "manual_correction",
+      "goodsCode": "BL0-4004"
+    }
+  }
+]

@@ -1,0 +1,21 @@
+{
+  "createdAt": "2026-07-21T01:46:40.213Z",
+  "updatedAt": "2026-07-21T04:01:56.574Z",
+  "title": "เหนในหน้า รายงานสแกนคิดค่าแรงไหม /[redacted] ที่มีแท็บ ทุกรายการ สรุปผลิตภัณฑื สรุปค่าแรง รวมยอดรายวัน ด้านล่างสุดะมีปุ่มก่อนหน้า ถัดไป ให้กด แต่พอเราเลื่อน scroll ลงมา มันเลื่อนลงมาไม่ถึงเหนปุ่มแค่นิ",
+  "isCustomTitle": false,
+  "agents": {
+    "main": {
+      "homedir": "C:/Users/Riew/.kimi-code/sessions/wd_production-line_f22bc2fe4df6/session_b2daaf9f-5df6-408d-bcea-413f0ad7d41e/agents/main",
+      "type": "main",
+      "parentAgentId": null
+    },
+    "agent-0": {
+      "homedir": "C:/Users/Riew/.kimi-code/sessions/wd_production-line_f22bc2fe4df6/session_b2daaf9f-5df6-408d-bcea-413f0ad7d41e/agents/agent-0",
+      "type": "sub",
+      "parentAgentId": "main"
+    }
+  },
+  "custom": {},
+  "workDir": "C:/Users/Riew/Desktop/KPF/Production-Line/Production-Line",
+  "lastPrompt": "ดำเนินการต่อ"
+}

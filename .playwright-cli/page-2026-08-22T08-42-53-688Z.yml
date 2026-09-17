@@ -1,0 +1,73 @@
+- iframe [ref=e2]:
+  - generic [ref=f1e2]:
+    - group "เลือกรูปแบบตัวอย่าง" [ref=f1e3]:
+      - button "แบบ A · แยก Trade Code" [ref=f1e4] [cursor=pointer]
+      - button "แบบ B · รหัสเดียว" [ref=f1e5] [cursor=pointer]
+      - button "แบบ C · Hybrid (แนะนำ)" [pressed] [ref=f1e6] [cursor=pointer]
+    - region "ตัวอย่างหน้าคงเหลือวัตถุดิบแยก LOT" [ref=f1e7]:
+      - generic [ref=f1e8]:
+        - generic [ref=f1e9]:
+          - generic [ref=f1e10]: K
+          - generic [ref=f1e11]: Production Line
+        - generic [ref=f1e12]: คงเหลือวัตถุดิบ · แยก LOT
+      - generic [ref=f1e13]:
+        - generic [ref=f1e14]:
+          - generic [ref=f1e15]:
+            - heading "แบบ C · SKU มาตรฐาน + หน่วยอ่านง่าย" [level=2] [ref=f1e16]
+            - generic [ref=f1e17]: ใช้ SKU และ KG เป็นแกนกลางสำหรับ BOM พร้อมแสดงถุงให้คนอ่านง่าย
+          - generic [ref=f1e18]: เหมาะกับ Planning + BOM
+        - generic [ref=f1e19]:
+          - generic [ref=f1e20]:
+            - generic [ref=f1e21]: SKU มาตรฐาน
+            - generic [ref=f1e22]: M03-0002
+          - generic [ref=f1e23]:
+            - generic [ref=f1e24]: หน่วยฐานสำหรับคำนวณ
+            - generic [ref=f1e25]: KG
+          - generic [ref=f1e26]:
+            - generic [ref=f1e27]: ขนาดบรรจุ
+            - generic [ref=f1e28]: 1 ถุง = 25 KG
+        - table [ref=f1e31]:
+          - rowgroup [ref=f1e32]:
+            - row [ref=f1e33]:
+              - columnheader "SKU วัตถุดิบ" [ref=f1e34]
+              - columnheader "ชื่อสินค้า" [ref=f1e35]
+              - columnheader "คงเหลือสำหรับคน" [ref=f1e36]
+              - columnheader "คงเหลือมาตรฐาน" [ref=f1e37]
+              - columnheader "LOT" [ref=f1e38]
+              - columnheader "อ้างอิงหน่วย" [ref=f1e39]
+          - rowgroup [ref=f1e40]:
+            - row [ref=f1e41]:
+              - cell "M03-0002" [ref=f1e42]
+              - cell "แป้งข้าวโพด (25 กก.)" [ref=f1e43]
+              - cell "5.5 KG" [ref=f1e44]
+              - cell "5.5 KG" [ref=f1e45]
+              - cell "260803*" [ref=f1e46]
+              - cell "M03-0002 · KG" [ref=f1e47]
+            - row [ref=f1e48]:
+              - cell "M03-0002" [ref=f1e49]
+              - cell "แป้งข้าวโพด (25 กก.)" [ref=f1e50]
+              - cell "3.5 KG" [ref=f1e51]
+              - cell "3.5 KG" [ref=f1e52]
+              - cell "260803*3" [ref=f1e53]
+              - cell "M03-0002 · KG" [ref=f1e54]
+            - row [ref=f1e55]:
+              - cell "M03-0002" [ref=f1e56]
+              - cell "แป้งข้าวโพด (25 กก.)" [ref=f1e57]
+              - cell "7 ถุง" [ref=f1e58]
+              - cell "175 KG" [ref=f1e59]
+              - cell "260815" [ref=f1e60]
+              - cell "M03-00020 · ถุงx25กก." [ref=f1e61]
+            - row [ref=f1e62]:
+              - cell [ref=f1e63]:
+                - strong [ref=f1e64]: รวมยอด M03-0002
+              - cell "7 ถุง + 9 KG" [ref=f1e65]
+              - cell "184 KG" [ref=f1e66]
+              - cell [ref=f1e67]
+              - cell [ref=f1e68]
+        - generic [ref=f1e69]:
+          - generic [ref=f1e73]:
+            - strong [ref=f1e74]: BOM / Planning
+            - text: ใช้ SKU M03-0002 และจำนวนฐาน KG เท่านั้น
+          - generic [ref=f1e80]:
+            - strong [ref=f1e81]: คลัง / ผู้ใช้งาน
+            - text: เห็นจำนวนแบบถุง + เศษ KG และ Trade Code อ้างอิง

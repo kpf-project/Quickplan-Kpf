@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="app_name">ProductionLine</string>
+  <string name="web_app_url">https://production.kpfoods.co.th/</string>
+  <string name="default_machine_code">P00</string>
+</resources>

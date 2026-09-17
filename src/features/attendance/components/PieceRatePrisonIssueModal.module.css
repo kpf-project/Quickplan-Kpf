@@ -1,0 +1,62 @@
+.backdrop { position: fixed; z-index: 140; inset: 0; display: grid; padding: 20px; place-items: center; background: rgb(2 14 32 / 76%); backdrop-filter: blur(7px); }
+.dialog { display: flex; width: min(1280px, 100%); max-height: calc(100dvh - 40px); flex-direction: column; overflow: hidden; border: 1px solid #d7ad2c; border-radius: 18px; background: #f5f7fa; box-shadow: 0 30px 100px rgb(0 9 25 / 48%); }
+.dialog > header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; color: white; border-bottom: 2px solid #d5aa27; background: linear-gradient(115deg, #071f3e, #123b68); }
+.dialog > header span { color: #efc743; font-size: 10px; font-weight: 900; letter-spacing: .18em; }
+.dialog h2 { margin: 1px 0 0; font-size: 21px; }
+.dialog > header button { display: grid; width: 38px; height: 38px; place-items: center; color: white; border: 1px solid rgb(255 255 255 / 20%); border-radius: 8px; background: transparent; cursor: pointer; }
+.context { display: grid; grid-template-columns: .8fr 1.7fr .7fr; border-bottom: 1px solid #cad4df; background: white; }
+.context div { min-width: 0; padding: 10px 16px; border-right: 1px solid #dbe2ea; }
+.context small { display: block; color: #657990; font-size: 10px; font-weight: 800; }
+.context strong { display: block; overflow: hidden; color: #0b2c54; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.toolbar { display: flex; align-items: center; gap: 12px; padding: 9px 14px; border-bottom: 1px solid #d5dee8; background: #f8fafc; }
+.toolbar > label:first-child { display: grid; min-width: 260px; flex: 1; grid-template-columns: 20px 1fr; align-items: center; gap: 7px; padding: 0 10px; border: 1px solid #bdcad8; border-radius: 6px; background: white; }
+.toolbar svg { width: 16px; color: #6f8297; }
+.toolbar input { height: 35px; border: 0; outline: 0; font: inherit; font-size: 12px; }
+.selectedToggle { display: flex; align-items: center; gap: 7px; color: #17385d; font-size: 12px; font-weight: 800; white-space: nowrap; }
+.selectedToggle input { width: 16px; height: 16px; accent-color: #c99b1a; }
+.toolbar > span { padding: 6px 9px; color: #755700; border-radius: 5px; background: #fff0b8; font-size: 11px; font-weight: 900; }
+.message { display: flex; align-items: center; gap: 8px; padding: 9px 14px; color: #9d2232; border-bottom: 1px solid #efb5bd; background: #fff0f2; font-size: 12px; font-weight: 800; }
+.message svg { width: 17px; }
+.tableWrap { min-height: 280px; overflow: auto; background: white; }
+.tableWrap table { width: 100%; border-collapse: collapse; color: #101820; font-size: 12px; }
+.tableWrap thead { position: sticky; z-index: 2; top: 0; }
+.tableWrap th { padding: 9px 8px; color: white; border-right: 1px solid rgb(255 255 255 / 18%); background: #123660; font-size: 11px; text-align: center; white-space: nowrap; }
+.tableWrap td { padding: 7px 9px; border-right: 1px solid #dfe5ec; border-bottom: 1px solid #d9e0e8; text-align: center; vertical-align: middle; }
+.tableWrap tr:nth-child(even) td { background: #f7f9fb; }
+.tableWrap tr[data-selected="true"] td { background: #fff7d8; }
+.tableWrap td:nth-child(3) { color: #092d56; text-align: left; }
+.tableWrap td small { color: #65798f; font-weight: 700; }
+.tableWrap input[type="checkbox"] { width: 16px; height: 16px; accent-color: #c99b1a; }
+.fifo { display: inline-block; min-width: 35px; padding: 3px 6px; color: #7b5b00; border-radius: 4px; background: #fff0b6; font-weight: 900; }
+.weightInput { width: 112px; height: 33px; padding: 0 8px; color: #092d56; border: 1px solid #aebdcd; border-radius: 5px; outline: none; text-align: right; font: inherit; font-weight: 900; }
+.weightInput:focus { border-color: #c89916; box-shadow: 0 0 0 3px rgb(200 153 22 / 15%); }
+.quickWeights { display: flex; justify-content: center; gap: 3px; margin-top: 5px; }
+.quickWeights button { min-width: 31px; padding: 2px 4px; color: #526982; border: 1px solid #cbd5df; border-radius: 4px; background: #fff; cursor: pointer; font: inherit; font-size: 9px; font-weight: 800; }
+.quickWeights button:hover { color: #725300; border-color: #d5aa27; background: #fff8dc; }
+.weight { color: #0b2e56; font-variant-numeric: tabular-nums; font-weight: 900; text-align: right !important; }
+.empty { height: 180px; color: #7b8999; text-align: center !important; }
+.state { display: flex; min-height: 280px; align-items: center; justify-content: center; gap: 9px; color: #526982; font-weight: 800; }
+.dialog > footer { display: flex; align-items: center; gap: 14px; padding: 10px 14px; border-top: 1px solid #cad5e1; background: #eef2f6; }
+.pagination { display: flex; align-items: center; gap: 7px; }
+.pagination button { display: flex; min-height: 32px; align-items: center; gap: 3px; padding: 0 9px; color: #17385c; border: 1px solid #bdc9d7; border-radius: 5px; background: white; cursor: pointer; font: inherit; font-size: 11px; font-weight: 800; }
+.pagination button:disabled { opacity: .4; cursor: not-allowed; }
+.pagination svg { width: 15px; }
+.pagination b { min-width: 78px; color: #5c7087; font-size: 11px; text-align: center; }
+.summary { display: flex; flex: 1; align-items: center; justify-content: flex-end; gap: 16px; color: #586d84; font-size: 12px; white-space: nowrap; }
+.summary b { color: #092d56; font-size: 14px; }
+.confirm { display: flex; min-width: 155px; min-height: 39px; align-items: center; justify-content: center; gap: 8px; color: #092d56; border: 1px solid #b98a0c; border-radius: 6px; background: linear-gradient(135deg, #f2cd57, #dda91d); cursor: pointer; font: inherit; font-size: 13px; font-weight: 900; }
+.confirm:disabled { opacity: .45; cursor: not-allowed; }
+.confirm svg { width: 17px; }
+.spin { animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (max-width: 720px) {
+  .backdrop { padding: 0; }
+  .dialog { width: 100%; max-height: 100dvh; min-height: 100dvh; border: 0; border-radius: 0; }
+  .context { grid-template-columns: 1fr; }
+  .context div { padding: 7px 12px; }
+  .toolbar { flex-wrap: wrap; }
+  .toolbar > label:first-child { min-width: 100%; }
+  .dialog > footer { align-items: stretch; flex-wrap: wrap; }
+  .summary { order: -1; min-width: 100%; justify-content: space-between; }
+  .confirm { margin-left: auto; }
+}

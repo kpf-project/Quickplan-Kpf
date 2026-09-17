@@ -1,0 +1,19 @@
+{
+  "name": "kpf-local-scale-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local serial scale bridge agent for OHAUS Defender 3000 weighing indicators",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node parse.test.js",
+    "install-workstation": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\install-workstation.ps1 -InstallNodeIfMissing -StartNow",
+    "install-task": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\install-task.ps1 -StartNow",
+    "install-piece-rate-task": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\install-piece-rate-task.ps1 -StartNow",
+    "uninstall-task": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\uninstall-task.ps1"
+  },
+  "dependencies": {
+    "serialport": "^13.0.0",
+    "ws": "^8.19.0"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "kpf-api-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Read-only API gateway for KPF ERP/HR databases",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.1",
+    "compression": "^1.7.4",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "helmet": "^7.1.0",
+    "mssql": "^10.0.2"
+  }
+}

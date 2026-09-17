@@ -1,0 +1,13 @@
+{
+  "taskId": "bash-nrhw0dwq",
+  "description": "Bash: sed -n '1297p' src/features/production-planning/components/P…",
+  "status": "completed",
+  "detached": false,
+  "startedAt": 1784605679525,
+  "endedAt": 1784605679633,
+  "timeoutMs": 60000,
+  "kind": "process",
+  "command": "sed -n '1297p' src/features/production-planning/components/PlanningControlCenterClient.js | fold -w 3000",
+  "pid": 4512,
+  "exitCode": 0
+}

@@ -1,0 +1,13 @@
+{
+  "taskId": "bash-kaowx3wp",
+  "description": "Next.js production build",
+  "status": "completed",
+  "detached": true,
+  "startedAt": 1784604015594,
+  "endedAt": 1784604045887,
+  "timeoutMs": 3000000,
+  "kind": "process",
+  "command": "npm run build",
+  "pid": 18404,
+  "exitCode": 0
+}

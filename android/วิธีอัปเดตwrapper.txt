@@ -1,0 +1,9 @@
+run as  powershell
+  cd "C:\Users\Riew\Desktop\KPF\Production-Line\Production-Line\android\sunmi-v3-wrapper"
+  $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
+  $env:Path = "$env:JAVA_HOME\bin;$env:Path"
+  .\gradlew.bat :app:installDebug
+
+
+รหัส Keystore
+Kpf141154

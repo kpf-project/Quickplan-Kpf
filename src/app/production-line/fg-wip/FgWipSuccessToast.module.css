@@ -1,0 +1,60 @@
+.toast {
+  position: fixed;
+  z-index: 200;
+  top: 20px;
+  right: 20px;
+  display: grid;
+  grid-template-columns: 6px 48px minmax(0, 1fr) 36px;
+  align-items: center;
+  width: min(430px, calc(100vw - 32px));
+  min-height: 84px;
+  overflow: hidden;
+  border: 1px solid #c8a54a;
+  background: #fff;
+  color: #061f43;
+  box-shadow: 0 14px 35px rgb(6 31 67 / 22%);
+  animation: toast-in 220ms ease-out both;
+}
+
+.goldRail { align-self: stretch; background: #d9a514; }
+
+.icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  justify-self: center;
+  border: 2px solid #d9a514;
+  border-radius: 999px;
+  background: #061f43;
+  color: #f3ce63;
+}
+
+.copy { min-width: 0; padding: 14px 8px; }
+.copy span { display: block; margin-bottom: 3px; color: #9a7210; font-size: 11px; font-weight: 800; letter-spacing: .12em; }
+.copy strong { display: block; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+.toast button { display: grid; width: 32px; height: 32px; place-items: center; color: #526477; }
+.toast button:hover { background: #edf2f7; color: #061f43; }
+
+.progress {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 6px;
+  height: 3px;
+  transform-origin: left;
+  background: #d9a514;
+  animation: toast-progress linear both;
+}
+
+@keyframes toast-in { from { opacity: 0; transform: translate3d(24px, -8px, 0); } to { opacity: 1; transform: none; } }
+@keyframes toast-progress { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+@media (max-width: 639px) {
+  .toast { top: 12px; right: 12px; width: calc(100vw - 24px); grid-template-columns: 5px 44px minmax(0, 1fr) 34px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast { animation: none; }
+  .progress { animation: none; }
+}

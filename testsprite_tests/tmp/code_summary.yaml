@@ -1,0 +1,144 @@
+﻿version: "2"
+type: frontend
+tech_stack:
+  - JavaScript
+  - Next.js App Router
+  - React 19
+  - Tailwind CSS
+  - Supabase
+routes:
+  - path: /login
+    file: src/app/login/page.js
+    auth_required: false
+    description: User login page
+  - path: /production-line/planning/master
+    file: src/app/production-line/planning/[view]/page.js
+    auth_required: true
+    description: Master planning view
+  - path: /production-line/planning/inbox
+    file: src/app/production-line/planning/[view]/page.js
+    auth_required: true
+    description: Inbox and sub-plan workbench
+  - path: /production-line/planning/plan
+    file: src/app/production-line/planning/[view]/page.js
+    auth_required: true
+    description: Department planning and calculation view
+  - path: /production-line/planning/control-tower
+    file: src/app/production-line/planning/control-tower/page.js
+    auth_required: true
+    description: Exception handling and ETA feedback view
+  - path: /production-line/planning/trace
+    file: src/app/production-line/planning/trace/page.js
+    auth_required: true
+    description: Traceability view for planning impacts
+  - path: /raw-material-requisitions/requisition
+    file: src/app/(public)/raw-material-requisitions/page.js
+    auth_required: true
+    description: Requisition list and export verification
+  - path: /production-line/settings/department-products
+    file: src/app/production-line/settings/[tab]/page.js
+    auth_required: true
+    description: Department-product ownership setup tab
+  - path: /production-line/settings/material-owners
+    file: src/app/production-line/settings/[tab]/page.js
+    auth_required: true
+    description: Material owner assignment setup tab
+  - path: /admin/settings
+    file: src/app/admin/settings/page.js
+    auth_required: true
+    description: Role and permission administration
+features:
+  - name: Authentication
+    description: Login and protected session flow
+    files:
+      - src/app/login/page.js
+      - src/app/api/auth/login/route.js
+      - src/app/api/auth/profile/route.js
+      - src/app/api/auth/logout/route.js
+    entry_route: /login
+    user_interactions:
+      - Fill username and password
+      - Click login button
+      - Access protected pages after successful login
+      - Logout and verify access is revoked
+    api_calls:
+      - method: POST
+        endpoint: /api/auth/login
+      - method: GET
+        endpoint: /api/auth/profile
+      - method: POST
+        endpoint: /api/auth/logout
+    auth_required: false
+  - name: Master Plan to Requisition UAT Flow
+    description: End-to-end production planning UI flow from master plan to requisition export
+    files:
+      - src/app/production-line/planning/[view]/page.js
+      - src/app/production-line/planning/control-tower/page.js
+      - src/app/production-line/planning/trace/page.js
+      - src/app/(public)/raw-material-requisitions/page.js
+      - src/app/api/production-planning/master-publish/route.js
+      - src/app/api/production-planning/calculate/route.js
+      - src/app/api/production-planning/wip-sufficiency/route.js
+      - src/app/api/production-planning/wip-plan/draft/route.js
+      - src/app/api/production-planning/requisition/export/route.js
+      - src/app/api/production-planning/eta-feedback/route.js
+      - src/app/api/production-planning/replan/route.js
+    entry_route: /production-line/planning/master
+    user_interactions:
+      - Create draft master plan and add FG demand
+      - Run calculate for BOM and material sufficiency
+      - Publish master plan and open inbox/workbench
+      - QA users edit only own department scope
+      - Export requisition and verify generated document number
+      - Exception manager submits ETA feedback and triggers replan
+    api_calls:
+      - method: POST
+        endpoint: /api/production-planning/master-publish
+      - method: POST
+        endpoint: /api/production-planning/calculate
+      - method: POST
+        endpoint: /api/production-planning/wip-sufficiency
+      - method: POST
+        endpoint: /api/production-planning/wip-plan/draft
+      - method: POST
+        endpoint: /api/production-planning/requisition/export
+      - method: POST
+        endpoint: /api/production-planning/eta-feedback
+      - method: POST
+        endpoint: /api/production-planning/replan
+    auth_required: true
+  - name: Role and Scope Security
+    description: Enforce role-based permissions and department edit scope for 5 UAT roles
+    files:
+      - src/app/admin/settings/page.js
+      - src/app/production-line/settings/[tab]/page.js
+      - src/app/api/admin/roles/route.js
+      - src/app/api/admin/permissions/route.js
+      - src/app/api/production-department-users/route.js
+      - src/app/api/production-department-products/route.js
+      - src/app/api/production-material-owners/route.js
+    entry_route: /admin/settings
+    user_interactions:
+      - Assign roles to users
+      - Assign QA users to department editor scope
+      - Assign viewer users to read-only scope
+      - Verify cross-department edits are blocked
+    api_calls:
+      - method: GET
+        endpoint: /api/admin/roles
+      - method: GET
+        endpoint: /api/admin/permissions
+      - method: GET
+        endpoint: /api/production-department-users
+      - method: GET
+        endpoint: /api/production-department-products
+      - method: GET
+        endpoint: /api/production-material-owners
+    auth_required: true
+known_limitations:
+  - issue: Planning calculation outcomes depend on runtime ERP inputs (stock, open PO ETA, lead time) from gateway.
+    location: /api/production-planning/calculate and related planning APIs
+    impact: Test outcomes may vary if ERP source data is unavailable or stale.
+  - issue: E2E automation is sensitive to dynamic Thai UI labels and changing row indexes.
+    location: planning and inbox table interactions
+    impact: Flaky selectors can cause false-negative UI test failures.

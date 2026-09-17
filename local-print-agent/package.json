@@ -1,0 +1,17 @@
+{
+  "name": "kpf-weight-scale-print-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local print agent for KPF weight scale barcode labels",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "install-workstation": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\install-workstation.ps1 -InstallNodeIfMissing -StartNow",
+    "install-startup": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\install-startup.ps1",
+    "uninstall-startup": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\uninstall-startup.ps1",
+    "install-task": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\install-task.ps1 -StartNow",
+    "uninstall-task": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\uninstall-task.ps1",
+    "install-service:nssm": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\install-service-nssm.ps1 -StartNow",
+    "uninstall-service:nssm": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\uninstall-service-nssm.ps1"
+  }
+}
