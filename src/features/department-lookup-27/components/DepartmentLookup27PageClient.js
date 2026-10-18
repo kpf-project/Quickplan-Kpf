@@ -113,7 +113,7 @@ function DepartmentLookup27PageContent() {
         <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="hidden overflow-x-auto lg:block">
             <table className="min-w-full border-collapse text-left text-sm">
-              <thead className="sticky top-0 z-10 bg-[#102C57] text-white">
+              <thead className="sticky top-0 z-10 bg-[var(--surface-navy,#102C57)] text-white">
                 <tr>
                   <th className="whitespace-nowrap px-4 py-3 font-semibold">รหัสแผนก</th>
                   <th className="whitespace-nowrap px-4 py-3 font-semibold">ชื่อแผนก (ไทย)</th>

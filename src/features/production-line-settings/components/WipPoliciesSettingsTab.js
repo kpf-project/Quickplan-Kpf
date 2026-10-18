@@ -176,7 +176,7 @@ export default function WipPoliciesSettingsTab({ canManage = false }) {
                 type="button"
                 onClick={loadRows}
                 disabled={loading}
-                className="h-9 px-4 rounded-lg bg-[#102C57] text-white"
+                className="h-9 px-4 rounded-lg bg-[var(--surface-navy,#102C57)] text-white"
               >
                 <Search size={14} />
               </button>
@@ -239,7 +239,7 @@ export default function WipPoliciesSettingsTab({ canManage = false }) {
       <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
         <div className="max-h-[70vh] overflow-auto">
           <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-[#102C57] text-white">
+            <thead className="sticky top-0 bg-[var(--surface-navy,#102C57)] text-white">
               <tr>
                 <th className="px-3 py-2 text-left">SKU WIP</th>
                 <th className="px-3 py-2 text-left">รหัสซื้อขาย</th>

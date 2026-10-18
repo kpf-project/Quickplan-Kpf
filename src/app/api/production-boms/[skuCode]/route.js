@@ -44,7 +44,19 @@ function formatValue(item) {
   const offsetDays = normalizePlanningOffsetDays(item.planning_offset_days, 0);
   const offsetText = offsetDays !== 0 ? ` · ${getPlanningOffsetLabel(offsetDays)}` : "";
   const notes = item.notes ? ` · ${item.notes}` : "";
-  return `${qty} ${uom}${goodsCode}${offsetText}${notes}`;
+  const substitutes = normalizeSubstituteCodes(
+    item.substitute_material_sku_codes,
+    item.material_sku_code
+  );
+  const substituteText = substitutes.length ? ` · ทดแทน ${substitutes.join(", ")}` : "";
+  return `${qty} ${uom}${goodsCode}${offsetText}${substituteText}${notes}`;
+}
+
+function normalizeSubstituteCodes(value, primaryCode = "") {
+  const primary = normalizeParam(primaryCode) || "";
+  return Array.from(
+    new Set((Array.isArray(value) ? value : []).map((item) => normalizeParam(item)).filter(Boolean))
+  ).filter((code) => code !== primary).sort();
 }
 
 function buildLabel(code, nameMap) {
@@ -90,6 +102,8 @@ function buildDiff(previousItems, nextItems, nameMap) {
         normalizeHeadcountBase(item.dough_set_base, 1) ||
       normalizeHeadcountRoundMode(prev.dough_set_round_mode) !==
         normalizeHeadcountRoundMode(item.dough_set_round_mode) ||
+      normalizeSubstituteCodes(prev.substitute_material_sku_codes, code).join("|") !==
+        normalizeSubstituteCodes(item.substitute_material_sku_codes, code).join("|") ||
       (prev.notes || "") !== (item.notes || "");
     if (changed) {
       const label = buildLabel(code, nameMap);
@@ -289,7 +303,7 @@ async function fetchItemsForVersion(supabaseAdmin, versionId) {
   }
 
   const selectWithProduct =
-    "material_sku_code,material_goods_code,qty,uom_name,notes,planning_offset_days,calculation_basis,headcount_base,headcount_round_mode,machine_base,machine_round_mode,dough_set_base,dough_set_round_mode,products_cache(sku_name,iccat_code,iccat_name)";
+    "material_sku_code,material_goods_code,substitute_material_sku_codes,qty,uom_name,notes,planning_offset_days,calculation_basis,headcount_base,headcount_round_mode,machine_base,machine_round_mode,dough_set_base,dough_set_round_mode,products_cache(sku_name,iccat_code,iccat_name)";
 
   let { data, error } = await supabaseAdmin
     .from("production_bom_items")
@@ -299,7 +313,7 @@ async function fetchItemsForVersion(supabaseAdmin, versionId) {
   if (error && (isMissingPlanningOffsetColumn(error) || isMissingHeadcountColumns(error))) {
     const fallbackResult = await supabaseAdmin
       .from("production_bom_items")
-      .select("material_sku_code,material_goods_code,qty,uom_name,notes,products_cache(sku_name,iccat_code,iccat_name)")
+      .select("material_sku_code,material_goods_code,substitute_material_sku_codes,qty,uom_name,notes,products_cache(sku_name,iccat_code,iccat_name)")
       .eq("version_id", versionId);
     data = (fallbackResult.data ?? []).map((row) => ({
       ...row,
@@ -319,7 +333,7 @@ async function fetchItemsForVersion(supabaseAdmin, versionId) {
     // Fallback: fetch items without relationship and resolve names separately.
     const basicResult = await supabaseAdmin
       .from("production_bom_items")
-      .select("material_sku_code,material_goods_code,qty,uom_name,notes,planning_offset_days,calculation_basis,headcount_base,headcount_round_mode,machine_base,machine_round_mode,dough_set_base,dough_set_round_mode")
+      .select("material_sku_code,material_goods_code,substitute_material_sku_codes,qty,uom_name,notes,planning_offset_days,calculation_basis,headcount_base,headcount_round_mode,machine_base,machine_round_mode,dough_set_base,dough_set_round_mode")
       .eq("version_id", versionId);
 
     if (basicResult.error) {
@@ -328,7 +342,7 @@ async function fetchItemsForVersion(supabaseAdmin, versionId) {
       }
       const legacyBasicResult = await supabaseAdmin
         .from("production_bom_items")
-        .select("material_sku_code,material_goods_code,qty,uom_name,notes,calculation_basis,headcount_base,headcount_round_mode,machine_base,machine_round_mode,dough_set_base,dough_set_round_mode")
+        .select("material_sku_code,material_goods_code,substitute_material_sku_codes,qty,uom_name,notes,calculation_basis,headcount_base,headcount_round_mode,machine_base,machine_round_mode,dough_set_base,dough_set_round_mode")
         .eq("version_id", versionId);
       if (legacyBasicResult.error) {
         return legacyBasicResult;
@@ -510,6 +524,10 @@ export async function GET(request, { params }) {
       .map((row) => ({
         material_sku_code: row.material_sku_code,
         material_goods_code: row.material_goods_code ?? null,
+        substitute_material_sku_codes: normalizeSubstituteCodes(
+          row.substitute_material_sku_codes,
+          row.material_sku_code
+        ),
         material_name: row.products_cache?.sku_name ?? "",
         iccat_code: row.products_cache?.iccat_code ?? "",
         iccat_name: row.products_cache?.iccat_name ?? "",
@@ -591,6 +609,10 @@ export async function POST(request, { params }) {
       uniqueItems.push({
         material_sku_code: code,
         material_goods_code: goodsCode,
+        substitute_material_sku_codes: normalizeSubstituteCodes(
+          item.substitute_material_sku_codes ?? item.substituteMaterialSkuCodes,
+          code
+        ),
         qty,
         uom_name: normalizeParam(item.uom_name) ?? "",
         notes: normalizeParam(item.notes) ?? "",
@@ -642,9 +664,10 @@ export async function POST(request, { params }) {
       ? requestedWipQtyInputMode
       : WIP_QTY_INPUT_MODES.UNIT;
 
-    const componentCodes = Array.from(
-      new Set(uniqueItems.map((item) => item.material_sku_code).filter(Boolean))
-    );
+    const componentCodes = Array.from(new Set(uniqueItems.flatMap((item) => [
+      item.material_sku_code,
+      ...item.substitute_material_sku_codes,
+    ]).filter(Boolean)));
     let childTypes = [];
     let childEntries = [];
     if (componentCodes.length > 0) {
@@ -671,7 +694,20 @@ export async function POST(request, { params }) {
         materialCode: sku,
         itemType: resolveItemTypeByCategory(categoryBySku.get(sku)),
       }));
-      childTypes = childEntries.map((entry) => entry.itemType);
+      const itemTypeBySku = new Map(childEntries.map((entry) => [entry.materialCode, entry.itemType]));
+      for (const item of uniqueItems) {
+        const primaryType = itemTypeBySku.get(item.material_sku_code);
+        const invalidSubstitute = item.substitute_material_sku_codes.find(
+          (code) => itemTypeBySku.get(code) !== primaryType
+        );
+        if (invalidSubstitute) {
+          return Response.json(
+            { error: `Substitute ${invalidSubstitute} must have the same item type as ${item.material_sku_code}` },
+            { status: 400 }
+          );
+        }
+      }
+      childTypes = uniqueItems.map((item) => itemTypeBySku.get(item.material_sku_code));
     }
 
     const matrixCheck = validateBomMatrix({ parentType, childTypes, childEntries });
@@ -769,7 +805,7 @@ export async function POST(request, { params }) {
     if (resolvedLastVersion?.id) {
       const { data: prevItems, error: prevError } = await supabaseAdmin
         .from("production_bom_items")
-        .select("material_sku_code,material_goods_code,qty,uom_name,notes,planning_offset_days,calculation_basis,headcount_base,headcount_round_mode,machine_base,machine_round_mode,dough_set_base,dough_set_round_mode")
+        .select("material_sku_code,material_goods_code,substitute_material_sku_codes,qty,uom_name,notes,planning_offset_days,calculation_basis,headcount_base,headcount_round_mode,machine_base,machine_round_mode,dough_set_base,dough_set_round_mode")
         .eq("version_id", resolvedLastVersion.id);
       if (prevError && !isMissingPlanningOffsetColumn(prevError) && !isMissingHeadcountColumns(prevError)) {
         return Response.json({ error: "Failed to load previous items" }, { status: 500 });
@@ -777,7 +813,7 @@ export async function POST(request, { params }) {
       if (prevError && (isMissingPlanningOffsetColumn(prevError) || isMissingHeadcountColumns(prevError))) {
         const legacyPrevItems = await supabaseAdmin
           .from("production_bom_items")
-          .select("material_sku_code,material_goods_code,qty,uom_name,notes,calculation_basis,headcount_base,headcount_round_mode,machine_base,machine_round_mode")
+          .select("material_sku_code,material_goods_code,substitute_material_sku_codes,qty,uom_name,notes,calculation_basis,headcount_base,headcount_round_mode,machine_base,machine_round_mode")
           .eq("version_id", resolvedLastVersion.id);
         if (legacyPrevItems.error) {
           return Response.json({ error: "Failed to load previous items" }, { status: 500 });
@@ -909,6 +945,7 @@ export async function POST(request, { params }) {
         version_id: version.id,
         material_sku_code: item.material_sku_code,
         material_goods_code: item.material_goods_code,
+        substitute_material_sku_codes: item.substitute_material_sku_codes,
         qty: item.qty,
         uom_name: item.uom_name,
         notes: item.notes,

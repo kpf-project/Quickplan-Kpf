@@ -130,7 +130,7 @@ function ProductsPageContent() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-visible mt-4">
           <div className="hidden lg:block table-scroll overflow-x-auto">
             <table className="w-full min-w-[1280px] table-auto border-collapse text-left text-[10px] xl:text-xs table-bordered">
-              <thead className="bg-[#102C57] text-[10px] xl:text-xs uppercase tracking-wider text-white text-center sticky top-0 z-20 shadow-md">
+              <thead className="bg-[var(--surface-navy,#102C57)] text-[10px] xl:text-xs uppercase tracking-wider text-white text-center sticky top-0 z-20 shadow-md">
                 <tr>
                   <th className="px-1 py-2 xl:px-2 xl:py-3 font-semibold border-b border-[#0f172a]">รหัสสินค้า</th>
                   <th className="px-1 py-2 xl:px-2 xl:py-3 font-semibold border-b border-[#0f172a]">ชื่อสินค้า</th>
@@ -178,7 +178,7 @@ function ProductsPageContent() {
                 <div key={`mobile-${row.id}`} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
                   <div className="flex justify-between items-start">
                     <div>
-                      <span className="inline-block bg-[#102C57] text-white text-[10px] px-2 py-0.5 rounded font-mono mb-1">{row.SKU_CODE || "-"}</span>
+                      <span className="inline-block bg-[var(--surface-navy,#102C57)] text-white text-[10px] px-2 py-0.5 rounded font-mono mb-1">{row.SKU_CODE || "-"}</span>
                       <h3 className="text-sm font-bold text-gray-800 leading-tight">{row.SKU_NAME || "-"}</h3>
                   <div className="text-[10px] text-gray-500">{row.ICCAT_NAME ?? "-"}</div>
                   <div className="text-[10px] text-gray-500">{row.ICDEPT_CODE ?? "-"}</div>
@@ -210,7 +210,7 @@ function ProductsPageContent() {
 
 export default function ProductsPage() {
   return (
-    <PermissionGate permissionsAny={["admin-products"]}>
+    <PermissionGate permissionsAny={["admin-products", "data-products-view", "data-products-cost-view"]}>
       <ProductsPageContent />
     </PermissionGate>
   );

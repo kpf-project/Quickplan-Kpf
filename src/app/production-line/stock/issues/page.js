@@ -15,6 +15,7 @@ export default async function ProductionStockIssuePage() {
     <ProductionStockIssuePageClient
       scope={pageData.scope}
       issueTypes={pageData.issueTypes}
+      destinationRooms={pageData.destinationRooms}
       todayIssueDate={pageData.todayIssueDate}
       initialRecentIssues={pageData.recentIssues}
       initialSummary={pageData.summary}

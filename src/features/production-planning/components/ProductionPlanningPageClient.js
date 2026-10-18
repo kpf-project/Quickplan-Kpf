@@ -627,7 +627,7 @@ export default function ProductionPlanningPageClient({
   const planKindLabel = isSubPlanHint ? `แผนย่อย (T+${tPlusDaysDefault})` : "แผนหลัก";
   const planKindToneClass = isSubPlanHint
     ? "border-[#d4af37]/40 bg-[#d4af37]/15 text-[#8a6d1f]"
-    : "border-[#102C57]/20 bg-[#102C57]/10 text-[#102C57]";
+    : "border-[#102C57]/20 bg-[var(--surface-navy,#102C57)]/10 text-[#102C57]";
   const formatPlanNo = useCallback((value) => {
     const raw = String(value || "").trim();
     if (!raw) return "-";
@@ -2354,7 +2354,7 @@ export default function ProductionPlanningPageClient({
         <span className="inline-flex w-fit rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-gray-600 shadow-sm">
           {item.categoryName || "-"}
         </span>
-        <span className="inline-flex w-fit rounded-full border border-[#102C57]/20 bg-[#102C57]/5 px-2 py-0.5 font-mono text-[10px] font-semibold text-[#102C57]">
+        <span className="inline-flex w-fit rounded-full border border-[#102C57]/20 bg-[var(--surface-navy,#102C57)]/5 px-2 py-0.5 font-mono text-[10px] font-semibold text-[#102C57]">
           {planNo}
         </span>
         {isPlanView && item?.subPlanNo ? (
@@ -2370,7 +2370,7 @@ export default function ProductionPlanningPageClient({
     const kind = item.planKind || "main";
     const isSub = kind === "sub";
     const label = isSub ? "ย่อย" : "หลัก";
-    const cellClass = isSub ? "bg-[#d4af37] text-[#102C57]" : "bg-[#102C57] text-white";
+    const cellClass = isSub ? "bg-[#d4af37] text-[#102C57]" : "bg-[var(--surface-navy,#102C57)] text-white";
     return { label, cellClass };
   };
 
@@ -2384,7 +2384,7 @@ export default function ProductionPlanningPageClient({
         {/* Desktop Table View */}
         <div className="hidden lg:block">
           <table className="w-full border-collapse text-left text-sm table-fixed">
-            <thead className="bg-[#102C57] text-white text-xs uppercase tracking-wider sticky top-0 z-10 shadow-md">
+            <thead className="bg-[var(--surface-navy,#102C57)] text-white text-xs uppercase tracking-wider sticky top-0 z-10 shadow-md">
               <tr>
                 <th className="px-4 py-3 font-semibold border-b border-[#0f172a] whitespace-nowrap w-[90px]">วันที่</th>
                 <th className="px-4 py-3 font-semibold border-b border-[#0f172a] whitespace-nowrap w-[90px] text-center">ประเภท</th>
@@ -2482,7 +2482,7 @@ export default function ProductionPlanningPageClient({
                   <span
                     className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${item.planKind === "sub"
                       ? "border-[#d4af37]/40 bg-[#d4af37]/15 text-[#8a6d1f]"
-                      : "border-[#102C57]/20 bg-[#102C57]/10 text-[#102C57]"
+                      : "border-[#102C57]/20 bg-[var(--surface-navy,#102C57)]/10 text-[#102C57]"
                       }`}
                   >
                     {item.planKind === "sub" ? "ย่อย" : "หลัก"}
@@ -2540,118 +2540,34 @@ export default function ProductionPlanningPageClient({
 
   return (
     <div className="flex min-h-screen flex-col bg-[#f8f9fa] overflow-x-hidden">
-      <PlanningHeader
-        activeTab={activeView === "master" ? "master" : activeView === "plan" ? "plan" : activeView === "report" ? "report" : activeView === "expired" ? "expired" : "master"}
-        title={isMasterView ? "แผนหลัก" : isPlanView ? "งานแผนก" : isReportView ? "รายงานแผนการผลิต" : "รายการหมดอายุ"}
-        description={isMasterView
-          ? "วางแผนรวมทั้งโรงงาน สร้างฉบับร่าง และเผยแพร่เพื่อส่งต่อให้แต่ละแผนกดำเนินงาน"
-          : isPlanView
-            ? "ติดตามงานจากแผนหลักที่เผยแพร่แล้ว และยืนยันแผนย่อยตามสิทธิ์ของแต่ละแผนก"
-            : isReportView
-              ? "ตรวจสอบแผนที่เผยแพร่แล้วแบบอ่านอย่างเดียว พร้อมเจาะดูรายการตามช่วงวันที่และแผนก"
-              : "ติดตามรายการที่พ้นกำหนด เพื่อให้ทีมวางแผนจัดการต่อได้ทันเวลา"}
-        compact={isCompactPlanningHeader}
-        maxWidth="max-w-5xl"
-        meta={(
-          <>
-            <span>รายการทั้งหมด {tabCounts[activeView] ?? 0} รายการ · อัปเดตแผนล่าสุด</span>
-            {(isPlanView || isReportView) ? (
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-white/80">
-                  {sourceModeLabel}
-                </span>
-                <Link
-                  href={sourceToggleHref}
-                  className="inline-flex items-center rounded-full border border-[#d4af37]/35 bg-[#d4af37]/10 px-2 py-0.5 text-[10px] font-semibold text-[#f6d983] hover:bg-[#d4af37]/20"
-                >
-                  {sourceToggleLabel}
-                </Link>
-              </div>
-            ) : null}
-          </>
-        )}
-      >
-        {isReportView ? (
-          <div className="rounded-lg border border-white/10 bg-white/5 p-3">
-            <div className="grid grid-cols-1 gap-2 md:grid-cols-7">
-              <input
-                value={reportQuery}
-                onChange={(e) => setReportQuery(e.target.value)}
-                placeholder="ค้นหา SKU หรือชื่อสินค้า"
-                className="h-10 rounded-md border border-white/10 bg-black/20 px-3 text-sm text-white outline-none placeholder:text-white/40 focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37]"
-              />
-              <input
-                type="date"
-                value={reportStartDate}
-                onChange={(e) => setReportStartDate(e.target.value)}
-                className="h-10 rounded-md border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37]"
-                aria-label="กรองวันที่ยืนยันเริ่มต้น"
-              />
-              <input
-                type="date"
-                value={reportEndDate}
-                onChange={(e) => setReportEndDate(e.target.value)}
-                className="h-10 rounded-md border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37]"
-                aria-label="กรองวันที่ยืนยันสิ้นสุด"
-              />
-              <select
-                value={reportCategory}
-                onChange={(e) => setReportCategory(e.target.value)}
-                className="h-10 rounded-md border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37]"
-                aria-label="กรองหมวดสินค้า"
-              >
-                {reportCategoryOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option === "all" ? "ทุกหมวด" : option}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={reportPlanKind}
-                onChange={(e) => setReportPlanKind(e.target.value)}
-                className="h-10 rounded-md border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37]"
-                aria-label="กรองประเภทแผน"
-              >
-                <option value="all">ทุกประเภทแผน</option>
-                <option value="main">แผนหลัก</option>
-                <option value="sub">แผนย่อย</option>
-              </select>
-              <select
-                value={reportDepartment}
-                onChange={(e) => setReportDepartment(e.target.value)}
-                className="h-10 rounded-md border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37]"
-                aria-label="กรองแผนก"
-              >
-                <option value="">ทุกแผนก</option>
-                {departmentOptions.map((dept) => (
-                  <option key={dept.code} value={dept.code}>
-                    {dept.name ? `${dept.code} - ${dept.name}` : dept.code}
-                  </option>
-                ))}
-              </select>
-              <input
-                value={reportPlanNo}
-                onChange={(e) => setReportPlanNo(e.target.value)}
-                placeholder="ค้นหาเลขแผน"
-                className="h-10 rounded-md border border-white/10 bg-black/20 px-3 text-sm text-white outline-none placeholder:text-white/40 focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37]"
-                aria-label="ค้นหาเลขแผน"
-              />
+      {/* Unified Planning Sub-Header */}
+      <PlanningHeader activeTab={activeView === "plan" ? "plan" : "master"} />
+
+      {/* Plan Page Toolbar */}
+      {isPlanView ? (
+        <div className="border-b border-slate-200 bg-white px-4 sm:px-6 py-2 shadow-sm text-xs print:hidden">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-slate-600">
+              <span className="font-bold text-[#102C57]">งานแผนก</span>
+              <span className="text-slate-300">·</span>
+              <span>รายการทั้งหมด {tabCounts[activeView] ?? 0} รายการ</span>
             </div>
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-              <p className="text-[11px] text-white/60">ถ้าไม่เลือกช่วงวันที่ ระบบจะแสดงทุกแผนที่เคยเผยแพร่แล้ว</p>
-              <button
-                type="button"
-                onClick={handleClearReportDateRange}
-                className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold text-white/80 transition-colors hover:bg-white/15"
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center rounded-[2px] border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                {sourceModeLabel}
+              </span>
+              <Link
+                href={sourceToggleHref}
+                className="inline-flex items-center rounded-[2px] border border-[#d4af37]/60 bg-[#d4af37]/15 px-2 py-0.5 text-[11px] font-bold text-[#8a6d1c] hover:bg-[#d4af37]/25 transition-colors"
               >
-                ล้างช่วงวันที่
-              </button>
+                {sourceToggleLabel}
+              </Link>
             </div>
           </div>
-        ) : null}
-      </PlanningHeader>
+        </div>
+      ) : null}
       <div className="flex-1">
-        <div className="max-w-[98%] 2xl:max-w-[1800px] mx-auto px-3 sm:px-5 xl:px-6">
+        <div className={isPlanView && planDepartmentTab === "workbench" ? "w-full min-w-0" : "max-w-[98%] 2xl:max-w-[1800px] mx-auto px-3 sm:px-5 xl:px-6"}>
           <div className={gridClassName}>
             {showPlanningControls && (
               <>
@@ -2660,9 +2576,9 @@ export default function ProductionPlanningPageClient({
 
                   {/* Step 1: Date */}
                   <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6 relative overflow-hidden group hover:shadow-md transition-shadow duration-300">
-                    <div className="absolute top-0 left-0 w-1 h-full bg-[#102C57]"></div>
+                    <div className="absolute top-0 left-0 w-1 h-full bg-[var(--surface-navy,#102C57)]"></div>
                     <h2 className="text-[#102C57] font-bold text-lg mb-4 flex items-center gap-2">
-                      <span className="flex items-center justify-center w-6 h-6 rounded-full bg-[#102C57]/10 text-[#102C57] text-xs">1</span>
+                      <span className="flex items-center justify-center w-6 h-6 rounded-full bg-[var(--surface-navy,#102C57)]/10 text-[#102C57] text-xs">1</span>
                       เลือกสัปดาห์และวันผลิต
                     </h2>
                   <div className="mb-4 flex flex-wrap items-center gap-2 text-[11px] font-semibold">
@@ -2671,7 +2587,7 @@ export default function ProductionPlanningPageClient({
                         onClick={() => handleBucketChange("Weekly")}
                         className={`inline-flex items-center rounded-full border px-2.5 py-1 transition-colors ${
                           bucket === "Weekly"
-                            ? "border-[#102C57]/30 bg-[#102C57] text-white"
+                            ? "border-[#102C57]/30 bg-[var(--surface-navy,#102C57)] text-white"
                             : "border-gray-200 bg-white text-gray-600 hover:border-[#102C57]/30 hover:text-[#102C57]"
                         }`}
                       >
@@ -2714,7 +2630,7 @@ export default function ProductionPlanningPageClient({
                         <button
                           type="button"
                           onClick={() => handleMasterWeekStartChange(todayStr)}
-                          className="inline-flex items-center rounded-lg border border-[#102C57]/20 bg-white px-2.5 py-1 text-[11px] font-semibold text-[#102C57] hover:bg-[#102C57]/5"
+                          className="inline-flex items-center rounded-lg border border-[#102C57]/20 bg-white px-2.5 py-1 text-[11px] font-semibold text-[#102C57] hover:bg-[var(--surface-navy,#102C57)]/5"
                         >
                           ใช้วันที่วันนี้
                         </button>
@@ -2738,7 +2654,7 @@ export default function ProductionPlanningPageClient({
                       </div>
                     </div>
                     {bucket === "Weekly" && (
-                      <div className="mt-4 rounded-xl border border-[#102C57]/15 bg-[#102C57]/5 p-3">
+                      <div className="mt-4 rounded-xl border border-[#102C57]/15 bg-[var(--surface-navy,#102C57)]/5 p-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div>
                             <div className="text-xs font-semibold text-[#102C57]">เลือกวันในช่วงที่ต้องการวางแผน</div>
@@ -2760,8 +2676,8 @@ export default function ProductionPlanningPageClient({
                                 onClick={() => handleMasterWorkDateChange(day.date)}
                                 className={`rounded-xl border px-2 py-2 text-left transition-colors ${
                                   isActive
-                                    ? "border-[#102C57] bg-[#102C57] text-white shadow-sm"
-                                    : "border-[#102C57]/15 bg-white text-[#102C57] hover:bg-[#102C57]/5"
+                                    ? "border-[#102C57] bg-[var(--surface-navy,#102C57)] text-white shadow-sm"
+                                    : "border-[#102C57]/15 bg-white text-[#102C57] hover:bg-[var(--surface-navy,#102C57)]/5"
                                 }`}
                               >
                                 <div className="flex items-center justify-between">
@@ -2870,7 +2786,7 @@ export default function ProductionPlanningPageClient({
                           disabled={loading || products.length === 0}
                           className="w-full h-12 sm:h-14 bg-[#f8fafc] hover:bg-blue-50 text-[#102C57] border-2 border-dashed border-blue-200 hover:border-[#102C57] rounded-xl font-bold transition-all flex items-center justify-center gap-3 group active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          <div className="w-8 h-8 rounded-full bg-[#102C57] text-white flex items-center justify-center group-hover:bg-[#d4af37] group-hover:text-[#102C57] transition-colors">
+                          <div className="w-8 h-8 rounded-full bg-[var(--surface-navy,#102C57)] text-white flex items-center justify-center group-hover:bg-[#d4af37] group-hover:text-[#102C57] transition-colors">
                             <ListPlus size={18} />
                           </div>
                           เลือกรายการสินค้าเข้าวันนี้
@@ -2903,7 +2819,7 @@ export default function ProductionPlanningPageClient({
                         type="button"
                         onClick={() => setIsDrawerOpen(true)}
                         disabled={loading || products.length === 0}
-                        className="mt-4 w-full h-12 sm:h-13 bg-[#102C57] hover:bg-[#0b2244] text-white rounded-xl font-bold transition-all flex items-center justify-center gap-3 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="mt-4 w-full h-12 sm:h-13 bg-[var(--surface-navy,#102C57)] hover:bg-[#0b2244] text-white rounded-xl font-bold transition-all flex items-center justify-center gap-3 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <div className="w-8 h-8 rounded-full bg-white/10 text-white flex items-center justify-center">
                           <ListPlus size={18} />
@@ -3052,7 +2968,7 @@ export default function ProductionPlanningPageClient({
                                 <div className="mt-1 text-[11px] text-slate-500">
                                   ตารางนี้จะแสดงทุกรายการของเลขแผนเดียวกัน เช่น ถ้าวางแผนวันที่ 17 และ 18 จะเห็นทั้งสองวันในตารางเดียว
                                 </div>
-                                <div className="mt-2 inline-flex items-center rounded-full border border-[#102C57]/20 bg-[#102C57]/5 px-3 py-1 font-mono text-[11px] font-semibold text-[#102C57]">
+                                <div className="mt-2 inline-flex items-center rounded-full border border-[#102C57]/20 bg-[var(--surface-navy,#102C57)]/5 px-3 py-1 font-mono text-[11px] font-semibold text-[#102C57]">
                                   เลขแผน: {currentMasterPlanNoDisplay}
                                 </div>
                               </div>
@@ -3091,7 +3007,7 @@ export default function ProductionPlanningPageClient({
                                         type="button"
                                         onClick={handlePublishMasterPlanFromButton}
                                         disabled={isPublishingMasterPlan || isSubmittingVerify}
-                                        className="h-10 rounded-lg bg-[#102C57] px-4 text-xs font-bold text-white transition-colors hover:bg-[#0b1f3f] disabled:cursor-not-allowed disabled:opacity-50"
+                                        className="h-10 rounded-lg bg-[var(--surface-navy,#102C57)] px-4 text-xs font-bold text-white transition-colors hover:bg-[#0b1f3f] disabled:cursor-not-allowed disabled:opacity-50"
                                       >
                                         {isPublishingMasterPlan ? "กำลังเผยแพร่..." : "เผยแพร่แผนหลัก (Admin)"}
                                       </button>
@@ -3105,7 +3021,7 @@ export default function ProductionPlanningPageClient({
                               <>
                                 <div className="hidden lg:block table-scroll">
                                   <table className="w-full border-collapse text-left text-xs table-bordered table-compact">
-                                    <thead className="bg-[#102C57] text-white">
+                                    <thead className="bg-[var(--surface-navy,#102C57)] text-white">
                                       <tr>
                                         <th className="px-3 py-2 font-semibold border-b border-[#0f172a] text-center">วันที่</th>
                                         <th className="px-3 py-2 font-semibold border-b border-[#0f172a] text-center">เวลาทำงาน</th>
@@ -3287,7 +3203,7 @@ export default function ProductionPlanningPageClient({
                     {isReportView && (
                       <div className="px-3 pt-3 pb-1">
                         <div className="overflow-hidden rounded-2xl border border-[#102C57]/15 bg-white shadow-sm">
-                          <div className="border-b border-[#0f172a] bg-[#102C57] px-5 py-4 text-white">
+                          <div className="border-b border-[#0f172a] bg-[var(--surface-navy,#102C57)] px-5 py-4 text-white">
                             <div className="flex flex-wrap items-start justify-between gap-3">
                               <div>
                                 <div className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#f2d68a]">รายงานแผนหลัก</div>
@@ -3414,7 +3330,7 @@ export default function ProductionPlanningPageClient({
                                       </div>
 
                                       <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
-                                        <div className="rounded-xl border border-[#102C57]/10 bg-[#102C57]/[0.03] px-3 py-2.5">
+                                        <div className="rounded-xl border border-[#102C57]/10 bg-[var(--surface-navy,#102C57)]/[0.03] px-3 py-2.5">
                                           <div className="text-[10px] text-slate-500">แผนรวม</div>
                                           <div className="mt-1 text-base font-bold text-[#102C57]">{formatNumber(row.totalQty, 0)}</div>
                                         </div>
@@ -3446,7 +3362,7 @@ export default function ProductionPlanningPageClient({
                                         </div>
                                         <div className="mt-2 flex flex-wrap gap-2">
                                           {row.dayPreview.map((day) => (
-                                            <span key={`${row.planNo}-${day}`} className="rounded-full border border-[#102C57]/15 bg-[#102C57]/[0.03] px-2.5 py-1 text-[11px] font-semibold text-[#102C57]">
+                                            <span key={`${row.planNo}-${day}`} className="rounded-full border border-[#102C57]/15 bg-[var(--surface-navy,#102C57)]/[0.03] px-2.5 py-1 text-[11px] font-semibold text-[#102C57]">
                                               {formatDate(day)}
                                             </span>
                                           ))}
@@ -3469,7 +3385,7 @@ export default function ProductionPlanningPageClient({
                     {isPlanView && planDepartmentTab === "master-plans" && (
                       <div className="px-3 pb-3">
                         <div className="space-y-3">
-                          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#102C57]/10 bg-[#102C57]/[0.03] px-4 py-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#102C57]/10 bg-[var(--surface-navy,#102C57)]/[0.03] px-4 py-3">
                             <div className="inline-flex items-center rounded-full border border-[#102C57]/20 bg-white px-3 py-1 font-mono text-[11px] font-semibold text-[#102C57]">
                               เลขแผน: {workbenchPlanNo ? formatPlanNo(workbenchPlanNo) : "ทุกเลขแผน"}
                             </div>
@@ -3516,7 +3432,7 @@ export default function ProductionPlanningPageClient({
                       </div>
                     )}
                     {isPlanView && planDepartmentTab === "workbench" ? (
-                      <div className="px-3 pb-3">
+                      <div className="min-w-0 pb-3">
                         <div className="space-y-3">
                           <QaSubplanWorkbenchClient
                             key={workbenchPlanNo || "all-plans"}
@@ -3574,7 +3490,7 @@ export default function ProductionPlanningPageClient({
                           {/* Desktop Table View */}
                           <div className="hidden lg:block table-scroll">
                             <table className="w-full table-auto border-collapse text-left text-xs xl:text-sm table-bordered table-compact">
-                              <thead className="bg-[#102C57] text-sm uppercase tracking-wider text-white text-center sticky top-0 z-20 shadow-md">
+                              <thead className="bg-[var(--surface-navy,#102C57)] text-sm uppercase tracking-wider text-white text-center sticky top-0 z-20 shadow-md">
                                 <tr>
                                   <th className="px-1 py-2 xl:px-2 xl:py-3 font-semibold border-b border-[#0f172a] text-left">วันที่</th>
                                   <th className="px-1 py-2 xl:px-2 xl:py-3 font-semibold border-b border-[#0f172a] text-center">เผยแพร่</th>
@@ -3768,7 +3684,7 @@ export default function ProductionPlanningPageClient({
                                               <button
                                                 type="button"
                                                 onClick={() => openEditModal(item)}
-                                                className="inline-flex items-center rounded-lg border border-[#102C57]/20 bg-white px-2.5 py-1 text-[11px] font-semibold text-[#102C57] transition-colors hover:bg-[#102C57]/5"
+                                                className="inline-flex items-center rounded-lg border border-[#102C57]/20 bg-white px-2.5 py-1 text-[11px] font-semibold text-[#102C57] transition-colors hover:bg-[var(--surface-navy,#102C57)]/5"
                                               >
                                                 แก้ไข
                                               </button>
@@ -3825,7 +3741,7 @@ export default function ProductionPlanningPageClient({
                                           <span
                                             className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${item.planKind === "sub"
                                               ? "border-[#d4af37]/40 bg-[#d4af37]/15 text-[#8a6d1f]"
-                                              : "border-[#102C57]/20 bg-[#102C57]/10 text-[#102C57]"
+                                              : "border-[#102C57]/20 bg-[var(--surface-navy,#102C57)]/10 text-[#102C57]"
                                               }`}
                                           >
                                             {item.planKind === "sub" ? "ย่อย" : "หลัก"}
@@ -3941,7 +3857,7 @@ export default function ProductionPlanningPageClient({
 
                                     <div className="mt-3 flex items-center justify-between gap-3">
                                       <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[10px] text-gray-500">
-                                        <span className="rounded-full border border-[#102C57]/20 bg-[#102C57]/5 px-2 py-0.5 font-mono text-[#102C57]">
+                                        <span className="rounded-full border border-[#102C57]/20 bg-[var(--surface-navy,#102C57)]/5 px-2 py-0.5 font-mono text-[#102C57]">
                                           {formatPlanNo(getMasterPlanNo(item))}
                                         </span>
                                         {renderPlanMeta(item)}
@@ -3976,7 +3892,7 @@ export default function ProductionPlanningPageClient({
                                               <button
                                                 type="button"
                                                 onClick={() => openEditModal(item)}
-                                                className="inline-flex items-center rounded-lg border border-[#102C57]/20 bg-white px-2.5 py-1 text-xs font-semibold text-[#102C57] transition-colors hover:bg-[#102C57]/5"
+                                                className="inline-flex items-center rounded-lg border border-[#102C57]/20 bg-white px-2.5 py-1 text-xs font-semibold text-[#102C57] transition-colors hover:bg-[var(--surface-navy,#102C57)]/5"
                                               >
                                                 แก้ไข
                                               </button>
@@ -4006,7 +3922,7 @@ export default function ProductionPlanningPageClient({
       </div>
 
       {publishSuccessModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#102C57]/45 p-4 backdrop-blur-[2px]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--surface-navy,#102C57)]/45 p-4 backdrop-blur-[2px]">
           <div className="w-full max-w-md overflow-hidden rounded-3xl border border-[#102C57]/15 bg-white shadow-2xl">
             <div className="bg-gradient-to-r from-[#102C57] to-[#0f172a] px-6 py-5 text-white">
               <div className="flex items-center gap-3">
@@ -4030,7 +3946,7 @@ export default function ProductionPlanningPageClient({
                 <button
                   type="button"
                   onClick={() => setPublishSuccessModalOpen(false)}
-                  className="rounded-xl border border-[#102C57]/15 px-4 py-2 text-sm font-semibold text-[#102C57] transition-colors hover:bg-[#102C57]/5"
+                  className="rounded-xl border border-[#102C57]/15 px-4 py-2 text-sm font-semibold text-[#102C57] transition-colors hover:bg-[var(--surface-navy,#102C57)]/5"
                 >
                   ปิด
                 </button>
@@ -4043,7 +3959,7 @@ export default function ProductionPlanningPageClient({
       {reportDetailModalOpen && selectedReportPlanSummary ? (
         <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/50 p-3 sm:p-4 overflow-y-auto">
           <div className="w-full max-w-6xl max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] rounded-2xl bg-white shadow-2xl border border-[#0f172a]/20 overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 bg-[#102C57] text-white">
+            <div className="flex items-center justify-between px-5 py-4 bg-[var(--surface-navy,#102C57)] text-white">
               <div>
                 <div className="text-xs uppercase tracking-[0.3em] text-[#d4af37]">รายงานแผนหลัก</div>
                 <div className="text-lg font-bold">{formatPlanNo(selectedReportPlanSummary.planNo)}</div>
@@ -4060,7 +3976,7 @@ export default function ProductionPlanningPageClient({
 
             <div className="min-h-0 flex-1 overflow-y-auto p-5 space-y-4">
               <div className="grid grid-cols-2 gap-2 lg:grid-cols-6">
-                <div className="rounded-lg border border-[#102C57]/15 bg-[#102C57]/5 px-3 py-2">
+                <div className="rounded-lg border border-[#102C57]/15 bg-[var(--surface-navy,#102C57)]/5 px-3 py-2">
                   <div className="text-[10px] text-gray-500">FG หลัก</div>
                   <div className="mt-1 text-sm font-bold text-[#102C57]">{selectedReportFgItems.length.toLocaleString()}</div>
                 </div>
@@ -4104,7 +4020,7 @@ export default function ProductionPlanningPageClient({
                   ) : (
                     <div className="mt-2 overflow-x-auto">
                       <table className="w-full min-w-[720px] border-collapse text-[11px]">
-                        <thead className="bg-[#102C57] text-white">
+                        <thead className="bg-[var(--surface-navy,#102C57)] text-white">
                           <tr>
                             <th className="px-2 py-2 text-left font-semibold">วันที่</th>
                             <th className="px-2 py-2 text-left font-semibold">SKU</th>
@@ -4157,7 +4073,7 @@ export default function ProductionPlanningPageClient({
                   ) : (
                     <div className="mt-2 overflow-x-auto">
                       <table className="w-full min-w-[820px] border-collapse text-[11px]">
-                        <thead className="bg-[#102C57] text-white">
+                        <thead className="bg-[var(--surface-navy,#102C57)] text-white">
                           <tr>
                             <th className="px-2 py-2 text-left font-semibold">แผนย่อย</th>
                             <th className="px-2 py-2 text-center font-semibold">แผนก</th>
@@ -4215,7 +4131,7 @@ export default function ProductionPlanningPageClient({
                 ) : (
                   <div className="mt-2 overflow-x-auto">
                     <table className="w-full min-w-[860px] border-collapse text-[11px]">
-                      <thead className="bg-[#102C57] text-white">
+                      <thead className="bg-[var(--surface-navy,#102C57)] text-white">
                         <tr>
                           <th className="px-2 py-2 text-left font-semibold">รหัส</th>
                           <th className="px-2 py-2 text-left font-semibold">ชื่อวัตถุดิบ</th>
@@ -4294,7 +4210,7 @@ export default function ProductionPlanningPageClient({
                             ) : (
                               <div className="mt-2 overflow-x-auto">
                                 <table className="w-full min-w-[640px] border-collapse text-[11px]">
-                                  <thead className="bg-[#102C57] text-white">
+                                  <thead className="bg-[var(--surface-navy,#102C57)] text-white">
                                     <tr>
                                       <th className="px-2 py-2 text-left font-semibold">แผนย่อย</th>
                                       <th className="px-2 py-2 text-center font-semibold">แผนก</th>
@@ -4367,7 +4283,7 @@ export default function ProductionPlanningPageClient({
       {editModalOpen && (
         <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/50 p-3 sm:p-4 overflow-y-auto">
           <div className="w-full max-w-5xl max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] rounded-2xl bg-white shadow-2xl border border-[#0f172a]/20 overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 bg-[#102C57] text-white">
+            <div className="flex items-center justify-between px-5 py-4 bg-[var(--surface-navy,#102C57)] text-white">
               <div>
                 <div className="text-xs uppercase tracking-[0.3em] text-[#d4af37]">แผนการผลิต</div>
                 <div className="text-lg font-bold">แก้ไขแผนและปรับการเบิกวัตถุดิบ</div>
@@ -4410,7 +4326,7 @@ export default function ProductionPlanningPageClient({
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
-                <span className="inline-flex items-center rounded-full border border-[#102C57]/10 bg-[#102C57]/5 px-2 py-0.5">
+                <span className="inline-flex items-center rounded-full border border-[#102C57]/10 bg-[var(--surface-navy,#102C57)]/5 px-2 py-0.5">
                   สูตรมาตรฐาน: คำนวณจาก BOM ล่าสุด
                 </span>
                 <span className="inline-flex items-center rounded-full border border-[#d4af37]/40 bg-[#d4af37]/15 px-2 py-0.5 text-[#8a6d1f]">
@@ -4441,7 +4357,7 @@ export default function ProductionPlanningPageClient({
                 <>
                   <div className="hidden md:block overflow-auto rounded-xl border border-gray-200">
                     <table className="w-full text-sm border-collapse">
-                      <thead className="bg-[#102C57] text-white text-xs uppercase tracking-wider">
+                      <thead className="bg-[var(--surface-navy,#102C57)] text-white text-xs uppercase tracking-wider">
                         <tr>
                           <th className="px-3 py-2 text-left w-[140px]">รหัสวัตถุดิบ</th>
                           <th className="px-3 py-2 text-left">ชื่อวัตถุดิบ</th>
@@ -4660,7 +4576,7 @@ export default function ProductionPlanningPageClient({
                   type="button"
                   onClick={saveEditQuantity}
                   disabled={!canSaveEdit}
-                  className="px-5 py-2.5 rounded-lg bg-[#102C57] text-white text-sm font-bold shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-5 py-2.5 rounded-lg bg-[var(--surface-navy,#102C57)] text-white text-sm font-bold shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isUpdatingQty ? "กำลังบันทึก..." : "บันทึกการแก้ไข"}
                 </button>
@@ -4696,7 +4612,7 @@ export default function ProductionPlanningPageClient({
               ) : (
                 <div className="overflow-auto rounded-xl border border-gray-200">
                   <table className="w-full table-fixed border-collapse text-sm">
-                    <thead className="bg-[#102C57] text-white text-xs uppercase tracking-wider">
+                    <thead className="bg-[var(--surface-navy,#102C57)] text-white text-xs uppercase tracking-wider">
                       <tr>
                         <th className="px-3 py-2 text-left w-[140px]">รหัสวัตถุดิบ</th>
                         <th className="px-3 py-2 text-left">ชื่อวัตถุดิบ</th>

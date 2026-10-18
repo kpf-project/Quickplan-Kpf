@@ -1,7 +1,8 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# dependencies
-/node_modules
+# Dependencies
+node_modules/
+**/node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -10,48 +11,107 @@
 !.yarn/releases
 !.yarn/versions
 
-# testing
-/coverage
+# Testing & Coverage
+/coverage/
+**/coverage/
+.nyc_output/
+testsprite_tests/
+test-results/
+playwright-report/
+.playwright-cli/
 
-# next.js
+# Next.js & Web build output
 /.next/
+**/.next/
 .deployment-id
 /out/
-
-# production
+**/out/
 /build
+**/build/
+/dist
+**/dist/
+**/.turbo/
 
-# misc
-.DS_Store
-*.pem
+# AI Folders & Debug Sessions (Gemini, Claude, Antigravity, Kimi, TestSprite, etc.)
+/.agent/
+/.agents/
+/.claude/
+/.antigravitycli/
+/.archify/
+/artifacts/
+/kimi-debug-session*/
 
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
+# Documentation, Manuals & Notes
+/docs/
+/DOC/
+/knowledge-base/
+/Project/
+/design-qa.md
 
-# env files (can opt-in for committing if needed)
-.env*
-
-# local database dumps
-/.backups/
-/.codex-backups/
-
-# vercel
-.vercel
-
-# typescript
-*.tsbuildinfo
-next-env.d.ts
-
-# temporary folders
+# Temporary, Scratch & Cache Folders
 /.codex-tmp/
 /.codex-tmp-*/
 /.tmp/
 /tmp/
+**/tmp/
+**/.tmp/
+/scratch/
+supabase/**/.temp/
+supabase/.temp/
 
-# .NET build output and Visual Studio files
+# Reports, Exports & Generated Files
+/output/
+/outputs/
+
+# Local Backups & Database Dumps
+/backups/
+/.backups/
+/.codex-backups/
+*.sql.bak
+/production-cutover-all-data.sql
+
+# Environment & Sensitive Credentials
+.env*
+!.env.example
+public/password-supabase.txt
+android/วิธีอัปเดตwrapper.txt
+*keystore*
+*.jks
+*.key
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+supabase_logs.json
+
+# Scratch root test files and images
+/ABC.png
+/pdf.png
+/*.jpg
+/check-movements-db.mjs
+/fix-report-client.mjs
+/export excel.txt
+
+# OS & misc
+.DS_Store
+Thumbs.db
+*.pem
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Android Build Outputs
+android/**/.gradle/
+android/**/build/
+android/**/local.properties
+android/**/.cxx/
+android/sunmi-v3-wrapper/app/release/
+
+# .NET Build Output & Visual Studio files
 [Bb]in/
 [Oo]bj/
 .vs/
@@ -60,4 +120,3 @@ next-env.d.ts
 *.userosscache
 *.sln.docstates
 *.userprefs
-Thumbs.db

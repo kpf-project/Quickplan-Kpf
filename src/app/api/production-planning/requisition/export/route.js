@@ -10,6 +10,7 @@ import {
   reserveDocumentNumbers,
   REQUISITION_GROUP_STATUS,
 } from "@/lib/requisitionGroups";
+import { fetchSupabaseRowsByChunks } from "@/lib/supabaseRangeFetch";
 
 export const dynamic = "force-dynamic";
 
@@ -105,17 +106,15 @@ export async function POST(request) {
       action: "view",
     });
 
-    const groupsResult = await supabaseAdmin
-      .from("production_requisition_group_batches")
-      .select("*")
-      .in("id", groupIds)
-      .order("created_at", { ascending: true });
+    const groups = await fetchSupabaseRowsByChunks(
+      groupIds,
+      (chunk) => supabaseAdmin
+        .from("production_requisition_group_batches")
+        .select("*")
+        .in("id", chunk)
+        .order("created_at", { ascending: true })
+    );
 
-    if (groupsResult.error) {
-      return NextResponse.json({ error: groupsResult.error.message }, { status: 500 });
-    }
-
-    const groups = Array.isArray(groupsResult.data) ? groupsResult.data : [];
     if (groups.length !== groupIds.length) {
       return NextResponse.json({ error: "Some requisition groups were not found" }, { status: 404 });
     }
@@ -295,12 +294,16 @@ export async function POST(request) {
 
     // 1. Delete old lines in bulk to avoid duplicates
     if (allDeleteDocRefs.length > 0) {
-      const { error: deleteError } = await supabaseAdmin
-        .from("production_requisition_export_lines")
-        .delete()
-        .in("doc_ref", allDeleteDocRefs);
-      if (deleteError) {
-        return NextResponse.json({ error: deleteError.message }, { status: 500 });
+      const uniqueDeleteDocRefs = Array.from(new Set(allDeleteDocRefs.filter(Boolean)));
+      for (let i = 0; i < uniqueDeleteDocRefs.length; i += 40) {
+        const chunk = uniqueDeleteDocRefs.slice(i, i + 40);
+        const { error: deleteError } = await supabaseAdmin
+          .from("production_requisition_export_lines")
+          .delete()
+          .in("doc_ref", chunk);
+        if (deleteError) {
+          return NextResponse.json({ error: deleteError.message }, { status: 500 });
+        }
       }
     }
 

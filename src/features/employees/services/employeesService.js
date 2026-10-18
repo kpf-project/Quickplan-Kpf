@@ -1,9 +1,9 @@
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { getSupabaseAdmin } from "@/lib/adminApi";
 import { createAppError, fail, ok } from "@/lib/result";
 
 export async function listEmployees(request) {
-  await requirePermissionKeys(request, ["admin-employees"]);
+  await requireTaskPermission(request, "hr-employees-view");
   const gatewayUrl = process.env.KPF_GATEWAY_URL;
   const apiKey = process.env.KPF_API_KEY;
   const { searchParams } = new URL(request.url);

@@ -325,7 +325,7 @@ function ClaimAdjustmentsBar({ totalRows = 0, editableRows = 0, lockedRows = 0, 
       <button
         type="button"
         onClick={onOpen}
-        className="rounded-xl bg-[#102C57] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1a3d6b]"
+        className="rounded-xl bg-[var(--surface-navy,#102C57)] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1a3d6b]"
       >
         จัดการจำนวนที่ยังไม่เคลม
       </button>
@@ -358,7 +358,7 @@ function ClaimMaterialPickerDrawer({
     <div className="fixed inset-0 z-[60] flex justify-end">
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
       <div className="relative flex h-full w-full max-w-3xl flex-col bg-white shadow-2xl animate-in slide-in-from-right duration-300">
-        <div className="border-b border-gray-100 bg-[#102C57] px-5 py-4 text-white">
+        <div className="border-b border-gray-100 bg-[var(--surface-navy,#102C57)] px-5 py-4 text-white">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#f2d68a]">Material Picker</div>
@@ -530,7 +530,7 @@ function ClaimAdjustmentsModal({
               type="button"
               onClick={onSave}
               disabled={saving}
-              className="rounded-lg bg-[#102C57] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              className="rounded-lg bg-[var(--surface-navy,#102C57)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
             >
               {saving ? "กำลังบันทึก..." : "บันทึกการเปลี่ยนแปลง"}
             </button>
@@ -632,7 +632,7 @@ function GroupingDrawer({ drawerState, lookup27Departments, onClose, onSaved }) 
     const isChecked = ticked.has(row.sourceRowKey);
     const suggestedGroup = patternMap.get(row.materialGoodsCode || row.materialSkuCode);
     return (
-      <label className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${isChecked ? "border-[#102C57]/30 bg-[#102C57]/5" : "border-slate-100 bg-white hover:bg-slate-50"}`}>
+      <label className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${isChecked ? "border-[#102C57]/30 bg-[var(--surface-navy,#102C57)]/5" : "border-slate-100 bg-white hover:bg-slate-50"}`}>
         <input type="checkbox" checked={isChecked} onChange={() => toggleRow(row.sourceRowKey)}
           className="h-4 w-4 rounded border-slate-300 accent-[#102C57]" />
         <div className="flex-1 min-w-0">
@@ -663,7 +663,7 @@ function GroupingDrawer({ drawerState, lookup27Departments, onClose, onSaved }) 
       <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px]" onClick={onClose} />
       <div className="fixed right-0 top-0 z-50 flex h-full w-full max-w-md flex-col bg-white shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between bg-[#102C57] px-5 py-4">
+        <div className="flex items-center justify-between bg-[var(--surface-navy,#102C57)] px-5 py-4">
           <div>
             <p className="text-[11px] font-semibold text-white/60 uppercase tracking-wide">สร้างใบเบิก</p>
             <h3 className="text-sm font-bold text-white mt-0.5">{fmtDate(date)} - {deptName}</h3>
@@ -743,7 +743,7 @@ function GroupingDrawer({ drawerState, lookup27Departments, onClose, onSaved }) 
                 {newRows.map((row) => {
                   const isChecked = ticked.has(row.sourceRowKey);
                   return (
-                    <label key={row.sourceRowKey} className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${isChecked ? "border-[#102C57]/30 bg-[#102C57]/5" : "border-dashed border-slate-200 bg-white hover:bg-slate-50"}`}>
+                    <label key={row.sourceRowKey} className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${isChecked ? "border-[#102C57]/30 bg-[var(--surface-navy,#102C57)]/5" : "border-dashed border-slate-200 bg-white hover:bg-slate-50"}`}>
                       <input type="checkbox" checked={isChecked} onChange={() => toggleRow(row.sourceRowKey)}
                         className="h-4 w-4 rounded border-slate-300 accent-[#102C57]" />
                       <div className="flex-1 min-w-0">
@@ -780,7 +780,7 @@ function GroupingDrawer({ drawerState, lookup27Departments, onClose, onSaved }) 
                 ยกเลิก
               </button>
               <button onClick={handleSave} disabled={saving || ticked.size === 0}
-                className="rounded-lg bg-[#102C57] px-4 py-2 text-sm font-semibold text-white hover:bg-[#102C57]/90 disabled:opacity-50 disabled:cursor-not-allowed">
+                className="rounded-lg bg-[var(--surface-navy,#102C57)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--surface-navy,#102C57)]/90 disabled:opacity-50 disabled:cursor-not-allowed">
                 {saving ? "กำลังบันทึก..." : "บันทึกใบเบิก"}
               </button>
             </div>
@@ -856,7 +856,7 @@ function DeptTable({ dept, dates, poolRows, keyGroupMap, groups, claimDeptId, pe
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       {/* Dept header bar */}
-      <div className="flex items-center justify-between bg-[#102C57] px-4 py-3">
+      <div className="flex items-center justify-between bg-[var(--surface-navy,#102C57)] px-4 py-3">
         <div className="flex items-center gap-2">
           <span className="text-sm font-bold text-white">{dept.deptName}</span>
           {dept.deptCode && (
@@ -926,7 +926,7 @@ function DeptTable({ dept, dates, poolRows, keyGroupMap, groups, claimDeptId, pe
                             className={`rounded-md px-2 py-0.5 text-[10px] font-semibold transition-colors mt-0.5 ${
                               isPending ? "bg-slate-100 text-slate-400 cursor-wait"
                               : !claimDeptId ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-                              : "bg-[#102C57] text-white hover:bg-[#1a3d6b]"
+                              : "bg-[var(--surface-navy,#102C57)] text-white hover:bg-[#1a3d6b]"
                             }`}
                           >
                             {isPending ? "กำลังเคลม..." : `เคลม ${stats.unclaimed}`}
@@ -1156,7 +1156,7 @@ function DeptTable({ dept, dates, poolRows, keyGroupMap, groups, claimDeptId, pe
                         <button
                           type="button"
                           onClick={() => onOpenDrawer({ date: dateStr, deptId: dept.deptId, deptName: dept.deptName, deptCode: dept.deptCode, ungroupedRows: ungrouped })}
-                          className="inline-flex items-center gap-1 rounded-lg border border-dashed border-[#102C57]/30 px-2.5 py-1 text-[11px] font-semibold text-[#102C57] hover:bg-[#102C57]/5 transition-colors w-full justify-center"
+                          className="inline-flex items-center gap-1 rounded-lg border border-dashed border-[#102C57]/30 px-2.5 py-1 text-[11px] font-semibold text-[#102C57] hover:bg-[var(--surface-navy,#102C57)]/5 transition-colors w-full justify-center"
                         >
                           <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -1270,7 +1270,7 @@ function ExportBar({ groups, masterPlanNo, onMutateGroups }) {
         <button
           onClick={handleExport}
           disabled={exporting || readyGroups.length === 0}
-          className="inline-flex items-center gap-2 rounded-xl bg-[#102C57] px-5 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-[#1a3d6b] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="inline-flex items-center gap-2 rounded-xl bg-[var(--surface-navy,#102C57)] px-5 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-[#1a3d6b] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {exporting ? (
             <><svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>กำลัง export...</>
@@ -1723,7 +1723,7 @@ export default function MatrixWorkspaceClient({
 
       {/* Selected rows claim bar */}
       {selectedCellKeys.size > 0 && (
-        <div className="sticky bottom-16 z-30 mx-auto max-w-sm rounded-2xl border border-[#102C57]/20 bg-[#102C57] px-5 py-3 shadow-xl flex items-center justify-between gap-4">
+        <div className="sticky bottom-16 z-30 mx-auto max-w-sm rounded-2xl border border-[#102C57]/20 bg-[var(--surface-navy,#102C57)] px-5 py-3 shadow-xl flex items-center justify-between gap-4">
           <span className="text-sm font-semibold text-white">
             เลือกแล้ว <span className="font-extrabold">{selectedCellKeys.size}</span> รายการ
           </span>

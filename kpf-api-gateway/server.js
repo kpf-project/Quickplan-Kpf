@@ -3196,6 +3196,8 @@ const dataQuery = `
 app.get("/api/raw-material-lot-costs", requireAuth, async (req, res) => {
   try {
     const search = req.query.search ? String(req.query.search).trim() : "";
+    const skuCode = req.query.skuCode ? String(req.query.skuCode).trim() : null;
+    const lotNo = req.query.lotNo ? String(req.query.lotNo).trim() : null;
     const iccatCodes = normalizeListParam(req.query.iccatCodes);
     const costStatus = ["ready", "review"].includes(String(req.query.costStatus || ""))
       ? String(req.query.costStatus)
@@ -3211,6 +3213,8 @@ app.get("/api/raw-material-lot-costs", requireAuth, async (req, res) => {
     const requestSql = connection.request();
     requestSql.input("limitParam", sql.Int, limit);
     requestSql.input("searchParam", sql.NVarChar, search ? `%${search}%` : null);
+    requestSql.input("skuCodeParam", sql.NVarChar, skuCode);
+    requestSql.input("lotNoParam", sql.NVarChar, lotNo);
     requestSql.input("iccatCodesParam", sql.NVarChar, iccatCodes);
     requestSql.input("costStatusParam", sql.NVarChar, costStatus);
     if (cursor) {
@@ -3227,6 +3231,8 @@ app.get("/api/raw-material-lot-costs", requireAuth, async (req, res) => {
     const query = `
       DECLARE @limit INT = @limitParam;
       DECLARE @search NVARCHAR(255) = @searchParam;
+      DECLARE @skuCode NVARCHAR(255) = @skuCodeParam;
+      DECLARE @lotNo NVARCHAR(255) = @lotNoParam;
       DECLARE @iccatCodes NVARCHAR(MAX) = @iccatCodesParam;
       DECLARE @costStatus NVARCHAR(20) = @costStatusParam;
 
@@ -3274,6 +3280,8 @@ app.get("/api/raw-material-lot-costs", requireAuth, async (req, res) => {
         WHERE DOCINFO.DI_ACTIVE = 0
           AND DOCTYPE.DT_PROPERTIES IN (301, 303, 304, 336)
           AND ICCAT.ICCAT_CODE IN ('01', '02', '05', '08', '10')
+          AND (@skuCode IS NULL OR SKUMASTER.SKU_CODE = @skuCode)
+          AND (@lotNo IS NULL OR LTRIM(RTRIM(ISNULL(TRANSTKD.TRD_LOT_NO, ''))) = @lotNo)
           AND (@iccatCodes IS NULL OR ICCAT.ICCAT_CODE IN (
             SELECT LTRIM(RTRIM(value)) FROM STRING_SPLIT(@iccatCodes, ',')
           ))
@@ -3408,6 +3416,8 @@ app.get("/api/raw-material-receipts", requireAuth, async (req, res) => {
     const search = req.query.search ? String(req.query.search).trim() : "";
     const iccatCodes = normalizeListParam(req.query.iccatCodes) || "01,02,03,05,08,10";
     const warehouseCode = req.query.warehouseCode ? String(req.query.warehouseCode).trim() : null;
+    const skuCodes = normalizeListParam(req.query.skuCodes);
+    const latestOnly = String(req.query.latestOnly || "") === "1";
     const costStatus = ["ready", "review"].includes(String(req.query.costStatus || ""))
       ? String(req.query.costStatus)
       : null;
@@ -3425,6 +3435,8 @@ app.get("/api/raw-material-receipts", requireAuth, async (req, res) => {
     requestSql.input("searchParam", sql.NVarChar, search ? `%${search}%` : null);
     requestSql.input("iccatCodesParam", sql.NVarChar, iccatCodes);
     requestSql.input("warehouseCodeParam", sql.NVarChar, warehouseCode);
+    requestSql.input("skuCodesParam", sql.NVarChar, skuCodes);
+    requestSql.input("latestOnly", sql.Bit, latestOnly ? 1 : 0);
     requestSql.input("costStatusParam", sql.NVarChar, costStatus);
     requestSql.input("dateFromParam", sql.Date, dateFrom);
     requestSql.input("dateToParam", sql.Date, dateTo);
@@ -3472,6 +3484,7 @@ app.get("/api/raw-material-receipts", requireAuth, async (req, res) => {
             AS DECIMAL(28, 8)
           ) AS NET_BASE_QTY,
           CAST(TRANSTKD.TRD_B_SELL AS DECIMAL(28, 8)) AS SELL_AMOUNT,
+          CAST(TRANSTKD.TRD_B_SELL AS DECIMAL(28, 8)) AS NET_AMOUNT_EXCL_VAT,
           CAST(TRANSTKD.TRD_B_AMT AS DECIMAL(28, 8)) AS NET_AMOUNT_INCL_VAT,
           CAST(
             TRANSTKD.TRD_B_VAT
@@ -3495,6 +3508,9 @@ app.get("/api/raw-material-receipts", requireAuth, async (req, res) => {
             SELECT LTRIM(RTRIM(value)) FROM STRING_SPLIT(@iccatCodesParam, ',')
           )
           AND (@warehouseCodeParam IS NULL OR WARELOCATION.WL_CODE = @warehouseCodeParam)
+          AND (@skuCodesParam IS NULL OR SKUMASTER.SKU_CODE IN (
+            SELECT LTRIM(RTRIM(value)) FROM STRING_SPLIT(@skuCodesParam, ',')
+          ))
           AND (@dateFromParam IS NULL OR DOCINFO.DI_DATE >= @dateFromParam)
           AND (@dateToParam IS NULL OR DOCINFO.DI_DATE < DATEADD(DAY, 1, @dateToParam))
           AND (
@@ -3514,46 +3530,51 @@ app.get("/api/raw-material-receipts", requireAuth, async (req, res) => {
             WHEN LOT_NO = ''
               OR NULLIF(LTRIM(RTRIM(BASE_UNIT_NAME)), '') IS NULL
               OR NET_BASE_QTY <= 0
-              OR NET_AMOUNT_INCL_VAT IS NULL
               OR SELL_AMOUNT IS NULL
-              OR VAT_AMOUNT IS NULL
-              OR NET_AMOUNT_INCL_VAT <> SELL_AMOUNT + VAT_AMOUNT
-              OR NET_AMOUNT_INCL_VAT <= 0 THEN 'review'
+              OR NET_AMOUNT_EXCL_VAT <= 0 THEN 'review'
             ELSE 'ready'
           END AS COST_STATUS,
           CASE
             WHEN LOT_NO = '' THEN N'ไม่มีเลข LOT'
             WHEN NULLIF(LTRIM(RTRIM(BASE_UNIT_NAME)), '') IS NULL THEN N'ไม่มีหน่วยหลักของสินค้า'
             WHEN NET_BASE_QTY = 0 THEN N'ปริมาณรับเข้าสุทธิเป็นศูนย์'
-            WHEN NET_AMOUNT_INCL_VAT IS NULL OR SELL_AMOUNT IS NULL OR VAT_AMOUNT IS NULL
-              THEN N'ยอดซื้อสุทธิหรือ VAT ไม่ครบจาก ERP'
-            WHEN NET_AMOUNT_INCL_VAT <> SELL_AMOUNT + VAT_AMOUNT
-              THEN N'ยอดรวม VAT ไม่ตรงกับยอดสุทธิและ VAT ใน ERP'
-            WHEN NET_AMOUNT_INCL_VAT = 0 THEN N'ยอดซื้อสุทธิเป็นศูนย์ ต้องตรวจการปันส่วนต้นทุน'
-            WHEN NET_BASE_QTY < 0 OR NET_AMOUNT_INCL_VAT < 0
+            WHEN NET_AMOUNT_EXCL_VAT IS NULL THEN N'ยอดซื้อก่อน VAT ไม่ครบจาก ERP'
+            WHEN NET_AMOUNT_EXCL_VAT = 0 THEN N'ยอดซื้อก่อน VAT เป็นศูนย์ ต้องตรวจการปันส่วนต้นทุน'
+            WHEN NET_BASE_QTY < 0 OR NET_AMOUNT_EXCL_VAT < 0
               THEN N'ยอดรับเข้าติดลบ'
             ELSE NULL
           END AS REVIEW_REASON,
           CASE
             WHEN NULLIF(LTRIM(RTRIM(BASE_UNIT_NAME)), '') IS NOT NULL
               AND NET_BASE_QTY > 0
-              AND NET_AMOUNT_INCL_VAT >= 0
-              THEN NET_AMOUNT_INCL_VAT / NET_BASE_QTY
+              AND NET_AMOUNT_EXCL_VAT >= 0
+              THEN NET_AMOUNT_EXCL_VAT / NET_BASE_QTY
             ELSE NULL
-          END AS UNIT_PRICE_INCL_VAT
+          END AS UNIT_PRICE_EXCL_VAT
         FROM ReceiptLines
+      ),
+      Ranked AS (
+        SELECT
+          *,
+          ROW_NUMBER() OVER (
+            PARTITION BY SKU_CODE
+            ORDER BY DI_DATE DESC, DI_KEY DESC, TRD_SEQ DESC, TRD_KEY DESC
+          ) AS SKU_PRICE_RANK
+        FROM Costed
       ),
       Filtered AS (
         SELECT
           *
-        FROM Costed
-        WHERE @costStatusParam IS NULL OR COST_STATUS = @costStatusParam
+        FROM Ranked
+        WHERE (@costStatusParam IS NULL OR COST_STATUS = @costStatusParam)
+          AND (@latestOnly = 0 OR SKU_PRICE_RANK = 1)
       ),
       Summary AS (
         SELECT
           COUNT(1) AS TOTAL_ROWS,
           COUNT(DISTINCT DI_KEY) AS TOTAL_INVOICES,
           COUNT(DISTINCT CASE WHEN LOT_NO <> '' THEN CONCAT(SKU_CODE, N'|', LOT_NO, N'|', WL_CODE) END) AS TOTAL_LOTS,
+          SUM(COALESCE(NET_AMOUNT_EXCL_VAT, 0)) AS TOTAL_AMOUNT_EXCL_VAT,
           SUM(COALESCE(NET_AMOUNT_INCL_VAT, 0)) AS TOTAL_AMOUNT_INCL_VAT,
           SUM(CASE WHEN COST_STATUS = 'review' THEN 1 ELSE 0 END) AS REVIEW_ROWS
         FROM Filtered
@@ -3578,6 +3599,7 @@ app.get("/api/raw-material-receipts", requireAuth, async (req, res) => {
         total: Number(rows[0]?.TOTAL_ROWS || 0),
         invoices: Number(rows[0]?.TOTAL_INVOICES || 0),
         lots: Number(rows[0]?.TOTAL_LOTS || 0),
+        totalAmountExclVat: Number(rows[0]?.TOTAL_AMOUNT_EXCL_VAT || 0),
         totalAmountInclVat: Number(rows[0]?.TOTAL_AMOUNT_INCL_VAT || 0),
         review: Number(rows[0]?.REVIEW_ROWS || 0),
       };
@@ -3593,7 +3615,7 @@ app.get("/api/raw-material-receipts", requireAuth, async (req, res) => {
             trdKey: lastRow.TRD_KEY,
           })
         : null;
-      rows = rows.map(({ TOTAL_ROWS, TOTAL_INVOICES, TOTAL_LOTS, TOTAL_AMOUNT_INCL_VAT, REVIEW_ROWS, ...row }) => row);
+      rows = rows.map(({ TOTAL_ROWS, TOTAL_INVOICES, TOTAL_LOTS, TOTAL_AMOUNT_EXCL_VAT, TOTAL_AMOUNT_INCL_VAT, REVIEW_ROWS, SKU_PRICE_RANK, ...row }) => row);
       payload = {
         data: rows,
         summary,
@@ -3690,6 +3712,7 @@ app.get("/api/production-receipts", requireAuth, async (req, res) => {
             AS DECIMAL(28, 8)
           ) AS NET_BASE_QTY,
           CAST(TRANSTKD.TRD_B_SELL AS DECIMAL(28, 8)) AS SELL_AMOUNT,
+          CAST(TRANSTKD.TRD_B_SELL AS DECIMAL(28, 8)) AS NET_AMOUNT_EXCL_VAT,
           CAST(TRANSTKD.TRD_B_AMT AS DECIMAL(28, 8)) AS NET_AMOUNT_INCL_VAT,
           CAST(TRANSTKD.TRD_B_VAT AS DECIMAL(28, 8)) AS VAT_AMOUNT
         FROM DOCINFO
@@ -3733,32 +3756,26 @@ app.get("/api/production-receipts", requireAuth, async (req, res) => {
             WHEN LOT_NO = ''
               OR NULLIF(LTRIM(RTRIM(BASE_UNIT_NAME)), '') IS NULL
               OR NET_BASE_QTY <= 0
-              OR NET_AMOUNT_INCL_VAT IS NULL
               OR SELL_AMOUNT IS NULL
-              OR VAT_AMOUNT IS NULL
-              OR NET_AMOUNT_INCL_VAT <> SELL_AMOUNT + VAT_AMOUNT
-              OR NET_AMOUNT_INCL_VAT < 0 THEN 'review'
+              OR NET_AMOUNT_EXCL_VAT < 0 THEN 'review'
             ELSE 'ready'
           END AS COST_STATUS,
           CASE
             WHEN LOT_NO = '' THEN N'ไม่มีเลข LOT'
             WHEN NULLIF(LTRIM(RTRIM(BASE_UNIT_NAME)), '') IS NULL THEN N'ไม่มีหน่วยหลักของสินค้า'
             WHEN NET_BASE_QTY = 0 THEN N'ปริมาณรับเข้าสุทธิเป็นศูนย์'
-            WHEN NET_AMOUNT_INCL_VAT IS NULL OR SELL_AMOUNT IS NULL OR VAT_AMOUNT IS NULL
-              THEN N'ยอดรับเข้าหรือ VAT ไม่ครบจาก ERP'
-            WHEN NET_AMOUNT_INCL_VAT <> SELL_AMOUNT + VAT_AMOUNT
-              THEN N'ยอดรวม VAT ไม่ตรงกับยอดสุทธิและ VAT ใน ERP'
-            WHEN NET_BASE_QTY < 0 OR NET_AMOUNT_INCL_VAT < 0
+            WHEN NET_AMOUNT_EXCL_VAT IS NULL THEN N'ยอดรับเข้าก่อน VAT ไม่ครบจาก ERP'
+            WHEN NET_BASE_QTY < 0 OR NET_AMOUNT_EXCL_VAT < 0
               THEN N'ยอดรับเข้าติดลบ'
             ELSE NULL
           END AS REVIEW_REASON,
           CASE
             WHEN NULLIF(LTRIM(RTRIM(BASE_UNIT_NAME)), '') IS NOT NULL
               AND NET_BASE_QTY > 0
-              AND NET_AMOUNT_INCL_VAT >= 0
-              THEN NET_AMOUNT_INCL_VAT / NET_BASE_QTY
+              AND NET_AMOUNT_EXCL_VAT >= 0
+              THEN NET_AMOUNT_EXCL_VAT / NET_BASE_QTY
             ELSE NULL
-          END AS UNIT_PRICE_INCL_VAT
+          END AS UNIT_PRICE_EXCL_VAT
         FROM ReceiptLines
       ),
       Filtered AS (
@@ -3772,6 +3789,7 @@ app.get("/api/production-receipts", requireAuth, async (req, res) => {
           COUNT(1) AS TOTAL_ROWS,
           COUNT(DISTINCT DI_KEY) AS TOTAL_INVOICES,
           COUNT(DISTINCT CASE WHEN LOT_NO <> '' THEN CONCAT(SKU_CODE, N'|', LOT_NO, N'|', WL_CODE) END) AS TOTAL_LOTS,
+          SUM(COALESCE(NET_AMOUNT_EXCL_VAT, 0)) AS TOTAL_AMOUNT_EXCL_VAT,
           SUM(COALESCE(NET_AMOUNT_INCL_VAT, 0)) AS TOTAL_AMOUNT_INCL_VAT,
           SUM(CASE WHEN COST_STATUS = 'review' THEN 1 ELSE 0 END) AS REVIEW_ROWS
         FROM Filtered
@@ -3796,6 +3814,7 @@ app.get("/api/production-receipts", requireAuth, async (req, res) => {
         total: Number(rows[0]?.TOTAL_ROWS || 0),
         invoices: Number(rows[0]?.TOTAL_INVOICES || 0),
         lots: Number(rows[0]?.TOTAL_LOTS || 0),
+        totalAmountExclVat: Number(rows[0]?.TOTAL_AMOUNT_EXCL_VAT || 0),
         totalAmountInclVat: Number(rows[0]?.TOTAL_AMOUNT_INCL_VAT || 0),
         review: Number(rows[0]?.REVIEW_ROWS || 0),
       };
@@ -3811,7 +3830,7 @@ app.get("/api/production-receipts", requireAuth, async (req, res) => {
             trdKey: lastRow.TRD_KEY,
           })
         : null;
-      rows = rows.map(({ TOTAL_ROWS, TOTAL_INVOICES, TOTAL_LOTS, TOTAL_AMOUNT_INCL_VAT, REVIEW_ROWS, ...row }) => row);
+      rows = rows.map(({ TOTAL_ROWS, TOTAL_INVOICES, TOTAL_LOTS, TOTAL_AMOUNT_EXCL_VAT, TOTAL_AMOUNT_INCL_VAT, REVIEW_ROWS, ...row }) => row);
       payload = {
         data: rows,
         summary,
@@ -3836,10 +3855,15 @@ app.get("/api/production-receipts", requireAuth, async (req, res) => {
 app.get("/api/raw-material-requisitions", async (req, res) => {
   try {
     const search = req.query.search ? String(req.query.search).trim() : "";
+    const goodsCodes = normalizeListParam(req.query.goodsCodes);
+    const documentRefs = req.query.documentRefs ? String(req.query.documentRefs).trim().slice(0, 8000) : "";
+    const departmentCodes = req.query.departmentCodes ? String(req.query.departmentCodes).trim().slice(0, 2000) : "";
+    const remarkDates = req.query.remarkDates ? String(req.query.remarkDates).trim().slice(0, 2000) : "";
     const dateFrom = parseDateParam(req.query.dateFrom);
     const dateTo = parseDateParam(req.query.dateTo);
     const page = parsePositiveInt(req.query.page, 1);
     const pageSize = parsePositiveInt(req.query.pageSize, 100, 500);
+    const includeTotal = req.query.includeTotal !== "false";
     const { cursor, error } = resolveCursor(res, page, req.query.cursor, parseDocumentCursor);
     if (error) {
       return;
@@ -3851,6 +3875,10 @@ app.get("/api/raw-material-requisitions", async (req, res) => {
     requestSql.input("limitParam", sql.Int, limit);
     requestSql.input("dateFrom", sql.Date, dateFrom);
     requestSql.input("dateTo", sql.Date, dateTo);
+    requestSql.input("goodsCodes", sql.NVarChar, goodsCodes);
+    requestSql.input("documentRefs", sql.NVarChar, documentRefs || null);
+    requestSql.input("departmentCodes", sql.NVarChar, departmentCodes || null);
+    requestSql.input("remarkDates", sql.NVarChar, remarkDates || null);
     if (search) {
       requestSql.input("searchParam", sql.NVarChar, `%${search}%`);
     }
@@ -3877,6 +3905,38 @@ app.get("/api/raw-material-requisitions", async (req, res) => {
     const dateFilter = `
           AND (@dateFrom IS NULL OR DOCINFO.DI_DATE >= @dateFrom)
           AND (@dateTo IS NULL OR DOCINFO.DI_DATE <= @dateTo)
+        `;
+    const goodsCodeFilter = `
+          AND (
+            @goodsCodes IS NULL
+            OR TRANSTKD.TRD_SH_CODE IN (
+              SELECT LTRIM(RTRIM(value)) FROM STRING_SPLIT(@goodsCodes, ',')
+            )
+          )
+        `;
+    const scopedFilter = `
+          AND (
+            (@documentRefs IS NULL AND @remarkDates IS NULL AND (
+              @departmentCodes IS NULL
+              OR DEPTTAB.DEPT_CODE IN (
+                SELECT LTRIM(RTRIM(value)) FROM STRING_SPLIT(@departmentCodes, '|')
+              )
+            ))
+            OR DOCINFO.DI_REF IN (
+              SELECT LTRIM(RTRIM(value)) FROM STRING_SPLIT(@documentRefs, '|')
+            )
+            OR (
+              (@departmentCodes IS NULL OR DEPTTAB.DEPT_CODE IN (
+                SELECT LTRIM(RTRIM(value)) FROM STRING_SPLIT(@departmentCodes, '|')
+              ))
+              AND EXISTS (
+                SELECT 1
+                FROM STRING_SPLIT(@remarkDates, '|') dates
+                WHERE DOCINFO.DI_REMARK LIKE N'%แผนผลิต,%' + LTRIM(RTRIM(dates.value)) + N'%'
+                   OR DOCINFO.DI_REMARK LIKE N'%แผนการผลิต,%' + LTRIM(RTRIM(dates.value)) + N'%'
+              )
+            )
+          )
         `;
     const cursorFilter = cursor
       ? `AND (
@@ -3912,6 +3972,7 @@ app.get("/api/raw-material-requisitions", async (req, res) => {
           TRANSTKD.TRD_SEQ,
           TRANSTKD.TRD_SH_CODE,
           TRANSTKD.TRD_SH_NAME,
+          SKUMASTER.SKU_CODE AS PARENT_SKU_CODE,
           TRANSTKD.TRD_SH_REMARK,
           TRANSTKD.TRD_SH_QTY,
           TRANSTKD.TRD_SH_UPRC,
@@ -3990,7 +4051,9 @@ app.get("/api/raw-material-requisitions", async (req, res) => {
           AND DOCINFO.DI_ACTIVE = 0
           AND ICCAT.ICCAT_CODE IN ('01','02','03','05','08','10')
           ${dateFilter}
+          ${goodsCodeFilter}
           ${searchFilter}
+          ${scopedFilter}
       )
       SELECT TOP (@limitParam) *
       FROM Base
@@ -4002,6 +4065,10 @@ app.get("/api/raw-material-requisitions", async (req, res) => {
     const countRequest = connection.request();
     countRequest.input("dateFrom", sql.Date, dateFrom);
     countRequest.input("dateTo", sql.Date, dateTo);
+    countRequest.input("goodsCodes", sql.NVarChar, goodsCodes);
+    countRequest.input("documentRefs", sql.NVarChar, documentRefs || null);
+    countRequest.input("departmentCodes", sql.NVarChar, departmentCodes || null);
+    countRequest.input("remarkDates", sql.NVarChar, remarkDates || null);
     if (search) {
       countRequest.input("searchParam", sql.NVarChar, `%${search}%`);
     }
@@ -4033,15 +4100,17 @@ app.get("/api/raw-material-requisitions", async (req, res) => {
         AND DOCINFO.DI_ACTIVE = 0
         AND ICCAT.ICCAT_CODE IN ('01','02','03','05','08','10')
         ${dateFilter}
+        ${goodsCodeFilter}
         ${searchFilter}
+        ${scopedFilter}
     `;
 
     const [dataResult, countResult] = await Promise.all([
       requestSql.query(dataQuery),
-      countRequest.query(countQuery),
+      includeTotal ? countRequest.query(countQuery) : Promise.resolve(null),
     ]);
 
-    const totalRecords = countResult.recordset[0]?.totalRows || 0;
+    const totalRecords = countResult?.recordset?.[0]?.totalRows ?? null;
     let rows = dataResult.recordset ?? [];
     let hasMore = false;
     if (rows.length > pageSize) {
@@ -4063,7 +4132,7 @@ app.get("/api/raw-material-requisitions", async (req, res) => {
         page,
         pageSize,
         totalRecords,
-        totalPages: Math.max(1, Math.ceil(totalRecords / pageSize)),
+        totalPages: totalRecords === null ? null : Math.max(1, Math.ceil(totalRecords / pageSize)),
       },
       cursor: {
         next: nextCursor,
@@ -4114,6 +4183,7 @@ app.get("/api/raw-material-requisitions-by-ref", async (req, res) => {
           TRANSTKD.TRD_SEQ,
           TRANSTKD.TRD_SH_CODE,
           TRANSTKD.TRD_SH_NAME,
+          SKUMASTER.SKU_CODE AS PARENT_SKU_CODE,
           TRANSTKD.TRD_SH_REMARK,
           TRANSTKD.TRD_SH_QTY,
           TRANSTKD.TRD_SH_UPRC,
@@ -4215,10 +4285,12 @@ app.get("/api/raw-material-requisitions-by-ref", async (req, res) => {
 app.get("/api/raw-material-returns", async (req, res) => {
   try {
     const search = req.query.search ? String(req.query.search).trim() : "";
+    const issueRefs = req.query.issueRefs ? String(req.query.issueRefs).trim().slice(0, 8000) : "";
     const dateFrom = parseDateParam(req.query.dateFrom);
     const dateTo = parseDateParam(req.query.dateTo);
     const page = parsePositiveInt(req.query.page, 1);
     const pageSize = parsePositiveInt(req.query.pageSize, 100, 500);
+    const includeTotal = req.query.includeTotal !== "false";
     const { cursor, error } = resolveCursor(res, page, req.query.cursor, parseDocumentCursor);
     if (error) {
       return;
@@ -4230,6 +4302,7 @@ app.get("/api/raw-material-returns", async (req, res) => {
     requestSql.input("limitParam", sql.Int, limit);
     requestSql.input("dateFrom", sql.Date, dateFrom);
     requestSql.input("dateTo", sql.Date, dateTo);
+    requestSql.input("issueRefs", sql.NVarChar, issueRefs || null);
     if (search) {
       requestSql.input("searchParam", sql.NVarChar, `%${search}%`);
     }
@@ -4256,6 +4329,19 @@ app.get("/api/raw-material-returns", async (req, res) => {
     const dateFilter = `
           AND (@dateFrom IS NULL OR DOCINFO.DI_DATE >= @dateFrom)
           AND (@dateTo IS NULL OR DOCINFO.DI_DATE <= @dateTo)
+        `;
+    const issueRefFilter = `
+          AND (
+            @issueRefs IS NULL
+            OR EXISTS (
+              SELECT 1
+              FROM STRING_SPLIT(@issueRefs, '|') refs
+              WHERE TRANSTKD.TRD_REFER_REF = LTRIM(RTRIM(refs.value))
+                 OR TRANSTKH.TRH_REFER_IREF = LTRIM(RTRIM(refs.value))
+                 OR TRANSTKH.TRH_REFER_XREF = LTRIM(RTRIM(refs.value))
+                 OR DOCINFO.DI_REMARK LIKE N'%อ้างถึงใบเบิก#' + LTRIM(RTRIM(refs.value)) + N':%'
+            )
+          )
         `;
     const cursorFilter = cursor
       ? `AND (
@@ -4370,6 +4456,7 @@ app.get("/api/raw-material-returns", async (req, res) => {
           AND DOCINFO.DI_ACTIVE = 0
           AND ICCAT.ICCAT_CODE IN ('01','02','03','05','08','10')
           ${dateFilter}
+          ${issueRefFilter}
           ${searchFilter}
       )
       SELECT TOP (@limitParam) *
@@ -4382,6 +4469,7 @@ app.get("/api/raw-material-returns", async (req, res) => {
     const countRequest = connection.request();
     countRequest.input("dateFrom", sql.Date, dateFrom);
     countRequest.input("dateTo", sql.Date, dateTo);
+    countRequest.input("issueRefs", sql.NVarChar, issueRefs || null);
     if (search) {
       countRequest.input("searchParam", sql.NVarChar, `%${search}%`);
     }
@@ -4413,15 +4501,16 @@ app.get("/api/raw-material-returns", async (req, res) => {
         AND DOCINFO.DI_ACTIVE = 0
         AND ICCAT.ICCAT_CODE IN ('01','02','03','05','08','10')
         ${dateFilter}
+        ${issueRefFilter}
         ${searchFilter}
     `;
 
     const [dataResult, countResult] = await Promise.all([
       requestSql.query(dataQuery),
-      countRequest.query(countQuery),
+      includeTotal ? countRequest.query(countQuery) : Promise.resolve(null),
     ]);
 
-    const totalRecords = countResult.recordset[0]?.totalRows || 0;
+    const totalRecords = countResult?.recordset?.[0]?.totalRows ?? null;
     let rows = dataResult.recordset ?? [];
     let hasMore = false;
     if (rows.length > pageSize) {
@@ -4443,7 +4532,7 @@ app.get("/api/raw-material-returns", async (req, res) => {
         page,
         pageSize,
         totalRecords,
-        totalPages: Math.max(1, Math.ceil(totalRecords / pageSize)),
+        totalPages: totalRecords === null ? null : Math.max(1, Math.ceil(totalRecords / pageSize)),
       },
       cursor: {
         next: nextCursor,

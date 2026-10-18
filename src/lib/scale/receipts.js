@@ -435,10 +435,14 @@ function normalizeReceiptRecord(record, productByConfigId, lotById, productNameB
     restoredAt: record.restored_at || null,
     status: normalizeOptionalText(record.status) || "recorded",
     isTest: Boolean(metadata?.isTest),
+    workstationId: normalizeOptionalText(metadata.workstationId),
     isReturn: Boolean(metadata?.isReturn),
     voidedAt: metadata?.voidedAt || null,
   };
 }
+
+const deptConfigMemoryCache = new Map();
+const DEPT_CONFIG_TTL_MS = 5 * 60 * 1000;
 
 async function loadDepartmentConfigMap(supabaseAdmin, departmentId) {
   if (!departmentId) {
@@ -447,6 +451,11 @@ async function loadDepartmentConfigMap(supabaseAdmin, departmentId) {
       configIds: [],
       productByConfigId: new Map(),
     };
+  }
+
+  const cached = deptConfigMemoryCache.get(departmentId);
+  if (cached && Date.now() - cached.timestamp < DEPT_CONFIG_TTL_MS) {
+    return cached.data;
   }
 
   const configResult = await supabaseAdmin
@@ -471,40 +480,55 @@ async function loadDepartmentConfigMap(supabaseAdmin, departmentId) {
     skuCode: normalizeScaleSkuCode(row.sku_code),
   }));
 
-  return {
+  const result = {
     available: true,
     configIds: configRows.map((row) => row.id),
     productByConfigId: new Map(configRows.map((row) => [row.id, row])),
   };
+  deptConfigMemoryCache.set(departmentId, { timestamp: Date.now(), data: result });
+  return result;
 }
 
+const productNameMemoryCache = new Map();
+
 async function loadProductNamesBySku(supabaseAdmin, skuCodes) {
-  const normalizedSkuCodes = skuCodes
-    .map((skuCode) => normalizeScaleSkuCode(skuCode))
-    .filter(Boolean);
+  const normalizedSkuCodes = Array.from(
+    new Set(
+      (skuCodes || [])
+        .map((skuCode) => normalizeScaleSkuCode(skuCode))
+        .filter(Boolean)
+    )
+  );
 
   if (!normalizedSkuCodes.length) {
     return new Map();
   }
 
-  const productRows = await fetchSupabaseRowsByChunks(
-    normalizedSkuCodes,
-    (skuCodeChunk) => supabaseAdmin
-      .from("products_cache")
-      .select("sku_code,sku_name")
-      .in("sku_code", skuCodeChunk),
-    {
-      onError: () => {
-        throw new Error("Failed to load weight scale receipt product names");
-      },
+  const missingSkus = normalizedSkuCodes.filter((sku) => !productNameMemoryCache.has(sku));
+  if (missingSkus.length) {
+    const productRows = await fetchSupabaseRowsByChunks(
+      missingSkus,
+      (skuCodeChunk) => supabaseAdmin
+        .from("products_cache")
+        .select("sku_code,sku_name")
+        .in("sku_code", skuCodeChunk),
+      {
+        onError: () => {
+          throw new Error("Failed to load weight scale receipt product names");
+        },
+      }
+    );
+
+    for (const row of productRows) {
+      productNameMemoryCache.set(
+        normalizeScaleSkuCode(row?.sku_code),
+        String(row?.sku_name || "").trim()
+      );
     }
-  );
+  }
 
   return new Map(
-    productRows.map((row) => [
-      normalizeScaleSkuCode(row?.sku_code),
-      String(row?.sku_name || "").trim(),
-    ])
+    normalizedSkuCodes.map((sku) => [sku, productNameMemoryCache.get(sku) || sku])
   );
 }
 
@@ -791,6 +815,8 @@ export async function loadScaleReceiptReportData(
     includeAll = false,
     recordType = "production",
     asOfDate = null,
+    liveWorkstationId = null,
+    includeVoided = false,
   } = {}
 ) {
   const normalizedRecordType = String(recordType || "production").trim().toLowerCase();
@@ -910,6 +936,11 @@ export async function loadScaleReceiptReportData(
         receiptQuery = receiptQuery.in("product_config_id", filteredConfigIds);
       }
 
+      if (liveWorkstationId && normalizedRecordType !== "return") {
+        receiptQuery = receiptQuery.eq("metadata->>weightSource", "serial-live")
+          .eq("metadata->>workstationId", liveWorkstationId);
+      }
+
       return receiptQuery;
     },
     {
@@ -971,13 +1002,28 @@ export async function loadScaleReceiptReportData(
     receipts = receipts.filter((receipt) => isReturnReceipt(receipt));
   }
 
+  if (liveWorkstationId && normalizedRecordType === "return") {
+    const sourceIds = [...new Set(receiptRows.map(receipt => receipt.metadata?.sourceReceiptId).filter(Boolean))];
+    const sources = sourceIds.length ? await fetchSupabaseRowsByChunks(sourceIds, (chunk) =>
+      supabaseAdmin.from("production_weight_receipts").select("id")
+        .in("id", chunk).in("product_config_id", filteredConfigIds)
+        .eq("metadata->>weightSource", "serial-live")
+        .eq("metadata->>workstationId", liveWorkstationId)
+    ) : [];
+    const allowed = new Set(sources.map(row => row.id));
+    const allowedReturnIds = new Set(receiptRows.filter(row => allowed.has(row.metadata?.sourceReceiptId)).map(row => row.id));
+    receipts = receipts.filter(receipt => allowedReturnIds.has(receipt.id));
+  }
+
   if (typeof isTest === "boolean") {
     receipts = receipts.filter((receipt) => receipt.isTest === isTest);
   }
 
-  receipts = receipts.filter((receipt) =>
-    matchesScaleReceiptReportStatus(receipt.itemStatus, normalizedItemStatus)
-  );
+  if (!includeVoided) {
+    receipts = receipts.filter((receipt) =>
+      matchesScaleReceiptReportStatus(receipt.itemStatus, normalizedItemStatus)
+    );
+  }
 
   if (normalizedSearch) {
     receipts = receipts.filter((receipt) => matchesReceiptSearch(receipt, normalizedSearch));
@@ -1411,28 +1457,68 @@ export async function cancelScaleReceipt(
     ])
   );
 
-  return normalizeReceiptRecord(
-    currentReceipt,
-    new Map([
-      [
-        currentReceipt.product_config_id,
-        {
-          id: currentReceipt.product_config_id,
-          skuCode: configResult.data.sku_code,
-        },
-      ],
-    ]),
-    new Map([
-      [
-        currentReceipt.lot_id,
-        {
-          id: currentReceipt.lot_id,
-          lotNo: String(lotResult.data.lot_code || "").trim(),
-        },
-      ],
-    ]),
-    productNameBySku
-  );
+  return {
+    ...normalizeReceiptRecord(
+      currentReceipt,
+      new Map([
+        [
+          currentReceipt.product_config_id,
+          {
+            id: currentReceipt.product_config_id,
+            skuCode: configResult.data.sku_code,
+          },
+        ],
+      ]),
+      new Map([
+        [
+          currentReceipt.lot_id,
+          {
+            id: currentReceipt.lot_id,
+            lotNo: String(lotResult.data.lot_code || "").trim(),
+          },
+        ],
+      ]),
+      productNameBySku
+    ),
+    alreadyCancelled: currentReceipt.alreadyCancelled === true,
+  };
+}
+
+export async function cancelScaleReceiptByBarcode(
+  supabaseAdmin = getSupabaseAdmin(),
+  {
+    barcode,
+    actorUserId = null,
+    voidReason = null,
+  } = {}
+) {
+  const normalizedBarcode = String(barcode || "")
+    .replace(/[\s\u200B-\u200D\uFEFF]/g, "")
+    .toUpperCase();
+
+  if (!normalizedBarcode) {
+    throw new Error("กรุณากรอกหรือสแกนรหัสบาร์โค้ดก่อน");
+  }
+
+  const receiptResult = await supabaseAdmin
+    .from("production_weight_receipts")
+    .select("id")
+    .eq("barcode", normalizedBarcode)
+    .maybeSingle();
+
+  if (receiptResult.error) {
+    throw new Error("ไม่สามารถตรวจสอบบาร์โค้ดสำหรับยกเลิกชั่งได้");
+  }
+
+  if (!receiptResult.data?.id) {
+    throw new Error(`ไม่พบบาร์โค้ด ${normalizedBarcode} ในระบบชั่ง`);
+  }
+
+  return cancelScaleReceipt(supabaseAdmin, {
+    receiptId: receiptResult.data.id,
+    actorUserId,
+    voidReason,
+  });
 }
 
 export async function createScaleReceipt(
@@ -1593,6 +1679,7 @@ export async function createScaleReceipt(
     shift,
   };
 
+  let requestReplay = false;
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const barcode = await generateReceiptBarcode(supabaseAdmin, {
       skuCode: configResult.data.sku_code,
@@ -1651,6 +1738,7 @@ export async function createScaleReceipt(
         throw new Error("receipt requestId was already used for different data");
       }
       receiptRow = existing;
+      requestReplay = true;
       break;
     }
   }
@@ -1659,26 +1747,29 @@ export async function createScaleReceipt(
     throw new Error("Failed to allocate a unique weight scale receipt barcode");
   }
 
-  return normalizeReceiptRecord(
-    receiptRow,
-    new Map([
-      [
-        normalizedProductConfigId,
-        {
-          id: normalizedProductConfigId,
-          skuCode: configResult.data.sku_code,
-        },
-      ],
-    ]),
-    new Map([
-      [
-        resolvedLotId,
-        {
-          id: resolvedLotId,
-          lotNo: String(resolvedLot.lot_code || "").trim(),
-        },
-      ],
-    ]),
-    await loadProductNamesBySku(supabaseAdmin, [configResult.data.sku_code])
-  );
+  return {
+    ...normalizeReceiptRecord(
+      receiptRow,
+      new Map([
+        [
+          normalizedProductConfigId,
+          {
+            id: normalizedProductConfigId,
+            skuCode: configResult.data.sku_code,
+          },
+        ],
+      ]),
+      new Map([
+        [
+          resolvedLotId,
+          {
+            id: resolvedLotId,
+            lotNo: String(resolvedLot.lot_code || "").trim(),
+          },
+        ],
+      ]),
+      await loadProductNamesBySku(supabaseAdmin, [configResult.data.sku_code])
+    ),
+    requestReplay,
+  };
 }

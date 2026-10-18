@@ -506,7 +506,7 @@ function TradeCodesViewContent() {
 
 export default function TradeCodesView() {
   return (
-    <PermissionGate permissionsAny={["admin-products"]}>
+    <PermissionGate permissionsAny={["admin-products", "data-trade-codes-view"]}>
       <TradeCodesViewContent />
     </PermissionGate>
   );

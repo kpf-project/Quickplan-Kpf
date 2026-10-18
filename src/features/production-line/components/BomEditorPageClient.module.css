@@ -1,0 +1,100 @@
+.page { display:flex; flex-direction:column; min-height:100dvh; background:#fff; color:#10345d; font-size:14px; line-height:1.45; }
+.pageHeader { display:flex; justify-content:space-between; align-items:center; min-height:80px; padding:12px 28px; border-bottom:1px solid #d7e0ea; background:#fff; box-shadow:0 2px 4px #10345d0a; }
+.pageHeader h1 { margin:3px 0 0; color:#10345d; font-size:28px; line-height:1.2; font-weight:700; }
+.moduleLabel { display:flex; align-items:center; gap:10px; color:#10345d; font-size:13px; font-weight:600; }
+.headerActions { display:flex; align-items:center; gap:12px; padding:0 18px; border-left:1px solid #d7e0ea; }
+.headerActions div { display:grid; gap:2px; }.headerActions span { font-size:12px; color:#526b8a; }.headerActions strong { font-size:14px; }
+.content { width:100%; padding:20px 28px 0; display:flex; flex-direction:column; gap:0; }
+.filters { padding:0; }
+.contextGrid { display:grid; grid-template-columns:1.9fr 1fr 1fr 1fr; gap:20px; align-items:end; }
+.contextGrid label,.formulaGrid label { display:flex; flex-direction:column; min-width:0; gap:4px; font-size:13px; line-height:1; font-weight:600; color:#10345d; }
+.contextGrid em { color:#c62828; font-style:normal; }
+.contextGrid select,.formulaGrid select { width:100%; min-width:0; height:36px; padding:6px 10px; border:1px solid #c5d2e3; border-radius:3px; background:#fff; color:#10345d; font:inherit; }
+.contextGrid select[data-status=approved] { color:#087a55; background:#f2faf6; }
+.productControl { width:100%; min-width:0; height:36px; display:flex; align-items:center; padding:0; border:1px solid #c5d2e3; border-radius:3px; background:#fff; text-align:left; overflow:hidden; }
+.productControl > svg { margin:0 12px; flex-shrink:0; }
+.productControl strong { flex:0 0 auto; padding-right:18px; font-size:14px; color:#10345d; }
+.productControl > span { flex:1; min-width:0; align-self:stretch; display:flex; align-items:center; padding:0 12px; border-left:1px solid #d7e0ea; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; background:#f7faff; font-size:13px; }
+.formulaPanel { padding-top:20px; background:#fff; }
+.formulaGrid { display:grid; grid-template-columns:28% 33% 21%; gap:20px; align-items:end; }
+.versionControl,.baseControl { display:flex; align-items:center; height:36px; border:1px solid #c5d2e3; border-radius:3px; overflow:hidden; background:#fff; }
+.versionControl strong { width:90px; padding:0 14px; font-size:14px; }
+.versionControl > span { flex:1; align-self:stretch; display:flex; align-items:center; padding:0 12px; border-left:1px solid #d7e0ea; color:#526b8a; font-size:12px; font-weight:400; background:#f7faff; }
+.baseControl input { width:0; flex:1; min-width:0; height:34px; padding:0 14px; border:0; background:white; color:#10345d; font:inherit; -webkit-text-fill-color:#10345d; opacity:1; }
+.baseControl > span { min-width:95px; height:100%; display:flex; align-items:center; padding:0 14px; border-left:1px solid #d7e0ea; font-weight:400; }
+.tabs { display:flex; gap:8px; margin-top:8px; border-bottom:1px solid #d7e0ea; }
+.tabs button { padding:9px 16px; border:0; border-radius:0; font-size:13px; background:#fff; color:#526b8a; letter-spacing:0; font-weight:600; }
+.tabs button[aria-pressed=true] { color:#0866d6; box-shadow:inset 0 -3px #0866d6; background:white; }
+.editorPanel { margin:0; padding:0; background:#fff; }
+.tableTools { display:flex; align-items:center; gap:12px; min-height:64px; padding:14px 0; }
+.treeSearch { display:flex; align-items:center; gap:8px; flex:0 1 26%; min-width:170px; height:36px; padding:0 10px; border:1px solid #c5d2e3; border-radius:3px; color:#526b8a; }
+.treeSearch input { width:100%; min-width:0; height:34px; border:0; outline:none; background:transparent; font:inherit; font-size:13px; color:#10345d; }
+.treeSearch input::placeholder { color:#8b9db3; }
+.tableTools > select { height:36px; min-width:0; width:10%; padding:0 8px; border:1px solid #c5d2e3; border-radius:3px; background:#fff; color:#10345d; font-size:13px; }
+.tableTools > select:nth-of-type(2) { width:14%; }
+.toolSpace { flex:1; }
+.addButton { display:flex; align-items:center; justify-content:center; gap:8px; height:36px; padding:0 16px; border:1px solid #efd16e; border-radius:3px; background:#ffda63; color:#10345d; font-size:13px; font-weight:600; white-space:nowrap; }
+.actionsMenu { position:relative; flex-shrink:0; font-size:13px; }
+.actionsMenu summary { display:flex; align-items:center; gap:12px; height:36px; cursor:pointer; list-style:none; border:1px solid #c5d2e3; border-radius:3px; padding:0 12px; font-weight:600; }
+.actionsMenu summary::-webkit-details-marker { display:none; }
+.actionsMenu > div { position:absolute; right:0; top:calc(100% + 4px); z-index:45; width:240px; max-height:65dvh; overflow:auto; border:1px solid #c5d2e3; border-radius:3px; background:#fff; box-shadow:0 8px 20px #10345d20; }
+.actionsMenu button { display:block; width:100%; padding:8px 12px; text-align:left; }
+.actionsMenu button:hover { background:#edf5fc; }
+.page :global(.shadow-sm),.page :global(.shadow-md) { box-shadow:none; }
+.page :global(.tracking-wider),.page :global(.tracking-widest) { letter-spacing:normal; }
+.page button:disabled { cursor:not-allowed; opacity:.45; }
+.page button:focus-visible,.page select:focus-visible { outline:2px solid #0866d6; outline-offset:2px; }
+.tableWrapper { border-radius:0!important; box-shadow:none!important; max-height:calc(100dvh - 414px); overflow:auto!important; border-color:#cbd9e8!important; }
+.treeTable { table-layout:fixed; width:100%; font-size:13px!important; color:#10345d; }
+.treeTable thead { position:sticky; top:0; z-index:20; }
+.treeTable th { width:auto!important; height:40px; background:#eaf0f7!important; color:#10345d!important; font-size:13px!important; font-weight:600!important; white-space:nowrap; letter-spacing:0!important; padding:7px 8px!important; box-shadow:none; text-align:left; }
+.treeTable td { padding:1px 8px!important; height:28px; font-size:13px!important; font-weight:400!important; vertical-align:middle; line-height:1.3; }
+.treeTable th,.treeTable td { border:1px solid #d7e0ea!important; }
+.treeTable td :is(div,span,input,select) { font-weight:400!important; }
+.treeTable th:nth-child(1) { width:3%!important; }.treeTable th:nth-child(2) { width:3%!important; }
+.treeTable th:nth-child(3) { width:12%!important; }.treeTable th:nth-child(4) { width:26%!important; }
+.treeTable th:nth-child(5),.treeTable th:nth-child(6) { width:6%!important; }
+.treeTable th:nth-child(7) { width:12%!important; }.treeTable th:nth-child(8) { width:10%!important; }
+.treeTable th:nth-child(9),.treeTable th:nth-child(10) { width:7%!important; }.treeTable th:nth-child(11) { width:8%!important; }
+.treeTable th:nth-child(1),.treeTable th:nth-child(2),.treeTable th:nth-child(5),.treeTable th:nth-child(6) { text-align:center; }
+.treeTable td input { height:24px; font:inherit!important; color:#10345d!important; }
+.treeTable input[type=checkbox] { width:14px!important; height:14px!important; accent-color:#0866d6; }
+.treeTable td:nth-child(4) > div { min-height:24px; }
+.treeTable td select { max-width:100%; height:28px!important; font:inherit!important; background:transparent; color:#10345d!important; }
+.treeTable tbody tr { background:#fff; }
+.treeTable tbody tr[data-item-type=WIP],.treeTable tbody tr:not([data-depth="0"]) { background:#eff7ff; }
+.treeTable tbody tr:hover { background:#e7f2ff; }
+.treeTable .materialCode span { color:#0866d6; font-weight:500!important; }
+.materialCode span:global(.uppercase) { display:none; }
+.treeTable .materialCode span:global(.font-mono) { color:#b8cfe5; }
+.materialCode button[title="ยุบสูตรย่อย"],.materialCode button[title="ขยายสูตรย่อย"] { order:-1; width:16px; height:16px; padding:0; border:1px solid #9ab8dc; border-radius:3px; color:#0866d6; }
+.materialCode button[title^="เพิ่มวัตถุดิบ"] { opacity:0; }
+.materialCode:hover button[title^="เพิ่มวัตถุดิบ"],.materialCode:focus-within button[title^="เพิ่มวัตถุดิบ"] { opacity:1; }
+.treeTable .sequence { text-align:center; font-variant-numeric:tabular-nums; color:#526b8a; }
+.treeTable button { transition:none!important; transform:none!important; }
+.treeTable td:nth-child(8) > span { border:0!important; padding:0!important; white-space:nowrap; font-size:12px!important; }
+.treeTable td:nth-child(11) button { width:auto; height:24px; padding:0 3px; font-size:12px; text-decoration:underline; text-underline-offset:2px; }
+.treeTable td:nth-child(11) button:first-child { color:#0866d6; }
+.treeTable td:nth-child(11) button:last-child { color:#e53935; }
+.treeTable td:nth-child(11) button:disabled { color:#94a3b8; }
+@media(hover:none) { .materialCode button[title^="เพิ่มวัตถุดิบ"] { opacity:1; } }
+.tableCount { margin:10px 0 12px; color:#71849c; font-size:12px; }
+.saveBar { position:sticky; bottom:0; z-index:35; display:flex; align-items:center; flex-wrap:wrap; gap:14px; min-height:84px; padding:14px 28px; background:#fff; border-top:1px solid #d7e0ea; box-shadow:0 -3px 12px #10345d08; }
+.footerTitle { display:flex; flex-direction:column; gap:3px; min-width:158px; white-space:nowrap; }
+.footerTitle strong { color:#10345d; font-size:14px; }
+.footerTitle > span { color:#71849c; font-size:10px; }
+.saveBar input { min-width:160px; flex:1; height:42px; border:1px solid #c5d2e3; border-radius:3px; padding:8px 12px; font-size:13px; }
+.saveBar input::placeholder { color:#8b9db3; }
+.saveBar button { display:inline-flex; align-items:center; justify-content:center; gap:10px; min-height:42px; border:1px solid #c5d2e3; border-radius:3px; padding:8px 20px; color:#10345d; background:white; font-size:13px; font-weight:600; }
+.saveBar .saveButton { border-color:#10345d; color:white; background:#10345d; }
+.pending { color:#b45309!important; }
+.formFields { display:grid; gap:12px; color:#10345d; font-size:13px; }
+.formFields label { display:grid; gap:5px; }
+.formFields input,.formFields select { width:100%; height:36px; padding:4px 8px; border:1px solid #c5d2e3; border-radius:3px; background:white; }
+.formFields p { color:#526b8a; font-size:12px; }.formFields [role=alert] { color:#b42318; }
+.importBody table { width:100%; border-collapse:collapse; font-size:13px; }
+.importBody th { background:#eaf0f7!important; color:#10345d!important; letter-spacing:0!important; }
+.importBody td,.importBody th { border:1px solid #d7e0ea; padding:5px 8px!important; }.importBody table thead { background:#eaf0f7!important; }
+@media(max-width:1100px) { .tableTools { flex-wrap:wrap; }.treeSearch { flex-basis:35%; }.tableTools > select { width:15%; }.tableTools > select:nth-of-type(2) { width:20%; }.contextGrid { grid-template-columns:2fr 1fr 1fr; }.contextGrid > label:last-child { grid-column:3; }.formulaGrid { grid-template-columns:1fr 1fr 1fr; }.tableWrapper { max-height:60dvh; } }
+@media(max-width:700px) { .pageHeader,.content,.saveBar { padding-left:12px; padding-right:12px; }.pageHeader h1 { font-size:23px; }.headerActions { display:none; }.contextGrid { grid-template-columns:1fr 1fr; gap:12px; }.contextGrid .productField { grid-column:1/-1; }.contextGrid > label:last-child { grid-column:auto; }.formulaGrid { grid-template-columns:1fr; gap:12px; }.treeSearch { flex-basis:100%; }.tableTools > select,.tableTools > select:nth-of-type(2) { flex:1; width:25%; }.toolSpace { display:none; }.tableWrapper { max-height:65dvh; }.saveBar input { flex-basis:calc(100% - 180px); }.footerTitle { min-width:140px; } }
+@media print { .pageHeader,.saveBar,.filters,.formulaPanel,.tableTools,.tableCount { display:none!important; }.content { padding:0; }.tableWrapper { max-height:none; overflow:visible!important; } }

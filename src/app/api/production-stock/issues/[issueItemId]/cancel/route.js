@@ -1,6 +1,6 @@
 import { getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
 import { logAuditEvent } from "@/lib/auditLog";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import {
   cancelProductionStockIssueItem,
   loadProductionStockIssuePageData,
@@ -10,9 +10,6 @@ import { ok, toJsonResponse } from "@/lib/result";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const PRODUCTION_STOCK_MANAGE_PERMISSION_KEYS = [
-  "production-line-attendance-manage",
-];
 
 export async function POST(request, { params }) {
   let actorId = null;
@@ -20,10 +17,7 @@ export async function POST(request, { params }) {
   let body = null;
   let operationCompleted = false;
   try {
-    const permission = await requirePermissionKeys(
-      request,
-      PRODUCTION_STOCK_MANAGE_PERMISSION_KEYS
-    );
+    const permission = await requireTaskPermission(request, "production-stock-issue-cancel");
     actorId = permission.userId;
     body = await readJson(request);
     const resolvedParams = await params;

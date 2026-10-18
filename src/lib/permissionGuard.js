@@ -11,7 +11,7 @@ export async function requirePermissionKeys(request, permissionKeys = []) {
   const session = getSessionFromRequest(request, userId);
   if (session?.userId) {
     await assertSessionActive(request, userId);
-    if (!normalizedKeys.length || session.isAdmin) {
+    if (!normalizedKeys.length) {
       return {
         userId: session.userId,
         user: null,
@@ -19,25 +19,12 @@ export async function requirePermissionKeys(request, permissionKeys = []) {
         permissions: session.permissions ?? [],
       };
     }
-    const sessionPermissions = new Set(session.permissions ?? []);
-    const hasPermission = normalizedKeys.some((key) =>
-      sessionPermissions.has(key)
-    );
-    if (hasPermission) {
-      return {
-        userId: session.userId,
-        user: null,
-        isAdmin: false,
-        permissions: Array.from(sessionPermissions),
-      };
-    }
-    throw new ApiError(403, "Forbidden");
   }
   if (!normalizedKeys.length) {
     return { userId, user, isAdmin: false, permissions: [] };
   }
 
-  const { permissions, isAdmin } = await getUserPermissions(userId);
+  const { permissions, isAdmin } = await getUserPermissions(userId, { fresh: true });
   if (isAdmin) {
     return { userId, user, isAdmin: true, permissions };
   }

@@ -1,6 +1,5 @@
 import "server-only";
 
-import { getSessionFromRequest } from "@/lib/sessionToken";
 import { getUserPermissions } from "@/lib/permissionsData";
 
 const CLAIM_PERMISSIONS = Object.freeze({
@@ -26,12 +25,7 @@ function isMissingTableError(error) {
 
 export async function hasPlanningManageAccess(request, userId, isAdmin = false) {
   if (isAdmin) return true;
-  const session = getSessionFromRequest(request, userId);
-  if (session?.isAdmin) return true;
-  if (Array.isArray(session?.permissions)) {
-    return session.permissions.includes("production-line-planning-manage");
-  }
-  const permissionResult = await getUserPermissions(userId);
+  const permissionResult = await getUserPermissions(userId, { fresh: true });
   return Boolean(
     permissionResult?.isAdmin
     || permissionResult?.permissions?.includes("production-line-planning-manage")

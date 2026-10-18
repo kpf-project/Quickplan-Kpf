@@ -15,5 +15,5 @@ export default async function ProductionInputOutputReportPage({ searchParams }) 
     dateTo: params?.dateTo || null,
   });
 
-  return <ProductionInputOutputReportPageClient initialData={reportData} />;
+  return <ProductionInputOutputReportPageClient initialData={reportData} reportCenter={params?.reportCenter === "1"} />;
 }

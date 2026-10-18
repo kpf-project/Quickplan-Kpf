@@ -159,7 +159,7 @@ function DayDeptBlock({ deptEntry, date, groups, keyGroupMap, onCreateGroup }) {
       <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
         <div className="flex items-center gap-2">
           {deptCode && (
-            <span className="rounded-full bg-[#102C57]/10 px-2 py-0.5 text-[10px] font-bold text-[#102C57]">
+            <span className="rounded-full bg-[var(--surface-navy,#102C57)]/10 px-2 py-0.5 text-[10px] font-bold text-[#102C57]">
               {deptCode}
             </span>
           )}
@@ -186,7 +186,7 @@ function DayDeptBlock({ deptEntry, date, groups, keyGroupMap, onCreateGroup }) {
           {ungroupedRows.length > 0 && (
             <button
               onClick={() => onCreateGroup({ date, deptId, deptName, deptCode, rows, ungroupedRows })}
-              className="flex items-center gap-1 rounded-lg bg-[#102C57] px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-[#102C57]/90 transition-colors"
+              className="flex items-center gap-1 rounded-lg bg-[var(--surface-navy,#102C57)] px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-[var(--surface-navy,#102C57)]/90 transition-colors"
             >
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -362,7 +362,7 @@ function GroupingDrawer({ drawerState, lookup27Departments, onClose, onSaved }) 
       {/* Drawer */}
       <div className="fixed right-0 top-0 z-50 flex h-full w-full max-w-md flex-col bg-white shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 bg-[#102C57] px-5 py-4">
+        <div className="flex items-center justify-between border-b border-slate-100 bg-[var(--surface-navy,#102C57)] px-5 py-4">
           <div>
             <p className="text-[11px] font-semibold text-white/60 uppercase tracking-wide">จัดใบเบิก</p>
             <h3 className="text-sm font-bold text-white mt-0.5">
@@ -461,7 +461,7 @@ function GroupingDrawer({ drawerState, lookup27Departments, onClose, onSaved }) 
               return (
                 <label
                   key={row.sourceRowKey}
-                  className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${isChecked ? "border-[#102C57]/30 bg-[#102C57]/5" : "border-slate-100 bg-white hover:bg-slate-50"}`}
+                  className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${isChecked ? "border-[#102C57]/30 bg-[var(--surface-navy,#102C57)]/5" : "border-slate-100 bg-white hover:bg-slate-50"}`}
                 >
                   <input
                     type="checkbox"
@@ -515,7 +515,7 @@ function GroupingDrawer({ drawerState, lookup27Departments, onClose, onSaved }) 
                   return (
                     <label
                       key={row.sourceRowKey}
-                      className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${isChecked ? "border-[#102C57]/30 bg-[#102C57]/5" : "border-dashed border-slate-200 bg-white hover:bg-slate-50"}`}
+                      className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${isChecked ? "border-[#102C57]/30 bg-[var(--surface-navy,#102C57)]/5" : "border-dashed border-slate-200 bg-white hover:bg-slate-50"}`}
                     >
                       <input
                         type="checkbox"
@@ -572,7 +572,7 @@ function GroupingDrawer({ drawerState, lookup27Departments, onClose, onSaved }) 
               <button
                 onClick={handleSave}
                 disabled={saving || ticked.size === 0}
-                className="rounded-lg bg-[#102C57] px-4 py-2 text-sm font-semibold text-white hover:bg-[#102C57]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="rounded-lg bg-[var(--surface-navy,#102C57)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--surface-navy,#102C57)]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saving ? "กำลังบันทึก…" : "บันทึกกลุ่ม"}
               </button>

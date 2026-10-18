@@ -419,7 +419,7 @@ export default function ProductionStockOpeningBalanceImportClient({
               <button
                 type="button"
                 onClick={handleDownloadTemplate}
-                className="inline-flex h-11 items-center justify-center gap-2 border border-[#102C57] bg-[#102C57] px-4 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-[#0c2141]"
+                className="inline-flex h-11 items-center justify-center gap-2 border border-[#102C57] bg-[var(--surface-navy,#102C57)] px-4 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-[#0c2141]"
               >
                 <Download size={16} />
                 ดาวน์โหลด Template
@@ -549,7 +549,7 @@ export default function ProductionStockOpeningBalanceImportClient({
               type="button"
               onClick={handleImport}
               disabled={isPending || !previewRows.length}
-              className="inline-flex h-12 w-full items-center justify-center gap-2 border border-[#102C57] bg-[#102C57] px-4 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#0c2141] disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-300 disabled:text-slate-600"
+              className="inline-flex h-12 w-full items-center justify-center gap-2 border border-[#102C57] bg-[var(--surface-navy,#102C57)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#0c2141] disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-300 disabled:text-slate-600"
             >
               {isPending ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
               ยืนยันนำเข้ายอดยกมา

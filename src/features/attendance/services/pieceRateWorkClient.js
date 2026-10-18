@@ -142,8 +142,12 @@ export async function fetchPieceRateReportRevisions(id) {
 
 export async function downloadPieceRateReportExcel(params = {}) {
   const query = buildQueryString(params);
-  const response = await fetch(`/api/attendance/piece-rate/export?${query}`, {
-    method: "GET",
+  const usePost = query.length > 500;
+  const url = usePost ? "/api/attendance/piece-rate/export" : `/api/attendance/piece-rate/export?${query}`;
+  const response = await fetch(url, {
+    method: usePost ? "POST" : "GET",
+    headers: usePost ? { "Content-Type": "application/json" } : undefined,
+    body: usePost ? JSON.stringify(params) : undefined,
     cache: "no-store",
     credentials: "same-origin",
   });

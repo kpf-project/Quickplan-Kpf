@@ -27,6 +27,7 @@ import {
   loadMaterialUnitMapFromTradeCodes,
 } from "@/lib/materialClaimPool";
 import { fetchSupabaseRowsByChunks } from "@/lib/supabaseRangeFetch";
+import { enrichWipPlanDisplayWeights } from "@/lib/wipPlanDisplayWeights";
 
 export const dynamic = "force-dynamic";
 
@@ -118,6 +119,7 @@ function parseInputLine(row, index, fallbackDepartmentId = null) {
     skuCode,
     skuName: String(row?.skuName || row?.sku_name || "").trim(),
     plannedQty: roundQty(plannedQty),
+    planningUnit: String(row?.planningUnit || row?.unit || "").trim(),
     departmentId: departmentId || null,
     shiftId: String(row?.shiftId || row?.shift_id || "").trim() || null,
     shiftCode: String(row?.shiftCode || row?.shift_code || "").trim().toUpperCase() || null,
@@ -865,6 +867,7 @@ export async function POST(request) {
       ? traceRows.filter((row) => Boolean(row?.isCycle)).length
       : legacyExplodedRows.filter((row) => Boolean(row?.hasCycle)).length;
 
+    const weightedLines = await enrichWipPlanDisplayWeights(supabaseAdmin, [...autoDraftLines, ...filteredDraftLines]);
     return NextResponse.json(
       {
         data: {
@@ -872,8 +875,8 @@ export async function POST(request) {
           fgRows,
           wipSummary,
           wipSelectableOptions,
-          autoDraftLines,
-          draftLines: filteredDraftLines.map((line) => {
+          autoDraftLines: weightedLines.slice(0, autoDraftLines.length),
+          draftLines: weightedLines.slice(autoDraftLines.length).map((line) => {
             const dept = line.departmentId ? departmentMap.get(line.departmentId) : null;
             return {
               ...line,

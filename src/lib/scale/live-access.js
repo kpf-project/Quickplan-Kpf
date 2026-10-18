@@ -28,6 +28,7 @@ function normalizeRole(value) {
 }
 
 function normalizeDepartment(row, role) {
+  if (row?.department_id && !row.production_departments) return null;
   const department = row?.production_departments || row;
   const id = normalizeId(department?.id || row?.department_id);
   if (!id || department?.is_active === false || department?.deleted_at) {
@@ -42,10 +43,71 @@ function normalizeDepartment(row, role) {
   };
 }
 
+export async function loadWeightScaleLiveExcludedProductCodes(supabaseAdmin) {
+  const departments = await supabaseAdmin.from("production_departments")
+    .select("id").eq("code", "KP13").eq("is_active", true).is("deleted_at", null);
+  if (departments.error) throw new ApiError(500, "ตรวจสอบขอบเขตสินค้าเปลือกไม่สำเร็จ");
+  const ids = (departments.data || []).map(row => row.id);
+  if (!ids.length) return new Set();
+  const categories = await supabaseAdmin.from("production_department_product_subcategories")
+    .select("id").in("department_id", ids).eq("name", "เปลือก");
+  if (categories.error) throw new ApiError(500, "ตรวจสอบหมวดหมู่เปลือกไม่สำเร็จ");
+  const categoryIds = (categories.data || []).map(row => row.id);
+  if (!categoryIds.length) return new Set();
+  const mappings = await supabaseAdmin.from("production_department_products")
+    .select("sku_code").in("department_id", ids).in("subcategory_id", categoryIds);
+  if (mappings.error) throw new ApiError(500, "ตรวจสอบรายการสินค้าเปลือกไม่สำเร็จ");
+  return new Set((mappings.data || []).map(row => String(row.sku_code || "").trim().toUpperCase()));
+}
+
+// Shared master-data authorization only; never reads another weighing workflow.
+export async function assertWeightScaleLiveProductAccess(
+  supabaseAdmin,
+  { userId, isAdmin = false, departmentId, productCode, manage = false } = {}
+) {
+  const normalizedDepartmentId = normalizeId(departmentId);
+  const code = String(productCode || "").trim().toUpperCase();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(normalizedDepartmentId)
+    || !code || code.length > 100) {
+    throw new ApiError(400, "กรุณาเลือกแผนกและสินค้าให้ถูกต้อง");
+  }
+  const access = await loadWeightScaleLiveAccess(supabaseAdmin, {
+    userId, isAdmin, departmentId: normalizedDepartmentId,
+  });
+  if (!access.canView || (manage && !access.canOperate)) {
+    throw new ApiError(403, "ไม่มีสิทธิ์ทำรายการในแผนกนี้");
+  }
+  const mapping = await supabaseAdmin.from("production_department_products")
+    .select("sku_code,subcategory_id")
+    .eq("department_id", normalizedDepartmentId).eq("sku_code", code).maybeSingle();
+  if (mapping.error) throw new ApiError(500, "ตรวจสอบสินค้าในแผนกไม่สำเร็จ");
+  if (!mapping.data) throw new ApiError(403, "สินค้าไม่ได้อยู่ในแผนกนี้");
+  const product = await supabaseAdmin.from("products_cache")
+    .select("sku_code,iccat_code,uom_name").eq("sku_code", code)
+    .eq("iccat_code", LIVE_SCALE_WIP_CATEGORY_CODE).maybeSingle();
+  if (product.error) throw new ApiError(500, "ตรวจสอบข้อมูลสินค้าไม่สำเร็จ");
+  if (!product.data) throw new ApiError(403, "สินค้าไม่อยู่ในขอบเขต WIP ของหน้าชั่งกลาง");
+  if (!["KG", "KGS", "กก.", "กก", "กิโลกรัม"].includes(String(product.data.uom_name || "").trim().toUpperCase())) {
+    throw new ApiError(400, "หน้าชั่งกลางรับเข้าได้เฉพาะสินค้าที่หน่วยเป็นกิโลกรัม ยังไม่เปิดแปลงหน่วยอื่น");
+  }
+  const excludedCodes = await loadWeightScaleLiveExcludedProductCodes(supabaseAdmin);
+  if (excludedCodes.has(code)) throw new ApiError(403, "สินค้าเปลือกไม่อยู่ในขอบเขตหน้าชั่งกลาง");
+  if (mapping.data.subcategory_id) {
+    const subcategory = await supabaseAdmin.from("production_department_product_subcategories")
+      .select("id").eq("id", mapping.data.subcategory_id)
+      .eq("department_id", normalizedDepartmentId).maybeSingle();
+    if (subcategory.error) throw new ApiError(500, "ตรวจสอบหมวดหมู่ย่อยไม่สำเร็จ");
+    if (!subcategory.data) throw new ApiError(403, "หมวดหมู่ย่อยไม่ได้อยู่ในแผนกนี้");
+  }
+  return { access, productCode: code, subcategoryId: mapping.data.subcategory_id || null };
+}
+
 export async function requireWeightScaleLivePermission(request, { manage = false } = {}) {
   return requirePermissionKeys(
     request,
-    manage ? LIVE_SCALE_MANAGE_PERMISSION_KEYS : LIVE_SCALE_PERMISSION_KEYS
+    process.env.CENTRAL_SCALE_RECEIVING_ENABLED === "true"
+      ? (manage ? ["central-scale-receive"] : ["central-scale-view", "central-scale-receive"])
+      : (manage ? LIVE_SCALE_MANAGE_PERMISSION_KEYS : LIVE_SCALE_PERMISSION_KEYS)
   );
 }
 
@@ -139,94 +201,5 @@ export async function loadWeightScaleLiveAccess(
     role: department?.role || null,
     department,
     departmentIds: scope.departments.map((item) => item.id),
-  };
-}
-
-export async function assertWeightScaleLiveReceiptAccess(
-  supabaseAdmin = getSupabaseAdmin(),
-  {
-    userId,
-    isAdmin = false,
-    departmentId,
-    productConfigId,
-  } = {}
-) {
-  const normalizedDepartmentId = normalizeId(departmentId);
-  const normalizedProductConfigId = normalizeId(productConfigId);
-  const access = await loadWeightScaleLiveAccess(supabaseAdmin, {
-    userId,
-    isAdmin,
-    departmentId: normalizedDepartmentId,
-  });
-
-  if (!access.canOperate) {
-    throw new ApiError(403, "User is not allowed to receive products for this department");
-  }
-
-  const configResult = await supabaseAdmin
-    .from("production_weight_scale_products")
-    .select("id,department_id,sku_code,is_active")
-    .eq("id", normalizedProductConfigId)
-    .eq("department_id", normalizedDepartmentId)
-    .eq("is_active", true)
-    .maybeSingle();
-
-  if (configResult.error) {
-    throw new ApiError(
-      500,
-      "Failed to verify live scale product",
-      configResult.error.message
-    );
-  }
-
-  if (!configResult.data) {
-    throw new ApiError(403, "Product is not available for this live scale page");
-  }
-
-  const mappedProductResult = await supabaseAdmin
-    .from("production_department_products")
-    .select("sku_code")
-    .eq("department_id", normalizedDepartmentId)
-    .eq("sku_code", configResult.data.sku_code)
-    .maybeSingle();
-
-  if (mappedProductResult.error) {
-    throw new ApiError(
-      500,
-      "Failed to verify live scale product assignment",
-      mappedProductResult.error.message
-    );
-  }
-
-  if (!mappedProductResult.data) {
-    throw new ApiError(403, "Product is not assigned to this department");
-  }
-
-  const productResult = await supabaseAdmin
-    .from("products_cache")
-    .select("sku_code,sku_name,uom_name,iccat_code")
-    .eq("sku_code", configResult.data.sku_code)
-    .eq("iccat_code", LIVE_SCALE_WIP_CATEGORY_CODE)
-    .maybeSingle();
-
-  if (productResult.error) {
-    throw new ApiError(
-      500,
-      "Failed to verify WIP product category",
-      productResult.error.message
-    );
-  }
-
-  if (!productResult.data) {
-    throw new ApiError(403, "Only WIP products are allowed on this live scale page");
-  }
-
-  return {
-    departmentId: normalizedDepartmentId,
-    departmentIds: access.departmentIds,
-    productConfigId: configResult.data.id,
-    skuCode: String(productResult.data.sku_code || "").trim().toUpperCase(),
-    productName: String(productResult.data.sku_name || "").trim(),
-    unit: String(productResult.data.uom_name || "").trim(),
   };
 }

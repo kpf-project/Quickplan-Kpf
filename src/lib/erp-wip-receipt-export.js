@@ -1,8 +1,11 @@
 import "server-only";
 
 import ExcelJS from "exceljs";
+import * as crypto from "node:crypto";
+import { loadScaleProductsData } from "@/lib/scale/products";
 import { ApiError, getSupabaseAdmin } from "@/lib/adminApi";
 import { loadScaleReceiptReportData } from "@/lib/scale/receipts";
+import { fetchSupabaseRowsByChunks } from "@/lib/supabaseRangeFetch";
 
 const DOCUMENT_TYPE = "IMM";
 const SOURCE_MODULE = "weight_receipt";
@@ -10,7 +13,6 @@ const BRANCH_CODE = "00000";
 const DEPARTMENT_CODE = "KP13";
 const PROJECT_CODE = "0";
 const DISPLAY_PRICE = -1;
-const QUANTITY = 1;
 const STORAGE_LOCATION = "02";
 
 const ERP_COLUMNS = [
@@ -110,78 +112,28 @@ function buildFilename(dateFrom, dateTo) {
 }
 
 function parseReceiptRows(receipts) {
-  const detailRows = (Array.isArray(receipts) ? receipts : [])
-    .map((receipt) => {
-      const receiptId = normalizeText(receipt?.id);
-      const productCode = normalizeUpperText(receipt?.productCode);
-      const documentDate = getBangkokDateInputFromTimestamp(receipt?.weighedAt);
-      const unitWeightKg = Number(receipt?.netWeightKg || 0);
-
-      if (!receiptId || !productCode || !documentDate) {
-        return null;
-      }
-
-      return {
-        sourceReceiptId: receiptId,
-        documentDate,
-        tradeCode: productCode,
-        productName: normalizeText(receipt?.productName) || productCode,
-        unitWeightKg: Number.isFinite(unitWeightKg) ? Number(unitWeightKg.toFixed(3)) : 0,
-        lotNo: normalizeText(receipt?.lotNo) || "-",
-        barcode: normalizeText(receipt?.barcode),
-        weighedAt: receipt?.weighedAt || null,
-      };
-    })
-    .filter(Boolean)
-    .sort((left, right) => {
-      if (left.documentDate !== right.documentDate) {
-        return left.documentDate.localeCompare(right.documentDate);
-      }
-      if (left.tradeCode !== right.tradeCode) {
-        return left.tradeCode.localeCompare(right.tradeCode);
-      }
-      return left.lotNo.localeCompare(right.lotNo);
+  const groups = new Map();
+  for (const receipt of receipts || []) {
+    const documentDate = receipt.weighedAt ? getBangkokDateInputFromTimestamp(receipt.weighedAt) : "";
+    const quantity = Number(receipt.netWeightKg);
+    if (!receipt.id || !receipt.productCode || !documentDate || !receipt.lotNo || receipt.lotNo === "-" || !Number.isFinite(quantity) || quantity <= 0) {
+      throw new ApiError(400, "ข้อมูลใบชั่งไม่ครบหรือน้ำหนักไม่ถูกต้อง กรุณาตรวจสอบก่อนส่งออก");
+    }
+    const tradeCode = normalizeUpperText(receipt.productCode);
+    const key = JSON.stringify([documentDate, tradeCode, receipt.lotNo]);
+    if (!groups.has(key)) groups.set(key, {
+      documentDate, tradeCode, productName: receipt.productName || tradeCode,
+      lotNo: receipt.lotNo, quantity: 0, unitWeightKg: 0, sourceReceiptIds: [], barcodes: [], sources: [],
     });
-
-  const aggregated = new Map();
-  detailRows.forEach((row) => {
-    const key = [row.documentDate, row.tradeCode, row.lotNo].join("|");
-    if (!aggregated.has(key)) {
-      aggregated.set(key, {
-        sourceReceiptId: null,
-        sourceReceiptIds: [],
-        barcodes: [],
-        documentDate: row.documentDate,
-        tradeCode: row.tradeCode,
-        productName: row.productName,
-        quantity: 0,
-        unitWeightKg: 0,
-        lotNo: row.lotNo,
-        weighedAt: row.weighedAt,
-      });
-    }
-
-    const target = aggregated.get(key);
-    target.quantity += 1;
-    target.unitWeightKg = Number((target.unitWeightKg + row.unitWeightKg).toFixed(3));
-    target.sourceReceiptIds.push(row.sourceReceiptId);
-    if (row.barcode) {
-      target.barcodes.push(row.barcode);
-    }
-    if (!target.weighedAt || String(row.weighedAt || "").localeCompare(String(target.weighedAt || "")) < 0) {
-      target.weighedAt = row.weighedAt;
-    }
-  });
-
-  return Array.from(aggregated.values()).sort((left, right) => {
-    if (left.documentDate !== right.documentDate) {
-      return left.documentDate.localeCompare(right.documentDate);
-    }
-    if (left.tradeCode !== right.tradeCode) {
-      return left.tradeCode.localeCompare(right.tradeCode);
-    }
-    return left.lotNo.localeCompare(right.lotNo);
-  });
+    const row = groups.get(key);
+    row.quantity = Number((row.quantity + quantity).toFixed(3));
+    row.sourceReceiptIds.push(receipt.id);
+    row.barcodes.push(receipt.barcode);
+    row.sources.push({ id: receipt.id, netWeightKg: quantity, weighedAt: receipt.weighedAt,
+      productConfigId: receipt.productConfigId, lotId: receipt.lotId, barcode: receipt.barcode });
+  }
+  return [...groups.values()].sort((a, b) => a.documentDate.localeCompare(b.documentDate)
+    || a.tradeCode.localeCompare(b.tradeCode) || a.lotNo.localeCompare(b.lotNo));
 }
 
 function buildDocumentNote(documentDate) {
@@ -199,7 +151,7 @@ function buildExcelLine(row, documentNo) {
     displayPrice: DISPLAY_PRICE,
     remark: buildDocumentNote(row.documentDate),
     tradeCode: row.tradeCode,
-    quantity: row.quantity || QUANTITY,
+    quantity: row.quantity,
     unitPrice: "",
     unitWeightKg: row.unitWeightKg,
     lotNo: row.lotNo,
@@ -210,31 +162,63 @@ function buildExcelLine(row, documentNo) {
   };
 }
 
-async function loadRowsForExport(supabaseAdmin, filters = {}) {
+async function normalizeExportFilters(supabaseAdmin, filters = {}) {
+  const products = await loadScaleProductsData(supabaseAdmin);
+  const departmentId = products?.preset?.departmentId;
+  if (!departmentId) throw new ApiError(400, "ไม่พบแผนกสำหรับส่งออก ERP");
+  const dateFrom = normalizeDateInput(filters.dateFrom);
+  const dateTo = normalizeDateInput(filters.dateTo);
+  if (!dateFrom || !dateTo || dateFrom > dateTo || [dateFrom, dateTo].some(date => !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0, 10) !== date)) {
+    throw new ApiError(400, "กรุณาระบุช่วงวันที่รับเข้าให้ถูกต้อง");
+  }
+  return { departmentId, dateFrom, dateTo, search: normalizeText(filters.search).slice(0, 200),
+    lotNo: normalizeUpperText(filters.lotNo), itemStatus: "confirmed",
+    productCodes: [...new Set((Array.isArray(filters.productCodes) ? filters.productCodes : []).map(normalizeUpperText).filter(Boolean))].sort() };
+}
+
+async function loadRowsForExport(supabaseAdmin, filters) {
   const payload = await loadScaleReceiptReportData(supabaseAdmin, {
-    departmentId: normalizeText(filters.departmentId) || null,
-    dateFrom: normalizeDateInput(filters.dateFrom) || null,
-    dateTo: normalizeDateInput(filters.dateTo) || null,
-    search: normalizeText(filters.search),
-    isTest: false,
-    itemStatus: normalizeText(filters.itemStatus) === "voided" ? "all" : normalizeText(filters.itemStatus) || "all",
-    productCodes: Array.isArray(filters.productCodes)
-      ? filters.productCodes.map((code) => normalizeUpperText(code)).filter(Boolean)
-      : [],
-    includeAll: true,
-    page: 1,
-    limit: 2000,
+    ...filters, search: "", isTest: false, recordType: "production", includeAll: true, page: 1, limit: 200,
   });
+  const keyword = filters.search.toLocaleLowerCase("th-TH");
+  return parseReceiptRows((payload.receipts || []).filter(row => row.itemStatus !== "voided" && !row.isReturn && !row.isTest)
+    .filter(row => !keyword || [`${row.productCode} - ${row.productName}`, row.lotNo].some(value => String(value || "").toLocaleLowerCase("th-TH").includes(keyword))));
+}
 
-  const receipts = (Array.isArray(payload?.receipts) ? payload.receipts : []).filter(
-    (receipt) => normalizeText(receipt?.itemStatus) !== "voided"
-  );
-  const rows = parseReceiptRows(receipts);
+function dbError(error) {
+  if (!error) return;
+  if (["42P01", "42883", "PGRST202", "PGRST205"].includes(error.code)) {
+    throw new ApiError(503, "ยังไม่ได้ติดตั้ง ERP Export รุ่นใหม่ กรุณาติดตั้ง scripts/install-receipt-erp-export.sql");
+  }
+  if (error.code === "23505" || error.code === "P0001") throw new ApiError(409, error.message);
+  throw new ApiError(500, "ไม่สามารถอ่านหรือบันทึกเอกสาร ERP ได้", error.message);
+}
 
-  return {
-    rows,
-    filters: payload?.filters || {},
-  };
+function digest(value) { return crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
+function sign(value) {
+  const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!secret) throw new ApiError(500, "ไม่พบคีย์สำหรับตรวจสอบพรีวิว ERP");
+  return crypto.createHmac("sha256", secret).update(value).digest("hex");
+}
+function previewToken(fingerprint, actorUserId) {
+  const body = Buffer.from(JSON.stringify({ fingerprint, actorUserId, expiresAt: Date.now() + 15 * 60 * 1000 })).toString("base64url");
+  return `${body}.${sign(body)}`;
+}
+function readPreviewToken(token, actorUserId) {
+  const [body, signature] = String(token || "").split(".");
+  if (!body || body.length > 2048 || !signature || !/^[0-9a-f]{64}$/.test(signature) || !crypto.timingSafeEqual(Buffer.from(sign(body)), Buffer.from(signature))) throw new ApiError(409, "พรีวิวไม่ถูกต้อง กรุณา Preview ใหม่");
+  let payload;
+  try { payload = JSON.parse(Buffer.from(body, "base64url").toString()); } catch { throw new ApiError(409, "พรีวิวไม่ถูกต้อง"); }
+  if (payload.actorUserId !== actorUserId) throw new ApiError(403, "พรีวิวนี้เป็นของผู้ใช้อื่น");
+  return payload;
+}
+
+async function duplicateReceiptIds(supabaseAdmin, rows) {
+  const ids = rows.flatMap(row => row.sourceReceiptIds);
+  const duplicates = await fetchSupabaseRowsByChunks(ids, chunk =>
+    supabaseAdmin.from("production_erp_export_receipts").select("receipt_id").in("receipt_id", chunk),
+  { onError: dbError });
+  return duplicates.map(row => row.receipt_id);
 }
 
 function groupRowsByDocumentDate(rows) {
@@ -293,44 +277,6 @@ async function previewDocumentNumbers(supabaseAdmin, groups) {
   });
 }
 
-function mapAllocatedRows(allocatedRows) {
-  return new Map(
-    (Array.isArray(allocatedRows) ? allocatedRows : []).map((row) => [
-      normalizeDateInput(row.document_date || row.documentDate),
-      {
-        documentDate: normalizeDateInput(row.document_date || row.documentDate),
-        periodYm: normalizeText(row.period_ym || row.periodYm),
-        runningNo: Number(row.running_no || row.runningNo || 0),
-        documentNo: normalizeText(row.document_no || row.documentNo),
-      },
-    ])
-  );
-}
-
-async function allocateDocumentNumbers(supabaseAdmin, groups) {
-  const documentDates = groups.map((group) => group.documentDate);
-  const result = await supabaseAdmin.rpc("allocate_erp_export_document_numbers", {
-    p_document_type: DOCUMENT_TYPE,
-    p_document_dates: documentDates,
-  });
-
-  if (result.error) {
-    throw new ApiError(500, "Failed to allocate ERP document numbers", result.error.message);
-  }
-
-  const byDate = mapAllocatedRows(result.data);
-  return groups.map((group) => {
-    const allocated = byDate.get(group.documentDate);
-    if (!allocated?.documentNo) {
-      throw new ApiError(500, "ERP document allocation is incomplete");
-    }
-    return {
-      ...allocated,
-      rowCount: group.rows.length,
-    };
-  });
-}
-
 function buildPreviewPayload(rows, documents, filters = {}) {
   return {
     documentType: DOCUMENT_TYPE,
@@ -353,7 +299,7 @@ async function createWorkbookBuffer(rows, documentMap) {
 
   rows.forEach((row) => {
     const documentNo = documentMap.get(row.documentDate);
-    worksheet.addRow(buildExcelLine(row, documentNo));
+    worksheet.addRow(row.excelLine || buildExcelLine(row, documentNo));
   });
 
   worksheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
@@ -398,149 +344,97 @@ async function createWorkbookBuffer(rows, documentMap) {
   ].forEach((key) => {
     worksheet.getColumn(key).numFmt = "@";
   });
-  worksheet.getColumn("unitWeightKg").numFmt = "#,##0.000";
+  worksheet.getColumn("quantity").numFmt = "#,##0.000";
+  worksheet.getColumn("unitWeightKg").numFmt = "0.00";
   worksheet.views = [{ state: "frozen", ySplit: 1 }];
   worksheet.autoFilter = `A1:${String.fromCharCode(64 + ERP_COLUMNS.length)}1`;
 
   return workbook.xlsx.writeBuffer();
 }
 
-export async function previewWipReceiptErpExport({
-  supabaseAdmin = getSupabaseAdmin(),
-  filters = {},
-} = {}) {
-  const { rows } = await loadRowsForExport(supabaseAdmin, filters);
-  if (!rows.length) {
-    throw new ApiError(400, "ไม่พบข้อมูลรับเข้า WIP สำหรับ Export ERP");
-  }
-
-  const groups = groupRowsByDocumentDate(rows);
-  const documents = await previewDocumentNumbers(supabaseAdmin, groups);
-  return buildPreviewPayload(rows, documents, filters);
+export async function previewWipReceiptErpExport({ supabaseAdmin = getSupabaseAdmin(), filters = {}, actorUserId = null, canOverride = false } = {}) {
+  const scopedFilters = await normalizeExportFilters(supabaseAdmin, filters);
+  const rows = await loadRowsForExport(supabaseAdmin, scopedFilters);
+  if (!rows.length) throw new ApiError(400, "ไม่พบข้อมูลรับเข้า WIP สำหรับ Export ERP");
+  const duplicates = await duplicateReceiptIds(supabaseAdmin, rows);
+  const documents = await previewDocumentNumbers(supabaseAdmin, groupRowsByDocumentDate(rows));
+  return { ...buildPreviewPayload(rows, documents, scopedFilters), rows,
+    totalWeightKg: Number(rows.reduce((sum, row) => sum + row.quantity, 0).toFixed(3)),
+    duplicateCount: duplicates.length, canOverride,
+    previewToken: previewToken(digest({ filters: scopedFilters, rows }), actorUserId) };
 }
 
-export async function exportWipReceiptErpExcel({
-  supabaseAdmin = getSupabaseAdmin(),
-  filters = {},
-  actorUserId = null,
-} = {}) {
-  const { rows } = await loadRowsForExport(supabaseAdmin, filters);
-  if (!rows.length) {
-    throw new ApiError(400, "ไม่พบข้อมูลรับเข้า WIP สำหรับ Export ERP");
+export async function listWipReceiptErpHistory({ supabaseAdmin = getSupabaseAdmin(), limit = 30 } = {}) {
+  const products = await loadScaleProductsData(supabaseAdmin);
+  const departmentId = products?.preset?.departmentId;
+  if (!departmentId) throw new ApiError(400, "ไม่พบแผนกสำหรับส่งออก ERP");
+  const result = await supabaseAdmin.from("production_erp_export_batches")
+    .select("id,file_name,date_from,date_to,exported_at,exported_by,document_count,row_count,status,metadata,production_erp_export_documents(document_no,document_date)")
+    .eq("source_module", SOURCE_MODULE).eq("metadata->filters->>departmentId", departmentId)
+    .order("exported_at", { ascending: false }).limit(limit);
+  dbError(result.error);
+  const batches = result.data || [];
+  const userIds = [...new Set(batches.map(batch => batch.exported_by).filter(Boolean))];
+  if (!userIds.length) return batches;
+  const users = await supabaseAdmin.from("profiles").select("id,username").in("id", userIds);
+  dbError(users.error);
+  const names = new Map((users.data || []).map(user => [user.id, user.username]));
+  return batches.map(batch => ({ ...batch, exportedByName: names.get(batch.exported_by) || null }));
+}
+
+export async function downloadWipReceiptErpBatch({ supabaseAdmin = getSupabaseAdmin(), batchId } = {}) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(batchId || "")) throw new ApiError(400, "รหัสเอกสารไม่ถูกต้อง");
+  const products = await loadScaleProductsData(supabaseAdmin);
+  const batch = await supabaseAdmin.from("production_erp_export_batches").select("*").eq("id", batchId).single();
+  dbError(batch.error);
+  if (!batch.data || !products?.preset?.departmentId || batch.data.metadata?.filters?.departmentId !== products.preset.departmentId) throw new ApiError(403, "ไม่มีสิทธิ์ดาวน์โหลดเอกสารนี้");
+  if (batch.data.status !== "exported") throw new ApiError(409, "เอกสารนี้ถูกยกเลิกแล้ว");
+  const lines = [];
+  for (let offset = 0; ; offset += 500) {
+    const result = await supabaseAdmin.from("production_erp_export_lines").select("*").eq("batch_id", batchId).order("line_no").range(offset, offset + 499);
+    dbError(result.error);
+    lines.push(...(result.data || []));
+    if ((result.data || []).length < 500) break;
   }
+  if (lines.length !== batch.data.row_count) throw new ApiError(409, "ประวัติเอกสารไม่ครบ ไม่สามารถดาวน์โหลดได้");
+  const rows = lines.map(row => ({ documentDate: row.document_date, quantity: Number(row.quantity), unitWeightKg: Number(row.unit_weight_kg), tradeCode: row.trade_code, lotNo: row.lot_no,
+    excelLine: { documentDateText: formatChristianDate(row.document_date), documentNo: row.document_no,
+      branchCode: row.branch_code, departmentCode: row.department_code, projectCode: row.project_code,
+      displayPrice: row.display_price, remark: buildDocumentNote(row.document_date), tradeCode: row.trade_code,
+      quantity: Number(row.quantity), unitPrice: row.unit_price == null ? "" : Number(row.unit_price), unitWeightKg: Number(row.unit_weight_kg),
+      lotNo: row.lot_no, trackingNo: row.tracking_no || "", storageLocation: row.storage_location,
+      productionDateText: formatChristianDate(row.production_date), expiryDateText: formatChristianDate(row.expiry_date) } }));
+  const documentMap = new Map(lines.map(row => [row.document_date, row.document_no]));
+  return { buffer: await createWorkbookBuffer(rows, documentMap), fileName: batch.data.file_name,
+    batchId, preview: { documentCount: batch.data.document_count, rowCount: batch.data.row_count } };
+}
 
-  const groups = groupRowsByDocumentDate(rows);
-  const documents = await allocateDocumentNumbers(supabaseAdmin, groups);
-  const fileName = buildFilename(
-    normalizeDateInput(filters.dateFrom) || rows[0]?.documentDate,
-    normalizeDateInput(filters.dateTo) || rows.at(-1)?.documentDate
-  );
-  const documentByDate = new Map(documents.map((document) => [document.documentDate, document.documentNo]));
-  const rowsByDate = new Map(groups.map((group) => [group.documentDate, group.rows]));
-
-  const batchInsert = {
-    document_type: DOCUMENT_TYPE,
-    source_module: SOURCE_MODULE,
-    date_from: normalizeDateInput(filters.dateFrom) || rows[0].documentDate,
-    date_to: normalizeDateInput(filters.dateTo) || rows.at(-1).documentDate,
-    file_name: fileName,
-    status: "exported",
-    document_count: documents.length,
-    row_count: rows.length,
-    exported_by: actorUserId,
-    metadata: {
-      filters,
-    },
-  };
-
-  const batchResult = await supabaseAdmin
-    .from("production_erp_export_batches")
-    .insert(batchInsert)
-    .select("id")
-    .single();
-
-  if (batchResult.error) {
-    throw new ApiError(500, "Failed to create ERP export batch", batchResult.error.message);
+export async function exportWipReceiptErpExcel({ supabaseAdmin = getSupabaseAdmin(), filters = {}, actorUserId = null,
+  previewToken: token, requestId, documentNumbers = {}, overrideReason = "", canOverride = false } = {}) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId || "")) throw new ApiError(400, "ไม่พบรหัสคำขอส่งออก");
+  const preview = readPreviewToken(token, actorUserId);
+  const hasOverride = Object.keys(documentNumbers).length > 0;
+  if (hasOverride && !canOverride) throw new ApiError(403, "เฉพาะผู้ดูแลระบบที่แก้เลขเอกสารได้");
+  const reason = normalizeText(overrideReason);
+  if (hasOverride && (reason.length < 5 || reason.length > 500)) throw new ApiError(400, "กรุณาระบุเหตุผลแก้เลขเอกสาร 5–500 ตัวอักษร");
+  const requestHash = digest({ token, filters, actorUserId, documentNumbers, reason });
+  const replay = await supabaseAdmin.from("production_erp_export_batches").select("id,metadata").eq("metadata->>requestId", requestId).maybeSingle();
+  dbError(replay.error);
+  if (replay.data) {
+    if (replay.data.metadata.requestHash !== requestHash) throw new ApiError(409, "รหัสคำขอนี้ถูกใช้กับข้อมูลอื่นแล้ว");
+    return downloadWipReceiptErpBatch({ supabaseAdmin, batchId: replay.data.id });
   }
-
-  const batchId = batchResult.data.id;
-  const documentInserts = documents.map((document) => ({
-    batch_id: batchId,
-    document_type: DOCUMENT_TYPE,
-    source_module: SOURCE_MODULE,
-    period_ym: document.periodYm,
-    running_no: document.runningNo,
-    document_no: document.documentNo,
-    document_date: document.documentDate,
-    document_note: buildDocumentNote(document.documentDate),
-    row_count: document.rowCount,
-    created_by: actorUserId,
-  }));
-
-  const documentResult = await supabaseAdmin
-    .from("production_erp_export_documents")
-    .insert(documentInserts)
-    .select("id,document_date,document_no");
-
-  if (documentResult.error) {
-    throw new ApiError(500, "Failed to create ERP export documents", documentResult.error.message);
+  if (preview.expiresAt < Date.now()) throw new ApiError(409, "พรีวิวหมดอายุ กรุณา Preview ใหม่");
+  const scopedFilters = await normalizeExportFilters(supabaseAdmin, filters);
+  const rows = await loadRowsForExport(supabaseAdmin, scopedFilters);
+  if (!rows.length || digest({ filters: scopedFilters, rows }) !== preview.fingerprint) throw new ApiError(409, "ข้อมูลเปลี่ยนจากพรีวิว กรุณา Preview ใหม่ก่อนส่งออก");
+  for (const [date, number] of Object.entries(documentNumbers)) {
+    if (!rows.some(row => row.documentDate === date) || !new RegExp(`^IMM${getPeriodYm(date)}/[0-9]{4}$`).test(number) || Number(number.slice(-4)) < 1) throw new ApiError(400, "เลขเอกสารต้องตรงเดือนรับเข้า และเลขรัน 0001–9999");
   }
-
-  const documentIdByDate = new Map(
-    (documentResult.data || []).map((document) => [document.document_date, document.id])
-  );
-  const lineInserts = [];
-  let lineNo = 0;
-  documents.forEach((document) => {
-    const documentRows = rowsByDate.get(document.documentDate) || [];
-    documentRows.forEach((row) => {
-      const expiryDate = addOneYearDateInput(row.documentDate);
-      lineNo += 1;
-      lineInserts.push({
-        batch_id: batchId,
-        document_id: documentIdByDate.get(document.documentDate),
-        line_no: lineNo,
-        source_receipt_id: null,
-        document_date: row.documentDate,
-        document_no: document.documentNo,
-        branch_code: BRANCH_CODE,
-        department_code: DEPARTMENT_CODE,
-        project_code: PROJECT_CODE,
-        display_price: DISPLAY_PRICE,
-        trade_code: row.tradeCode,
-        quantity: row.quantity || QUANTITY,
-        unit_price: null,
-        unit_weight_kg: row.unitWeightKg,
-        lot_no: row.lotNo,
-        tracking_no: null,
-        storage_location: STORAGE_LOCATION,
-        production_date: row.documentDate,
-        expiry_date: expiryDate,
-        metadata: {
-          barcodes: row.barcodes,
-          productName: row.productName,
-          sourceReceiptIds: row.sourceReceiptIds,
-          weighedAt: row.weighedAt,
-        },
-      });
-    });
+  const result = await supabaseAdmin.rpc("commit_wip_receipt_erp_export", {
+    p_request_id: requestId, p_actor: actorUserId, p_filters: scopedFilters, p_rows: rows,
+    p_numbers: documentNumbers, p_reason: reason, p_request_hash: requestHash,
   });
-
-  if (lineInserts.length) {
-    const lineResult = await supabaseAdmin
-      .from("production_erp_export_lines")
-      .insert(lineInserts);
-
-    if (lineResult.error) {
-      throw new ApiError(500, "Failed to create ERP export lines", lineResult.error.message);
-    }
-  }
-
-  const buffer = await createWorkbookBuffer(rows, documentByDate);
-  return {
-    buffer,
-    fileName,
-    preview: buildPreviewPayload(rows, documents, filters),
-    batchId,
-  };
+  dbError(result.error);
+  return downloadWipReceiptErpBatch({ supabaseAdmin, batchId: result.data });
 }

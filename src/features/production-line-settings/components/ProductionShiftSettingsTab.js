@@ -98,7 +98,7 @@ function SectionCard({ section, active, onClick }) {
       onClick={onClick}
       className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
         active
-          ? "border-[#102C57] bg-[#102C57] text-white shadow-sm"
+          ? "border-[#102C57] bg-[var(--surface-navy,#102C57)] text-white shadow-sm"
           : "border-[#d7dfeb] bg-white text-[#102C57] hover:border-[#102C57]/30 hover:bg-[#f7f9fc]"
       }`}
     >
@@ -117,9 +117,9 @@ function ShiftModal({ open, form, setForm, saving, onClose, onSave }) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#102C57]/45 px-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--surface-navy,#102C57)]/45 px-4 backdrop-blur-sm">
       <div className="w-full max-w-2xl rounded-[28px] border border-[#d7dfeb] bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-[#102C57]/10 bg-[#102C57] px-5 py-4 text-white">
+        <div className="flex items-center justify-between border-b border-[#102C57]/10 bg-[var(--surface-navy,#102C57)] px-5 py-4 text-white">
           <div>
             <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#d4af37]">Shift Master</div>
             <h3 className="mt-1 text-lg font-bold">
@@ -249,9 +249,9 @@ function AssignmentModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#102C57]/45 px-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--surface-navy,#102C57)]/45 px-4 backdrop-blur-sm">
       <div className="w-full max-w-2xl rounded-[28px] border border-[#d7dfeb] bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-[#102C57]/10 bg-[#102C57] px-5 py-4 text-white">
+        <div className="flex items-center justify-between border-b border-[#102C57]/10 bg-[var(--surface-navy,#102C57)] px-5 py-4 text-white">
           <div>
             <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#d4af37]">Section Shift</div>
             <h3 className="mt-1 text-lg font-bold">
@@ -640,7 +640,7 @@ export default function ProductionShiftSettingsTab({ canManage = false }) {
       ) : null}
 
       <section className="rounded-[24px] border border-[#d7dfeb] bg-white shadow-sm">
-        <div className="border-b border-[#102C57]/10 bg-[#102C57] px-5 py-4 text-white">
+        <div className="border-b border-[#102C57]/10 bg-[var(--surface-navy,#102C57)] px-5 py-4 text-white">
           <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#d4af37]">Shift Master</div>
           <h2 className="mt-1 text-xl font-bold">แม่แบบกะการผลิต</h2>
           <p className="mt-1 text-sm text-white/75">
@@ -789,7 +789,7 @@ export default function ProductionShiftSettingsTab({ canManage = false }) {
             </div>
 
             <div className="overflow-hidden rounded-2xl border border-[#d7dfeb]">
-              <div className="grid grid-cols-[1.6fr_1fr_1fr_150px] bg-[#102C57] px-4 py-3 text-sm font-semibold text-white">
+              <div className="grid grid-cols-[1.6fr_1fr_1fr_150px] bg-[var(--surface-navy,#102C57)] px-4 py-3 text-sm font-semibold text-white">
                 <div>กะที่ใช้</div>
                 <div>เวลาเริ่ม</div>
                 <div>เวลาสิ้นสุด</div>

@@ -1,14 +1,11 @@
 import { getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { normalizeParam } from "@/lib/validation";
 import { fetchTradeCodesWithGatewayFallback } from "@/lib/erpTradeCodes";
 
 export async function GET(request) {
   try {
-    await requirePermissionKeys(request, [
-      "production-line-settings-view",
-      "production-line-settings-manage",
-    ]);
+    await requireTaskPermission(request, "production-settings-category-products-view");
     const { searchParams } = new URL(request.url);
     const categoryId = normalizeParam(searchParams.get("categoryId"));
     if (!categoryId) {
@@ -87,9 +84,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    await requirePermissionKeys(request, [
-      "production-line-settings-manage",
-    ]);
+    await requireTaskPermission(request, "production-settings-category-products-create");
     const body = await readJson(request);
     const categoryId = normalizeParam(body.categoryId);
     const skuCodes = Array.isArray(body.skuCodes)
@@ -120,9 +115,7 @@ export async function POST(request) {
 
 export async function DELETE(request) {
   try {
-    await requirePermissionKeys(request, [
-      "production-line-settings-manage",
-    ]);
+    await requireTaskPermission(request, "production-settings-category-products-delete");
     const body = await readJson(request);
     const categoryId = normalizeParam(body.categoryId);
     const skuCodes = Array.isArray(body.skuCodes)

@@ -1,5 +1,5 @@
 import { getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import {
   buildSectionShiftGroups,
   mapSectionShiftRow,
@@ -81,22 +81,28 @@ async function loadSectionShiftAssignments(supabaseAdmin, { includeInactive = fa
   return data ?? [];
 }
 
+const sectionShiftsCache = new Map();
+const SECTION_SHIFTS_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
+
+export function invalidateSectionShiftsCache() {
+  sectionShiftsCache.clear();
+}
+
 export async function GET(request) {
   try {
-    await requirePermissionKeys(request, [
-      "production-line-settings-view",
-      "production-line-settings-manage",
-      "production-line-planning-view",
-      "production-line-planning-manage",
-      "plan.calculate_own_dept",
-      "plan.edit_own_dept",
-    ]);
+    await requireTaskPermission(request, "production-settings-section-shifts-view");
 
     const { searchParams } = new URL(request.url);
     const includeInactive = searchParams.get("includeInactive") === "true";
     const includeInactiveSections = searchParams.get("includeInactiveSections") === "true";
     const sectionDefIdFilter = String(searchParams.get("sectionDefId") || "").trim();
     const departmentIdFilter = String(searchParams.get("departmentId") || "").trim();
+
+    const cacheKey = `${departmentIdFilter}:${sectionDefIdFilter}:${includeInactive}:${includeInactiveSections}`;
+    const cached = sectionShiftsCache.get(cacheKey);
+    if (cached && Date.now() < cached.expiry) {
+      return Response.json(cached.payload);
+    }
 
     const supabaseAdmin = getSupabaseAdmin();
     const [sections, assignmentRows, masterShiftRows] = await Promise.all([
@@ -134,11 +140,18 @@ export async function GET(request) {
     const filteredSections = sections.filter((section) => sectionSet.has(String(section.id || "").trim()) || (!sectionDefIdFilter && !departmentIdFilter));
     const groupedSections = buildSectionShiftGroups(filteredSections, filteredAssignments);
 
-    return Response.json({
+    const payload = {
       data: filteredAssignments,
       sections: groupedSections,
       masterShifts: (masterShiftRows.data ?? []).map(mapShiftRow),
+    };
+
+    sectionShiftsCache.set(cacheKey, {
+      payload,
+      expiry: Date.now() + SECTION_SHIFTS_CACHE_TTL_MS,
     });
+
+    return Response.json(payload);
   } catch (error) {
     return jsonError(error);
   }
@@ -146,9 +159,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const { userId } = await requirePermissionKeys(request, [
-      "production-line-settings-manage",
-    ]);
+    const { userId } = await requireTaskPermission(request, "production-settings-section-shifts-create");
 
     const input = normalizeSectionShiftInput(await readJson(request));
     if (input.errors.length) {
@@ -194,6 +205,7 @@ export async function POST(request) {
       return Response.json({ error: "Failed to create section shift" }, { status: 500 });
     }
 
+    invalidateSectionShiftsCache();
     return Response.json({ data: mapSectionShiftRow(data) }, { status: 201 });
   } catch (error) {
     return jsonError(error);

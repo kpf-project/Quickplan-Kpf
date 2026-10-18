@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
 import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { normalizeHighlightColor } from "@/features/production-planning/services/scheduleHighlightColors";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,7 @@ export async function POST(request, { params }) {
     await requirePermissionKeys(request, ["production-line-planning-manage"]);
     const { id } = await params;
     const body = await readJson(request);
+    if (body?.highlightColor != null && body.highlightColor !== "" && !normalizeHighlightColor(body.highlightColor)) return NextResponse.json({ error: "Invalid highlight color; use a HEX color" }, { status: 400 });
     const key   = String(body?.key   || "").trim().replace(/\s+/g, "_");
     const label = String(body?.label || "").trim();
     if (!key || !label) {
@@ -35,7 +37,7 @@ export async function POST(request, { params }) {
         col_type:        body?.colType        ?? "text",
         display_order:   body?.displayOrder   ?? (maxRow?.display_order ?? 0) + 1,
         width:           body?.width          ?? null,
-        highlight_color: body?.highlightColor ?? null,
+        highlight_color: normalizeHighlightColor(body?.highlightColor),
         group_label:     body?.groupLabel     ?? null,
         group_order:     body?.groupOrder     ?? null,
         auto_fill_field: body?.autoFillField  ?? null,

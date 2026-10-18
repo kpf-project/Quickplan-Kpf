@@ -197,7 +197,7 @@ export default function WipOpeningBalanceTab({ openingDate, operatorName }) {
 
       <div className="grid gap-3 xl:grid-cols-[34%_minmax(0,66%)]">
         <section className="border border-[#91a1b4] bg-white">
-          <h3 className="flex h-12 items-center gap-2 bg-[#061f43] px-4 text-base font-bold text-white"><span className="grid h-7 w-7 place-items-center bg-[#1b5796]">1</span>เลือก WIP หลายรายการ</h3>
+          <h3 className="flex h-12 items-center gap-2 bg-[var(--surface-navy,#061f43)] px-4 text-base font-bold text-white"><span className="grid h-7 w-7 place-items-center bg-[#1b5796]">1</span>เลือก WIP หลายรายการ</h3>
           <div className="p-3">
             <label className="relative block">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#526477]" size={19} />
@@ -225,7 +225,7 @@ export default function WipOpeningBalanceTab({ openingDate, operatorName }) {
         </section>
 
         <section className="min-w-0 border border-[#91a1b4] bg-white">
-          <div className="flex h-12 items-center justify-between bg-[#061f43] px-4 text-white">
+          <div className="flex h-12 items-center justify-between bg-[var(--surface-navy,#061f43)] px-4 text-white">
             <h3 className="flex items-center gap-2 text-base font-bold"><span className="grid h-7 w-7 place-items-center bg-[#1b5796]">2</span>ระบุ LOT และจำนวนตั้งต้น</h3>
             <span className="text-xs text-white/75">LOT บังคับ 6 หลัก รูปแบบ DDMMYY</span>
           </div>

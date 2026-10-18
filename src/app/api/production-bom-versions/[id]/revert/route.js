@@ -140,7 +140,7 @@ export async function POST(request, { params }) {
     const [sourceItemsResult, lastVersionResult] = await Promise.all([
       supabaseAdmin
         .from("production_bom_items")
-        .select("material_sku_code,material_goods_code,qty,uom_name,notes")
+        .select("material_sku_code,material_goods_code,substitute_material_sku_codes,qty,uom_name,notes")
         .eq("version_id", sourceVersion.id),
       supabaseAdmin
         .from("production_bom_versions")
@@ -164,7 +164,7 @@ export async function POST(request, { params }) {
     if (lastVersion?.id) {
       const { data: prevItems, error: prevError } = await supabaseAdmin
         .from("production_bom_items")
-        .select("material_sku_code,material_goods_code,qty,uom_name,notes")
+        .select("material_sku_code,material_goods_code,substitute_material_sku_codes,qty,uom_name,notes")
         .eq("version_id", lastVersion.id);
       if (prevError) {
         return Response.json({ error: "Failed to load previous items" }, { status: 500 });
@@ -175,6 +175,7 @@ export async function POST(request, { params }) {
     const nextItems = (sourceItems ?? []).map((item) => ({
       material_sku_code: item.material_sku_code,
       material_goods_code: item.material_goods_code ?? null,
+      substitute_material_sku_codes: item.substitute_material_sku_codes ?? [],
       qty: item.qty,
       uom_name: item.uom_name ?? "",
       notes: item.notes ?? "",
@@ -252,6 +253,7 @@ export async function POST(request, { params }) {
         version_id: newVersion.id,
         material_sku_code: item.material_sku_code,
         material_goods_code: item.material_goods_code,
+        substitute_material_sku_codes: item.substitute_material_sku_codes,
         qty: item.qty,
         uom_name: item.uom_name,
         notes: item.notes,

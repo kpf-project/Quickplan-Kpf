@@ -3,7 +3,9 @@
 async function parseJsonResponse(response) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload?.ok === false) {
-    throw new Error(payload?.error || "ไม่สามารถทำรายการเบิกได้ในขณะนี้");
+    const error = new Error(payload?.error || "ไม่สามารถทำรายการเบิกได้ในขณะนี้");
+    error.status = response.status;
+    throw error;
   }
   return payload?.data ?? payload;
 }
@@ -54,6 +56,25 @@ export async function createProductionStockIssuesBatchRequest(payload) {
     body: JSON.stringify(payload),
   });
 
+  return parseJsonResponse(response);
+}
+
+export async function fetchProductionJamUsage(usageDate, signal) {
+  const response = await fetch(`/api/production-stock/jam-usage?${buildSearchParams({ usageDate })}`, {
+    signal,
+    method: "GET",
+    cache: "no-store",
+  });
+  return parseJsonResponse(response);
+}
+
+export async function createProductionJamUsageRequest(payload) {
+  const response = await fetch("/api/production-stock/jam-usage", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    body: JSON.stringify(payload),
+  });
   return parseJsonResponse(response);
 }
 

@@ -1,9 +1,12 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const http = require("node:http");
+const os = require("node:os");
+const { createHash, randomUUID } = require("node:crypto");
 const { SerialPort } = require("serialport");
 const { WebSocketServer, WebSocket } = require("ws");
 const { buildScaleRuntimeProfile } = require("./scale-runtime-profile");
+const { createCentralCaptureIssuer } = require("./central-capture");
 
 const DEFAULT_HOST = "127.0.0.1";
 const RUNTIME_PROFILE = buildScaleRuntimeProfile({
@@ -13,6 +16,7 @@ const RUNTIME_PROFILE = buildScaleRuntimeProfile({
 const DEFAULT_PORT = RUNTIME_PROFILE.port;
 const REOPEN_DELAY_MS = 5000;
 const MAX_BUFFER_LENGTH = 64 * 1024;
+const SCALE_CLEAR_THRESHOLD_KG = 0.05;
 const CONFIG_PATH = process.env.KPF_SCALE_AGENT_CONFIG_PATH
   ? path.resolve(process.env.KPF_SCALE_AGENT_CONFIG_PATH)
   : RUNTIME_PROFILE.configPath;
@@ -80,6 +84,38 @@ function loadConfig() {
         10
       ),
     },
+  };
+}
+
+function buildWorkstationIdentity() {
+  const seed = `${os.hostname()}|${RUNTIME_PROFILE.profile}|${CONFIG_PATH}`;
+  const hex = createHash("sha256").update(seed).digest("hex").slice(0, 32);
+  const generatedId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+
+  return {
+    id: String(process.env.KPF_SCALE_STATION_ID || generatedId).trim(),
+    name: String(process.env.KPF_SCALE_STATION_NAME || os.hostname()).trim(),
+    profile: RUNTIME_PROFILE.profile,
+  };
+}
+
+function createWeighingCycleTracker({
+  clearThresholdKg = SCALE_CLEAR_THRESHOLD_KG,
+  createId = randomUUID,
+} = {}) {
+  let cycleId = null;
+
+  return function track(weightKg) {
+    const normalizedWeight = Number(weightKg);
+    if (!Number.isFinite(normalizedWeight)) {
+      return cycleId;
+    }
+    if (Math.abs(normalizedWeight) <= clearThresholdKg) {
+      cycleId = null;
+      return null;
+    }
+    cycleId ||= createId();
+    return cycleId;
   };
 }
 
@@ -217,6 +253,14 @@ function validateSerialConfig(body) {
 }
 
 const config = loadConfig();
+const workstation = buildWorkstationIdentity();
+const trackWeighingCycle = createWeighingCycleTracker();
+const issueCentralCapture = createCentralCaptureIssuer({
+  signingKeyHex: process.env.KPF_CENTRAL_SCALE_SIGNING_KEY_HEX,
+  maxKg: process.env.KPF_CENTRAL_SCALE_MAX_KG,
+  resolutionKg: process.env.KPF_CENTRAL_SCALE_RESOLUTION_KG,
+  readingMode: process.env.KPF_CENTRAL_SCALE_READING_MODE,
+});
 
 let serialPort = null;
 let serialBuffer = "";
@@ -250,6 +294,7 @@ function setStatus(nextPortOpen, nextError) {
       type: "status",
       portOpen,
       error: lastError,
+      workstation,
       at: new Date().toISOString(),
     });
   }
@@ -295,9 +340,13 @@ function handleSerialData(chunk) {
     const reading = {
       type: "reading",
       ...parsed,
+      cycleId: trackWeighingCycle(parsed.weightKg),
+      workstation,
       at: new Date().toISOString(),
     };
 
+    const centralCaptureToken = issueCentralCapture(reading);
+    if (centralCaptureToken) reading.centralCaptureToken = centralCaptureToken;
     lastReading = reading;
     broadcast(reading);
   }
@@ -416,6 +465,7 @@ async function handleHealth(response) {
     ok: true,
     portOpen,
     config: config.serial,
+    workstation,
     lastReading,
     error: lastError,
   });
@@ -518,6 +568,7 @@ function start() {
       type: "status",
       portOpen,
       error: lastError,
+      workstation,
       at: new Date().toISOString(),
     }));
 
@@ -545,6 +596,7 @@ if (require.main === module) {
 
 module.exports = {
   parseReadingLine,
+  createWeighingCycleTracker,
   validateSerialConfig,
   loadConfig,
   start,

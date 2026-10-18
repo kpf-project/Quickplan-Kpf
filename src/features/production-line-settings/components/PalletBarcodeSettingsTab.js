@@ -954,7 +954,7 @@ export default function PalletBarcodeSettingsTab({ canManage = false }) {
             </div>
             <div className="mt-2 max-h-[118px] overflow-y-auto border border-slate-200 bg-white">
               <table className="w-full text-[10px]">
-                <thead className="sticky top-0 bg-[#102C57] text-white">
+                <thead className="sticky top-0 bg-[var(--surface-navy,#102C57)] text-white">
                   <tr>
                     <th className="px-2 py-1.5 text-left font-semibold">จำนวน</th>
                     <th className="px-2 py-1.5 text-left font-semibold">Barcode Value</th>
@@ -1023,7 +1023,7 @@ export default function PalletBarcodeSettingsTab({ canManage = false }) {
                 type="button"
                 onClick={handleSaveCategoryMapping}
                 disabled={!canManage || !resolvedMappingIccatCode || Boolean(savingKey)}
-                className="mt-[22px] inline-flex h-9 items-center gap-1.5 rounded-sm bg-[#163b6b] px-3 text-[11px] font-bold text-white hover:bg-[#102C57] disabled:opacity-50"
+                className="mt-[22px] inline-flex h-9 items-center gap-1.5 rounded-sm bg-[#163b6b] px-3 text-[11px] font-bold text-white hover:bg-[var(--surface-navy,#102C57)] disabled:opacity-50"
               >
                 <Save size={13} />
                 บันทึก ICDEPT
@@ -1065,7 +1065,7 @@ export default function PalletBarcodeSettingsTab({ canManage = false }) {
             type="button"
             onClick={handleSearch}
             disabled={loading}
-            className="inline-flex h-8 items-center gap-1.5 rounded-sm bg-[#163b6b] px-3 text-[11px] font-bold text-white hover:bg-[#102C57] disabled:opacity-50"
+            className="inline-flex h-8 items-center gap-1.5 rounded-sm bg-[#163b6b] px-3 text-[11px] font-bold text-white hover:bg-[var(--surface-navy,#102C57)] disabled:opacity-50"
           >
             <Search size={14} />
             ค้นหา
@@ -1126,7 +1126,7 @@ export default function PalletBarcodeSettingsTab({ canManage = false }) {
               <col className="w-[14%]" />
               <col className="w-[8%]" />
             </colgroup>
-            <thead className="bg-[#102C57] text-white">
+            <thead className="bg-[var(--surface-navy,#102C57)] text-white">
               <tr>
                 <th className="px-2 py-2.5 text-left font-semibold">Trade Code</th>
                 <th className="px-2 py-2.5 text-left font-semibold">SKU</th>

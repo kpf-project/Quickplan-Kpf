@@ -1,13 +1,18 @@
 "use client";
 
-import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
+import WipWeeklyTable from "./WipWeeklyTable";
+
+import { Fragment, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Clock3,
   Download,
   FileSpreadsheet,
-  Info,
+  LockKeyhole,
   MapPin,
   Pencil,
   Plus,
@@ -23,13 +28,27 @@ import useSWRInfinite from "swr/infinite";
 import { fetchJson, fetcher } from "@/lib/clientFetch";
 import {
   buildRequisitionPreviewDocuments,
+  buildPlannedWipPreviewRows,
+  mergeRequisitionDraftLines,
   resolveRequisitionPreviewCellQty,
+  resolveRequisitionEditableDocumentKey,
   upsertRequisitionSourceLineQty,
 } from "@/lib/requisitionPreviewDisplay";
 import { usePersistentRouteState } from "@/lib/usePersistentRouteState";
 import PlanningHeader from "@/features/production-planning/components/PlanningHeader";
 import ProductionScheduleClient from "./ProductionScheduleClient";
 import RequisitionSequenceSettingsPanel from "./RequisitionSequenceSettingsPanel";
+import RequisitionDocumentToolbar, { RequisitionDocumentActions, requisitionDocumentId } from "./RequisitionDocumentToolbar";
+import presentation from "./RequisitionPreviewPresentation.module.css";
+import EditableQtyCell from "./EditableRequisitionQtyCell";
+import PlanningReferencePaper from "./PlanningReferencePaper";
+import RequisitionMaterialPicker from "./RequisitionMaterialPicker";
+import RequisitionDialog from "./RequisitionDialog";
+import RequisitionPlanPicker from "./RequisitionPlanPicker";
+import RequisitionPaper, { RequisitionPaperTable, RequisitionWorkLabel } from "./RequisitionPaper";
+import RequisitionLotDialog from "./RequisitionLotDialog";
+import dialogStyles from "./RequisitionDialog.module.css";
+import { isRequisitionLineExportLocked } from "@/lib/requisitionMaterialPicker";
 
 const DAY_TONE_CLASSES = [
   "bg-[#f4e8b5]",
@@ -48,8 +67,18 @@ function formatDate(value) {
   if (Number.isNaN(date.getTime())) return "-";
   const day = String(date.getUTCDate()).padStart(2, "0");
   const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-  const year = String(date.getUTCFullYear() + 543).slice(-2);
+  const year = String(date.getUTCFullYear() + 543);
   return `${day}/${month}/${year}`;
+}
+
+function formatDayHeader(value) {
+  const raw = String(value || "").trim().slice(0, 10);
+  const date = new Date(`${raw}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return { weekday: "", date: "-" };
+  return {
+    weekday: ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."][date.getUTCDay()],
+    date: `${String(date.getUTCDate()).padStart(2, "0")}/${String(date.getUTCMonth() + 1).padStart(2, "0")}`,
+  };
 }
 
 function toNumber(value) {
@@ -79,6 +108,12 @@ function formatRoomName(roomLabel, roomId) {
   return text.replace(/^\[[^\]]+\]\s*/, "").trim() || "-";
 }
 
+function hasAssignedRoom(doc) {
+  const roomId = normalizeTextKey(doc?.roomId);
+  const roomLabel = String(doc?.roomLabel || "").trim();
+  return Boolean(roomId && roomId !== "UNASSIGNED_ROOM" && !roomLabel.includes("ยังไม่กำหนดห้อง"));
+}
+
 function formatShiftName(doc) {
   const base = String(doc?.shiftName || doc?.shiftCode || doc?.shiftId || "").trim() || "-";
   const start = String(doc?.shiftStartTime || "").trim();
@@ -104,6 +139,59 @@ function buildMaterialOptionKey(option) {
 
 function buildSupplementalLineKey(line) {
   return String(line?.materialGoodsCode || line?.materialSkuCode || "").trim().toUpperCase();
+}
+
+function formatQtyOrZero(value) {
+  return toNumber(value) > 0 ? formatQty(value) : "0";
+}
+
+function buildLotRequirementKey(documentKey, line, dateValue) {
+  return `${String(documentKey || "").trim()}::${buildLineKey(line)}::${String(dateValue || "").trim()}`;
+}
+
+function buildDateRange(dateFrom, dateTo) {
+  const start = Date.parse(`${dateFrom}T00:00:00Z`);
+  const end = Date.parse(`${dateTo}T00:00:00Z`);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return [];
+  const dates = [];
+  for (let cursor = start; cursor <= end && dates.length < 366; cursor += 86400000) {
+    dates.push(new Date(cursor).toISOString().slice(0, 10));
+  }
+  return dates;
+}
+
+function normalizeLotAllocationsByDate(value) {
+  return Object.fromEntries(
+    Object.entries(value && typeof value === "object" && !Array.isArray(value) ? value : {})
+      .map(([dateValue, allocations]) => {
+        const rows = (Array.isArray(allocations) ? allocations : [])
+          .map((item) => ({
+            lotNo: String(item?.lotNo || "").trim(),
+            qty: roundQty(item?.qty),
+          }))
+          .filter((item) => item.qty > 0);
+        return rows.length ? [dateValue, rows] : null;
+      })
+      .filter(Boolean)
+  );
+}
+
+function normalizeErpLotsByDate(value) {
+  return Object.fromEntries(
+    Object.entries(value && typeof value === "object" && !Array.isArray(value) ? value : {})
+      .map(([dateValue, allocations]) => {
+        const rows = (Array.isArray(allocations) ? allocations : [])
+          .map((item) => ({
+            lotNo: String(item?.lotNo || "").trim(),
+            warehouseCode: String(item?.warehouseCode || "").trim(),
+            fifoDate: item?.fifoDate || null,
+            qty: roundQty(item?.qty),
+          }))
+          .filter((item) => item.qty > 0);
+        return rows.length ? [dateValue, rows] : null;
+      })
+      .filter(Boolean)
+  );
 }
 
 function normalizeDocumentKeys(value) {
@@ -140,6 +228,9 @@ function cloneLine(line) {
     ),
     totalQty: roundQty(line?.totalQty),
     isManual: line?.isManual === true,
+    lotAllocationsByDate: normalizeLotAllocationsByDate(line?.lotAllocationsByDate),
+    erpLotsByDate: normalizeErpLotsByDate(line?.erpLotsByDate),
+    exportedLotsByDate: normalizeErpLotsByDate(line?.exportedLotsByDate),
   };
 }
 
@@ -160,6 +251,12 @@ function normalizeLines(lines) {
         qtyByDate,
         totalQty,
       };
+    })
+    .filter((line) => {
+      if (line.totalQty > 0 || line.isManual === true) return true;
+      const hasErpLots = Object.values(line.erpLotsByDate || {}).some((lots) => Array.isArray(lots) && lots.length > 0);
+      const hasExportedLots = Object.values(line.exportedLotsByDate || {}).some((lots) => Array.isArray(lots) && lots.length > 0);
+      return hasErpLots || hasExportedLots;
     })
     .sort((a, b) => {
       const codeA = String(a.materialGoodsCode || a.materialSkuCode || "");
@@ -209,6 +306,7 @@ function buildDraftCachePayload({
   drafts,
   updatedAt = null,
   updatedBy = null,
+  sourceRevision = "",
 }) {
   return {
     data: {
@@ -219,6 +317,8 @@ function buildDraftCachePayload({
       drafts: normalizeDraftMap(drafts),
       updatedAt,
       updatedBy,
+      sourceRevision,
+      staleDraft: false,
     },
   };
 }
@@ -269,12 +369,26 @@ function buildOverviewDocument(documents, dateColumns) {
           itemType: line.itemType || "",
           qtyByDate: {},
           totalQty: 0,
+          erpLotsByDate: {},
+          exportedLotsByDate: {},
         });
       }
       const target = lineMap.get(lineKey);
       if (!target.itemType && line.itemType) target.itemType = line.itemType;
       Object.entries(line.qtyByDate || {}).forEach(([dateValue, qty]) => {
         target.qtyByDate[dateValue] = roundQty(toNumber(target.qtyByDate[dateValue]) + toNumber(qty));
+      });
+      Object.entries(line.erpLotsByDate || {}).forEach(([dateValue, rows]) => {
+        target.erpLotsByDate[dateValue] = [
+          ...(target.erpLotsByDate[dateValue] || []),
+          ...(Array.isArray(rows) ? rows : []),
+        ];
+      });
+      Object.entries(line.exportedLotsByDate || {}).forEach(([dateValue, rows]) => {
+        target.exportedLotsByDate[dateValue] = [
+          ...(target.exportedLotsByDate[dateValue] || []),
+          ...(Array.isArray(rows) ? rows : []),
+        ];
       });
       target.totalQty = roundQty(target.totalQty + toNumber(line.totalQty));
     });
@@ -283,6 +397,7 @@ function buildOverviewDocument(documents, dateColumns) {
   const workNamesByDate = {};
   const documentNoByDate = {};
   const exportedByDate = {};
+  const erpSyncByDate = {};
   dateColumns.forEach((dateValue) => {
     const names = new Set();
     const documentNos = new Set();
@@ -297,6 +412,9 @@ function buildOverviewDocument(documents, dateColumns) {
         documentNos.add(docNo);
         exportedByDate[dateValue] = true;
       }
+      const sync = doc?.erpSyncByDate?.[dateValue];
+      if (sync?.status === "review") erpSyncByDate[dateValue] = sync;
+      else if (sync && !erpSyncByDate[dateValue]) erpSyncByDate[dateValue] = sync;
     });
     workNamesByDate[dateValue] = Array.from(names);
     if (documentNos.size > 0) {
@@ -314,435 +432,12 @@ function buildOverviewDocument(documents, dateColumns) {
     workNamesByDate,
     documentNoByDate,
     exportedByDate,
+    erpSyncByDate,
     lines: normalizeLines(Array.from(lineMap.values())),
   };
 }
 
-function EditableQtyCell({ value, onSave }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
 
-  if (editing) {
-    return (
-      <div className="fixed inset-0 z-[130] flex items-center justify-center bg-[#0b1220]/50 px-4">
-        <div className="w-full max-w-sm rounded-[2px] border border-[#102C57] bg-white shadow-[0_24px_80px_rgba(16,44,87,0.24)]">
-          <div className="border-b border-[#102C57] bg-[#102C57] px-5 py-4 text-white">
-            <div className="text-sm font-black tracking-[0.2px]">แก้ไขจำนวน</div>
-          </div>
-          <div className="p-5">
-            <input
-              autoFocus
-              type="number"
-              min="0"
-              step="0.001"
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              className="h-11 w-full rounded-[2px] border-2 border-[#102C57] bg-white px-3 text-right text-sm font-bold text-black outline-none focus:border-[#DA291C] focus:ring-0"
-            />
-          </div>
-          <div className="flex items-center justify-end gap-2 border-t border-[#e4e7ec] px-5 py-4">
-            <button
-              type="button"
-              onClick={() => setEditing(false)}
-              className="rounded-[2px] border border-[#CCCCCC] bg-white px-4 py-2 text-xs font-black uppercase tracking-[0.5px] text-black transition hover:bg-slate-100"
-            >
-              ยกเลิก
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                onSave(roundQty(draft));
-                setEditing(false);
-              }}
-              className="rounded-[2px] border border-[#102C57] bg-[#102C57] px-4 py-2 text-xs font-black uppercase tracking-[0.5px] text-white transition hover:bg-[#0c2345]"
-            >
-              ยืนยัน
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="group flex h-6 w-full items-center justify-end gap-1">
-      <span className="min-w-0 flex-1 text-right font-bold">{formatQty(value)}</span>
-      <button
-        type="button"
-        onClick={() => {
-          setDraft(value > 0 ? String(value) : "");
-          setEditing(true);
-        }}
-        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[2px] border border-[#CCCCCC] bg-white text-black opacity-0 transition-colors group-hover:opacity-100 hover:border-[#102C57] hover:bg-[#fff8e2] focus-visible:opacity-100"
-        title="แก้ไขจำนวน"
-      >
-        <Pencil className="h-3 w-3" />
-      </button>
-    </div>
-  );
-}
-
-function RequisitionItemsDrawer({
-  open,
-  document,
-  documentActionKeys = [],
-  addMode = false,
-  existingLineKeys,
-  onClose,
-  onOpenAddMode,
-  onCloseAddMode,
-  onConfirmAddMaterial,
-  onRequestDeleteLine,
-}) {
-  const [searchText, setSearchText] = useState("");
-  const [selectedKey, setSelectedKey] = useState("");
-  const deferredSearchText = useDeferredValue(searchText);
-  const effectiveDocumentActionKeys = normalizeDocumentKeys(
-    documentActionKeys.length ? documentActionKeys : document?.documentKey
-  );
-
-  const getMaterialPageKey = useCallback((pageIndex, previousPageData) => {
-    if (!open || !addMode) return null;
-    if (previousPageData && previousPageData?.meta?.hasMore !== true) return null;
-    const query = new URLSearchParams({ page: String(pageIndex + 1), pageSize: "300" });
-    if (deferredSearchText) query.set("search", deferredSearchText);
-    if (previousPageData?.meta?.nextCursor) query.set("cursor", previousPageData.meta.nextCursor);
-    return `/api/production-planning/material-verify/material-options?${query.toString()}`;
-  }, [addMode, deferredSearchText, open]);
-
-  const {
-    data: materialPages = [],
-    error,
-    isLoading,
-    isValidating,
-    size: materialPageCount,
-    setSize: setMaterialPageCount,
-  } = useSWRInfinite(getMaterialPageKey, fetcher, {
-    revalidateOnFocus: false,
-    revalidateFirstPage: false,
-  });
-
-  const materialOptions = useMemo(() => {
-    const map = new Map();
-    materialPages.forEach((page) => {
-      (Array.isArray(page?.data) ? page.data : []).forEach((row) => {
-        map.set(buildMaterialOptionKey(row), row);
-      });
-    });
-    return Array.from(map.values());
-  }, [materialPages]);
-
-  const { options, existingOptions } = useMemo(() => {
-    const available = [];
-    const existing = [];
-    materialOptions.forEach((row) => {
-      const key = `${normalizeTextKey(row?.goodsCode || row?.skuCode)}|${normalizeTextKey(row?.unit)}`;
-      (existingLineKeys.has(key) ? existing : available).push(row);
-    });
-    return { options: available, existingOptions: existing };
-  }, [existingLineKeys, materialOptions]);
-  const loadedOptionCount = materialOptions.length;
-  const lastMaterialPage = materialPages[materialPages.length - 1] || null;
-  const hasMoreMaterials = Boolean(lastMaterialPage?.meta?.hasMore);
-
-  const selectedOption = useMemo(() => {
-    return options.find((option) => `${option.skuCode}::${option.goodsCode}` === selectedKey) || null;
-  }, [options, selectedKey]);
-
-  if (!open || !document) return null;
-
-  return (
-    <div className="fixed inset-0 z-[130] flex justify-end bg-[#102C57]/40">
-      <aside className="flex h-full w-full max-w-[560px] flex-col overflow-hidden border-l-2 border-[#102C57] bg-white shadow-none">
-        {/* Drawer Header */}
-        <div className="border-b-2 border-[#102C57] bg-[#102C57] px-5 py-5 text-white">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="text-[10px] font-black uppercase tracking-[2px] text-[#f6e7a8]">
-                Requisition Draft (จัดการรายการวัตถุดิบ)
-              </div>
-              <h3 className="mt-1 text-lg font-black uppercase tracking-[0.5px] text-white">จัดการรายการวัตถุดิบ</h3>
-              <p className="mt-1 text-xs text-[#8F8F8F] uppercase tracking-[0.5px]">
-                แก้ไขจำนวนรายวันในตารางหลัก หรือเพิ่ม/ลบรายการจากแถบด้านข้างนี้
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-[2px] border border-white/20 bg-white/5 text-white transition hover:bg-white/10"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-
-        {/* Room & Dept banner */}
-        <div className="border-b-2 border-[#102C57] bg-[#fff8e2] px-5 py-3 text-xs font-bold text-black uppercase tracking-[0.5px]">
-          <div>ห้องจัดเตรียม: <span className="font-extrabold font-mono">{formatRoomName(document.roomLabel, document.roomId)}</span></div>
-          <div className="mt-0.5 text-black/75">
-            แผนกเจ้าของ: {document.ownerDepartmentName || document.ownerDepartmentCode || "-"}
-          </div>
-        </div>
-
-        {/* Toolbar */}
-        <div className="flex items-center gap-2 border-b border-[#CCCCCC] bg-white px-5 py-3">
-          <button
-            type="button"
-            onClick={addMode ? onCloseAddMode : onOpenAddMode}
-            className={`inline-flex items-center gap-2 rounded-[2px] border-2 border-[#102C57] bg-[#102C57] text-white hover:bg-[#fff8e2] hover:text-black hover:border-[#F6E500] px-4 py-2 text-xs font-black uppercase tracking-[1px] transition cursor-pointer`}
-          >
-            {addMode ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-            {addMode ? "กลับไปดูรายการ" : "เพิ่มวัตถุดิบใหม่"}
-          </button>
-        </div>
-
-        {/* Scrollable body */}
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {/* Main Document Lines */}
-          <section className="px-5 py-4">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="text-xs font-black uppercase tracking-[1px] text-black">รายการที่อยู่ในใบนี้</div>
-              <div className="text-xs font-mono font-bold text-[#667085]">
-                {(document.lines || []).length.toLocaleString("th-TH")} รายการ
-              </div>
-            </div>
-
-            <div className="space-y-2.5">
-              {(document.lines || []).map((line) => {
-                const lineKey = buildLineKey(line);
-                const activeDays = Object.keys(line.qtyByDate || {}).length;
-                return (
-                  <div
-                    key={`${document.documentKey}-${lineKey}`}
-                    className="rounded-[2px] border border-[#CCCCCC] bg-[#FCFCF9] px-4 py-4 transition hover:border-[#102C57]"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="font-mono text-xs font-bold text-[#667085]">
-                          {line.materialGoodsCode || line.materialSkuCode || "-"}
-                        </div>
-                        <div className="mt-1 text-sm font-bold text-black leading-tight">
-                          {line.materialName || "-"}
-                        </div>
-                        <div className="mt-3 flex flex-wrap gap-1.5 text-[10px] font-bold text-black uppercase tracking-[0.5px]">
-                          <span className="rounded-[2px] border border-[#CCCCCC] bg-white px-2 py-1">
-                            หน่วย: {line.unit || "-"}
-                          </span>
-                          <span className="rounded-[2px] border border-[#CCCCCC] bg-white px-2 py-1">
-                            ใช้งาน: {activeDays.toLocaleString("th-TH")} วัน
-                          </span>
-                          <span className="rounded-[2px] border border-[#102C57] bg-[#FCF5F5] text-[#8a6a00] px-2 py-1 font-black">
-                            รวมเบิก: {formatQty(line.totalQty)}
-                          </span>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onRequestDeleteLine(document.documentKey, {
-                            docKeys: effectiveDocumentActionKeys,
-                            lineKey,
-                            materialSkuCode: line.materialSkuCode,
-                            materialGoodsCode: line.materialGoodsCode,
-                            materialName: line.materialName,
-                            unit: line.unit,
-                          })
-                        }
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-[2px] border-2 border-[#102C57] bg-white hover:bg-[#0c2345] hover:text-white transition cursor-pointer"
-                        title="ลบรายการ"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {!document.lines?.length ? (
-                <div className="rounded-[2px] border-2 border-dashed border-[#CCCCCC] bg-white px-4 py-10 text-center text-xs font-bold uppercase tracking-[1px] text-[#8F8F8F]">
-                  ยังไม่มีรายการวัตถุดิบในเอกสารนี้
-                </div>
-              ) : null}
-            </div>
-          </section>
-
-          {/* Add Mode Options List */}
-          {addMode ? (
-            <section className="border-t-2 border-[#102C57] px-5 py-5 bg-[#FCFCF9]">
-              <div className="mb-3 text-xs font-black uppercase tracking-[1px] text-black">ค้นหาเพื่อเพิ่มวัตถุดิบ</div>
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8F8F8F]" />
-                <input
-                  value={searchText}
-                  onChange={(event) => setSearchText(event.target.value)}
-                  placeholder="ค้นหารหัสหรือชื่อวัตถุดิบ..."
-                  className="h-10 w-full rounded-[2px] border-2 border-[#102C57] bg-white pl-10 pr-3 text-xs font-bold text-black placeholder-[#98a2b3] outline-none focus:border-[#DA291C] transition"
-                />
-              </div>
-
-              <div className="mt-4 overflow-hidden rounded-[2px] border border-[#102C57] bg-white">
-                <div className="border-b border-[#CCCCCC] bg-white px-3 py-2 text-[10px] font-black uppercase tracking-[1px] text-[#667085]">
-                  โหลดจาก catalog {loadedOptionCount.toLocaleString("th-TH")} รายการ
-                  {deferredSearchText ? " จากผลค้นหา" : ""}
-                </div>
-                <table className="w-full border-collapse text-left text-xs text-black">
-                  <thead className="bg-[#102C57] text-white">
-                    <tr className="border-b border-[#102C57] text-[10px] font-bold uppercase tracking-[1px]">
-                      <th className="w-12 px-3 py-3" />
-                      <th className="w-[150px] px-3 py-3">รหัส</th>
-                      <th className="px-3 py-3">รายการวัตถุดิบ</th>
-                      <th className="w-[92px] px-3 py-3">หน่วย</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {options.map((option) => {
-                      const optionKey = `${option.skuCode}::${option.goodsCode}`;
-                      const isSelected = optionKey === selectedKey;
-                      return (
-                        <tr
-                          key={optionKey}
-                          onClick={() => setSelectedKey(optionKey)}
-                          className={`cursor-pointer border-b border-[#CCCCCC] transition ${
-                            isSelected ? "bg-[#FFF9E6]" : "bg-white hover:bg-slate-50"
-                          }`}
-                        >
-                          <td className="px-3 py-3.5">
-                            <div
-                              className={`flex h-5 w-5 items-center justify-center rounded-[2px] border-2 ${
-                                isSelected
-                                  ? "border-[#102C57] bg-[#102C57] text-white"
-                                  : "border-[#CCCCCC] bg-white"
-                              }`}
-                            >
-                              {isSelected ? <Plus className="h-3 w-3" /> : null}
-                            </div>
-                          </td>
-                          <td className="px-3 py-3.5 align-top">
-                            <div className="font-mono text-xs font-bold tracking-[0.5px]">{option.goodsCode}</div>
-                            {option.skuCode && option.skuCode !== option.goodsCode ? (
-                              <div className="mt-0.5 font-mono text-[9px] text-[#667085]">SKU: {option.skuCode}</div>
-                            ) : null}
-                          </td>
-                          <td className="px-3 py-3.5 font-bold text-black leading-snug">{option.name}</td>
-                          <td className="px-3 py-3.5 font-bold text-[#667085]">{option.unit || "-"}</td>
-                        </tr>
-                      );
-                    })}
-
-                    {existingOptions.length > 0 ? (
-                      <tr>
-                        <td colSpan={4} className="bg-[#F5F7FA] px-3 py-2 text-[10px] font-black uppercase tracking-[1px] text-[#8F8F8F]">
-                          มีในเอกสารนี้แล้ว — เพิ่มซ้ำไม่ได้
-                        </td>
-                      </tr>
-                    ) : null}
-                    {existingOptions.map((option) => {
-                      const optionKey = `${option.skuCode}::${option.goodsCode}`;
-                      return (
-                        <tr
-                          key={`existing-${optionKey}`}
-                          className="cursor-not-allowed border-b border-[#CCCCCC] bg-[#FCFCF9] opacity-60"
-                          title="มีในเอกสารแล้ว"
-                        >
-                          <td className="px-3 py-3.5">
-                            <div className="flex h-5 w-5 items-center justify-center rounded-[2px] border-2 border-[#CCCCCC] bg-[#E5E7EB]" />
-                          </td>
-                          <td className="px-3 py-3.5 align-top">
-                            <div className="font-mono text-xs font-bold tracking-[0.5px] text-[#667085]">{option.goodsCode}</div>
-                            {option.skuCode && option.skuCode !== option.goodsCode ? (
-                              <div className="mt-0.5 font-mono text-[9px] text-[#667085]">SKU: {option.skuCode}</div>
-                            ) : null}
-                          </td>
-                          <td className="px-3 py-3.5 font-bold leading-snug text-[#667085]">
-                            <div>{option.name}</div>
-                            <span className="mt-1 inline-flex rounded-[2px] border border-[#d4af37] bg-[#fff8e2] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.5px] text-[#8a6a00]">
-                              มีในเอกสารแล้ว
-                            </span>
-                          </td>
-                          <td className="px-3 py-3.5 font-bold text-[#667085]">{option.unit || "-"}</td>
-                        </tr>
-                      );
-                    })}
-
-                    {!isLoading && !error && options.length === 0 && existingOptions.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="px-4 py-10 text-center text-xs font-bold uppercase tracking-[1px] text-[#8F8F8F]">
-                          ไม่พบวัตถุดิบที่พร้อมเพิ่มในเอกสารนี้
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-
-                {isLoading ? (
-                  <div className="px-4 py-8 text-center text-xs font-bold uppercase tracking-[1px] text-[#667085]">กำลังโหลดรายการวัตถุดิบ...</div>
-                ) : null}
-                {hasMoreMaterials ? (
-                  <div className="border-t border-[#CCCCCC] bg-white px-3 py-3 text-center">
-                    <button
-                      type="button"
-                      onClick={() => setMaterialPageCount(materialPageCount + 1)}
-                      disabled={isLoading || isValidating}
-                      className="rounded-[2px] border-2 border-[#102C57] bg-white px-4 py-2 text-xs font-black uppercase tracking-[1px] text-[#102C57] transition hover:bg-[#fff8e2] disabled:opacity-50"
-                    >
-                      โหลดเพิ่ม
-                    </button>
-                  </div>
-                ) : null}
-                {error ? (
-                  <div className="px-4 py-8 text-center text-xs font-bold uppercase tracking-[1px] text-red-600">
-                    {String(error?.message || "โหลดรายการวัตถุดิบไม่สำเร็จ")}
-                  </div>
-                ) : null}
-              </div>
-            </section>
-          ) : null}
-        </div>
-
-        {/* Footer actions */}
-        <div className="border-t-2 border-[#102C57] bg-white px-5 py-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-xs font-bold text-[#667085] uppercase tracking-[0.5px]">
-              {addMode ? (
-                selectedOption ? (
-                  <span>
-                    พร้อมเพิ่ม: <span className="font-extrabold text-black">{selectedOption.name}</span>
-                  </span>
-                ) : (
-                  "กรุณาเลือกวัตถุดิบ 1 รายการก่อน"
-                )
-              ) : (
-                "แก้ไขจำนวนรายวันโดยกดที่ตัวเลขในตารางหลัก"
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded-[2px] border-2 border-[#102C57] bg-white hover:bg-slate-50 px-4 py-2 text-xs font-black uppercase tracking-[1.28px] transition cursor-pointer"
-              >
-                ปิด
-              </button>
-              {addMode ? (
-                <button
-                  type="button"
-                  disabled={!selectedOption}
-                  onClick={() => {
-                    if (!selectedOption) return;
-                    onConfirmAddMaterial(selectedOption);
-                  }}
-                  className="rounded-[2px] border-2 border-[#102C57] bg-[#102C57] hover:bg-[#0c2345] hover:border-[#0c2345] disabled:bg-[#CCCCCC] disabled:border-[#CCCCCC] disabled:text-[#8F8F8F] px-4 py-2 text-xs font-black uppercase tracking-[1.28px] text-white transition cursor-pointer"
-                >
-                  เพิ่มเข้าเอกสาร
-                </button>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      </aside>
-    </div>
-  );
-}
 
 function SupplementalRequisitionDrawer({
   state,
@@ -829,9 +524,9 @@ function SupplementalRequisitionDrawer({
   const canExport = Boolean(state.workDate && state.reason && lines.length > 0 && !exporting);
 
   return (
-    <div className="fixed inset-0 z-[130] flex justify-end bg-[#102C57]/45">
+    <div className="fixed inset-0 z-[130] flex justify-end bg-[var(--surface-navy,#102C57)]/45">
       <aside className="flex h-full w-full max-w-[calc(100vw-24px)] flex-col overflow-hidden border-l-2 border-[#102C57] bg-white shadow-none">
-        <div className="border-b-2 border-[#102C57] bg-[#102C57] px-5 py-4 text-white">
+        <div className="border-b-2 border-[#102C57] bg-[var(--surface-navy,#102C57)] px-5 py-4 text-white">
           <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-end 2xl:justify-between">
             <div className="min-w-[240px]">
               <div className="text-[10px] font-black uppercase tracking-[2px] text-[#f6e7a8]">
@@ -917,7 +612,7 @@ function SupplementalRequisitionDrawer({
                     setSelectedKey("");
                     setQtyText("1");
                   }}
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-[2px] border-2 border-[#102C57] bg-[#102C57] px-3 py-2 text-xs font-black uppercase tracking-[1px] text-white transition hover:bg-[#0c2345] disabled:cursor-not-allowed disabled:border-[#CCCCCC] disabled:bg-[#CCCCCC] disabled:text-[#8F8F8F]"
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-[2px] border-2 border-[#102C57] bg-[var(--surface-navy,#102C57)] px-3 py-2 text-xs font-black uppercase tracking-[1px] text-white transition hover:bg-[var(--surface-navy,#0c2345)] disabled:cursor-not-allowed disabled:border-[#CCCCCC] disabled:bg-[#CCCCCC] disabled:text-[#8F8F8F]"
                 >
                   <Plus className="h-4 w-4" />
                   เพิ่มในใบ
@@ -931,7 +626,7 @@ function SupplementalRequisitionDrawer({
               </div>
               <div className="overflow-hidden rounded-[2px] border border-[#CCCCCC] bg-white">
                 <table className="w-full table-fixed border-collapse text-xs text-black">
-                  <thead className="sticky top-0 z-10 bg-[#102C57] text-white">
+                  <thead className="sticky top-0 z-10 bg-[var(--surface-navy,#102C57)] text-white">
                     <tr>
                       <th className="w-[24%] border-r border-white/20 px-3 py-2 text-left font-black uppercase tracking-[0.7px]">
                         รหัส
@@ -953,7 +648,7 @@ function SupplementalRequisitionDrawer({
                           key={optionKey}
                           onClick={() => setSelectedKey(optionKey)}
                           className={`cursor-pointer border-b border-[#E5E7EB] transition last:border-b-0 ${
-                            active ? "bg-[#102C57] text-white" : "bg-white hover:bg-[#F5F7FA]"
+                            active ? "bg-[var(--surface-navy,#102C57)] text-white" : "bg-white hover:bg-[#F5F7FA]"
                           }`}
                         >
                           <td
@@ -1036,7 +731,7 @@ function SupplementalRequisitionDrawer({
           <section className="min-h-0 overflow-y-auto overflow-x-hidden bg-[#e9edf3] p-5">
             <div className="mx-auto w-full max-w-[1040px]">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <span className="rounded-[2px] border border-[#102C57] bg-[#102C57] px-3 py-1 text-[10px] font-black uppercase tracking-[1px] text-white">
+                <span className="rounded-[2px] border border-[#102C57] bg-[var(--surface-navy,#102C57)] px-3 py-1 text-[10px] font-black uppercase tracking-[1px] text-white">
                   Supplemental Draft
                 </span>
                 <span className="rounded-[2px] border border-[#d4af37] bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[1px] text-[#8a6a00]">
@@ -1045,7 +740,7 @@ function SupplementalRequisitionDrawer({
               </div>
 
               <div className="min-h-[520px] overflow-hidden rounded-[2px] border-2 border-[#102C57] bg-white shadow-none">
-                <div className="flex items-start justify-between gap-4 bg-[#102C57] px-5 py-4 text-white">
+                <div className="flex items-start justify-between gap-4 bg-[var(--surface-navy,#102C57)] px-5 py-4 text-white">
                   <div>
                     <div className="text-[10px] font-black uppercase tracking-[2px] text-[#f6e7a8]">
                       A5 Landscape
@@ -1122,7 +817,7 @@ function SupplementalRequisitionDrawer({
                             <button
                               type="button"
                               onClick={() => onRemoveLine(buildSupplementalLineKey(line))}
-                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[2px] border border-[#102C57] text-[#102C57] hover:bg-[#102C57] hover:text-white"
+                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[2px] border border-[#102C57] text-[#102C57] hover:bg-[var(--surface-navy,#102C57)] hover:text-white"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
@@ -1176,7 +871,7 @@ function SupplementalRequisitionDrawer({
               type="button"
               onClick={onExport}
               disabled={!canExport}
-              className="inline-flex items-center gap-2 rounded-[2px] border-2 border-[#102C57] bg-[#102C57] px-4 py-2 text-xs font-black uppercase tracking-[1.2px] text-white transition hover:bg-[#0c2345] disabled:cursor-not-allowed disabled:border-[#CCCCCC] disabled:bg-[#CCCCCC] disabled:text-[#8F8F8F]"
+              className="inline-flex items-center gap-2 rounded-[2px] border-2 border-[#102C57] bg-[var(--surface-navy,#102C57)] px-4 py-2 text-xs font-black uppercase tracking-[1.2px] text-white transition hover:bg-[var(--surface-navy,#0c2345)] disabled:cursor-not-allowed disabled:border-[#CCCCCC] disabled:bg-[#CCCCCC] disabled:text-[#8F8F8F]"
             >
               <Download className="h-4 w-4" />
               {exporting ? "กำลัง Export..." : "Export Excel"}
@@ -1188,50 +883,17 @@ function SupplementalRequisitionDrawer({
   );
 }
 
-function DeleteConfirmModal({ state, onCancel, onConfirm }) {
+function DeleteConfirmModal({ state, onCancel, onConfirm, saving, error }) {
   if (!state) return null;
-
-  return (
-    <div className="fixed inset-0 z-[130] flex items-center justify-center bg-[#102C57]/45 px-4">
-      <div className="w-full max-w-md overflow-hidden rounded-[2px] border border-[#102C57]/15 bg-white shadow-[0_24px_60px_rgba(16,44,87,0.2)]">
-        <div className="border-b border-[#102C57]/10 bg-[#102C57] px-5 py-4 text-white">
-          <div className="text-[10px] font-black uppercase tracking-[2px] text-[#d4af37]">ยืนยันการลบ</div>
-          <h3 className="mt-1 text-lg font-black tracking-[0.2px] text-white">ต้องการลบรายการนี้ใช่ไหม</h3>
-        </div>
-
-        <div className="bg-[#fcfcf9] px-5 py-5">
-          <div className="rounded-[2px] border border-[#102C57]/12 bg-white px-4 py-4">
-            <div className="text-[10px] font-extrabold uppercase tracking-[1px] text-[#b42318]">รายการที่จะถูกลบ</div>
-            <div className="mt-3 text-[#102C57]">
-              <div className="font-mono text-xs font-bold text-[#667085]">{state.materialGoodsCode || state.materialSkuCode}</div>
-              <div className="mt-1 text-sm font-black leading-tight text-[#102C57]">{state.materialName || "-"}</div>
-              <div className="mt-2 text-xs font-bold uppercase tracking-[0.5px] text-[#667085]">หน่วย: {state.unit || "-"}</div>
-            </div>
-          </div>
-          <p className="mt-4 text-xs font-bold leading-relaxed uppercase tracking-[0.5px] text-[#667085]">
-            หากลบแล้ว รายการนี้จะหายออกจากใบเบิกฉบับร่างทันที
-          </p>
-        </div>
-
-        <div className="flex items-center justify-end gap-2 border-t border-[#e4e7ec] bg-white px-5 py-4">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-[2px] border border-[#d0d5dd] bg-white px-4 py-2 text-xs font-black uppercase tracking-[1.28px] text-[#102C57] transition hover:bg-slate-50"
-          >
-            ยกเลิก
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="rounded-[2px] border border-[#b42318] bg-[#b42318] px-4 py-2 text-xs font-black uppercase tracking-[1.28px] text-white transition hover:bg-[#912018]"
-          >
-            ลบรายการ
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+  return <RequisitionDialog title="ลบรายการนี้?" onClose={onCancel} busy={saving} footer={<>
+    <button type="button" onClick={onCancel} disabled={saving}>ยกเลิก</button>
+    <button type="button" className={dialogStyles.danger} onClick={onConfirm} disabled={saving}>{saving ? "กำลังลบ..." : "ลบรายการ"}</button>
+  </>}>
+    <p>วัตถุดิบ : <span className={dialogStyles.code}>{state.materialGoodsCode || state.materialSkuCode}</span> · {state.materialName || "-"}</p>
+    <p>หน่วย : {state.unit || "-"}</p>
+    <p className="mt-2">ลบวัตถุดิบนี้ทั้งแถว เฉพาะแถวที่ยังไม่มีการ Export เท่านั้น โดยจะเก็บยอดและ LOT ที่ Export แล้วไว้</p>
+    {error && <p role="alert" className="text-red-700">{error}</p>}
+  </RequisitionDialog>;
 }
 
 function ExportExcelModal({
@@ -1249,31 +911,10 @@ function ExportExcelModal({
 }) {
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-[130] flex items-center justify-center bg-[#0b1220]/55 px-4 py-8">
-      <div className="w-full max-w-5xl overflow-hidden rounded-[2px] border border-[#102C57] bg-white shadow-[0_30px_80px_rgba(16,44,87,0.24)]">
-        <div className="flex items-center justify-between border-b border-[#102C57] bg-[#102C57] px-5 py-4 text-white">
-          <div>
-            <div className="text-[11px] font-black uppercase tracking-[1.6px] text-[#d4af37]">
-              Export Excel
-            </div>
-            <h3 className="mt-1 text-lg font-black tracking-[0.2px]">
-              เลือกแผนกสำหรับรายวันและรายสัปดาห์
-            </h3>
-            <p className="mt-1 text-xs font-bold text-white/75">
-              1 แผนกจะอยู่ได้ทั้ง 2 กลุ่ม ถ้าต้องการออกทั้งรายวันและรายสัปดาห์ในรอบเดียว
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-[2px] border border-white/30 text-white transition hover:bg-white/10"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="space-y-5 p-5">
+  return <RequisitionDialog title="Export Excel" wide onClose={onClose} busy={submitting} footer={<>
+    <button type="button" onClick={onClose} disabled={submitting}>ยกเลิก</button>
+    <button type="button" className={dialogStyles.primary} onClick={onSubmit} disabled={submitting}>{submitting ? "กำลัง Export..." : "Export Excel"}</button>
+  </>}><p className="mb-3">เลือกแผนกสำหรับรายวันและรายสัปดาห์ · แผนกเดียวกันเลือกได้ทั้งสองกลุ่ม</p><div className={dialogStyles.exportBody + " space-y-4"}>
           <div className="grid gap-4 xl:grid-cols-2">
             <section className="rounded-[2px] border border-[#d0d5dd] bg-[#fcfcf9] p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
@@ -1303,7 +944,7 @@ function ExportExcelModal({
                       key={`daily-${department.id}`}
                       className={`flex cursor-pointer items-center gap-3 rounded-[2px] border px-3 py-2 text-sm font-bold transition ${
                         checked
-                          ? "border-[#d4af37] bg-[#fff8e2] text-[#102C57]"
+                          ? "border-[#9fc7f5] bg-[#eaf4ff] text-[#102C57]"
                           : "border-[#e4e7ec] bg-white text-[#344054]"
                       }`}
                     >
@@ -1328,7 +969,7 @@ function ExportExcelModal({
                 </div>
                 <FileSpreadsheet className="h-5 w-5 text-[#102C57]" />
               </div>
-              <div className="mb-3 rounded-[2px] border border-[#d4af37] bg-[#fff8e2] px-3 py-2 text-xs font-bold text-[#8a6a00]">
+              <div className="mb-3 rounded-[2px] border border-[#9fc7f5] bg-[#eaf4ff] px-3 py-2 text-xs font-bold text-[#102C57]">
                 ใช้ช่วงวันที่ของแผนที่เลือกอยู่ด้านหลังอัตโนมัติ
               </div>
               <div className="grid max-h-[320px] gap-2 overflow-y-auto">
@@ -1339,7 +980,7 @@ function ExportExcelModal({
                       key={`weekly-${department.id}`}
                       className={`flex cursor-pointer items-center gap-3 rounded-[2px] border px-3 py-2 text-sm font-bold transition ${
                         checked
-                          ? "border-[#d4af37] bg-[#fff8e2] text-[#102C57]"
+                          ? "border-[#9fc7f5] bg-[#eaf4ff] text-[#102C57]"
                           : "border-[#e4e7ec] bg-white text-[#344054]"
                       }`}
                     >
@@ -1378,103 +1019,134 @@ function ExportExcelModal({
             </div>
           </div>
         </div>
-
-        <div className="flex items-center justify-end gap-2 border-t border-[#e4e7ec] bg-white px-5 py-4">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-[2px] border border-[#d0d5dd] bg-white px-4 py-2 text-xs font-black uppercase tracking-[1.2px] text-[#102C57] transition hover:bg-slate-50"
-          >
-            ยกเลิก
-          </button>
-          <button
-            type="button"
-            onClick={onSubmit}
-            disabled={submitting}
-            className="inline-flex items-center gap-2 rounded-[2px] border border-[#102C57] bg-[#102C57] px-4 py-2 text-xs font-black uppercase tracking-[1.2px] text-white transition hover:bg-[#0c2345] disabled:cursor-not-allowed disabled:bg-[#94a3b8] disabled:border-[#94a3b8]"
-          >
-            <Download className="h-4 w-4" />
-            {submitting ? "กำลัง Export..." : "Export Excel"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+  </RequisitionDialog>;
 }
 
 function ExportErrorPopup({ message, onClose }) {
   if (!message) return null;
-
-  return (
-    <div
-      className="fixed inset-0 z-[400] flex items-center justify-center bg-[#071426]/70 px-4 py-8"
-      role="alertdialog"
-      aria-modal="true"
-      aria-labelledby="export-error-title"
-      aria-describedby="export-error-message"
-    >
-      <div className="w-full max-w-lg overflow-hidden rounded-[2px] border-2 border-[#b42318] bg-white shadow-[0_32px_90px_rgba(7,20,38,0.42)]">
-        <div className="flex items-center justify-between border-b border-[#d4af37] bg-[#102C57] px-5 py-4 text-white">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#fff4ed] text-[#b42318]">
-              <AlertTriangle className="h-5 w-5" />
-            </span>
-            <div>
-              <div className="text-[10px] font-black uppercase tracking-[1.6px] text-[#d4af37]">
-                Export Excel
-              </div>
-              <h3 id="export-error-title" className="mt-0.5 text-lg font-black">
-                ส่งออกไฟล์ไม่สำเร็จ
-              </h3>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="ปิดข้อความแจ้งเตือน"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-[2px] border border-white/30 text-white transition hover:bg-white/10"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="p-5">
-          <p id="export-error-message" className="break-words text-sm font-bold leading-6 text-[#344054]">
-            {message}
-          </p>
-          <div className="mt-4 border-l-4 border-[#d4af37] bg-[#fff8e2] px-3 py-2 text-xs font-bold leading-5 text-[#6b5200]">
-            กรุณาตรวจสอบข้อมูลตามข้อความข้างต้น แล้วลอง Export ใหม่อีกครั้ง
-          </div>
-        </div>
-
-        <div className="flex justify-end border-t border-[#e4e7ec] bg-[#f8fafc] px-5 py-4">
-          <button
-            type="button"
-            onClick={onClose}
-            autoFocus
-            className="rounded-[2px] border border-[#102C57] bg-[#102C57] px-5 py-2.5 text-xs font-black uppercase tracking-[1.2px] text-white transition hover:bg-[#0c2345]"
-          >
-            รับทราบ
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+  return <RequisitionDialog title="ส่งออกไฟล์ไม่สำเร็จ" onClose={onClose} footer={<button type="button" className={dialogStyles.primary} onClick={onClose}>รับทราบ</button>}>
+    <p role="alert" className="whitespace-pre-wrap break-words">{message}</p>
+    <p className="mt-3">กรุณาตรวจสอบข้อมูลตามข้อความข้างต้น แล้วลอง Export ใหม่อีกครั้ง</p>
+  </RequisitionDialog>;
 }
 
-function RequisitionDocument({
+function getLotRequirementRefs(line, column) {
+  const lineKey = buildLineKey(line);
+  const breakdown = Array.isArray(line?.breakdownByPreviewColumn?.[column?.key])
+    ? line.breakdownByPreviewColumn[column.key]
+    : [];
+  if (breakdown.length) {
+    return breakdown
+      .filter((item) => toNumber(item?.qty) > 0 && item?.sourceDocumentKey)
+      .map((item) => ({
+        key: buildLotRequirementKey(item.sourceDocumentKey, line, column.dateValue),
+        documentKey: item.sourceDocumentKey,
+        lineKey,
+        dateValue: column.dateValue,
+        qty: roundQty(item.qty),
+      }));
+  }
+  const qty = roundQty(resolveRequisitionPreviewCellQty({ line, column }));
+  const documentKeys = normalizeDocumentKeys(
+    column?.sourceDocumentKeys?.length ? column.sourceDocumentKeys : column?.sourceDocumentKey
+  );
+  if (qty <= 0 || !documentKeys.length) return [];
+  return [{
+    key: buildLotRequirementKey(documentKeys[0], line, column.dateValue),
+    documentKey: documentKeys[0],
+    lineKey,
+    dateValue: column.dateValue,
+    qty,
+  }];
+}
+
+function aggregateLotRows(requirements, lotPreviewByKey, savedRows = [], savedSource = "ERP") {
+  const map = new Map();
+  (Array.isArray(savedRows) ? savedRows : []).forEach((allocation) => {
+    const lotNo = String(allocation?.lotNo || "").trim();
+    const warehouseCode = String(allocation?.warehouseCode || "").trim();
+    const key = `${lotNo}|${warehouseCode}`;
+    if (!map.has(key)) map.set(key, { lotNo, warehouseCode, fifoDate: allocation?.fifoDate || null, qty: 0, source: savedSource });
+    map.get(key).qty = roundQty(map.get(key).qty + toNumber(allocation?.qty));
+  });
+  requirements.forEach((requirement) => {
+    const preview = lotPreviewByKey?.[requirement.key];
+    (preview?.allocations || []).forEach((allocation) => {
+      const lotNo = String(allocation?.lotNo || "").trim();
+      const key = `${lotNo}|${String(allocation?.warehouseCode || "").trim()}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          lotNo,
+          warehouseCode: String(allocation?.warehouseCode || "").trim(),
+          fifoDate: allocation?.fifoDate || null,
+          qty: 0,
+        });
+      }
+      map.get(key).qty = roundQty(map.get(key).qty + toNumber(allocation?.qty));
+    });
+  });
+  return Array.from(map.values()).sort((left, right) => {
+    const dateCompare = String(left.fifoDate || "").localeCompare(String(right.fifoDate || ""));
+    if (dateCompare !== 0) return dateCompare;
+    return String(left.lotNo || "").localeCompare(String(right.lotNo || ""), "th", { numeric: true });
+  });
+}
+
+function collectSavedLotRows(line) {
+  const erpLotsByDate = line?.erpLotsByDate || {};
+  const exportedLotsByDate = line?.exportedLotsByDate || {};
+  const dates = new Set([...Object.keys(erpLotsByDate), ...Object.keys(exportedLotsByDate)]);
+  return Array.from(dates).flatMap((dateValue) => {
+    const erpRows = Array.isArray(erpLotsByDate[dateValue]) ? erpLotsByDate[dateValue] : [];
+    const exportedRows = Array.isArray(exportedLotsByDate[dateValue]) ? exportedLotsByDate[dateValue] : [];
+    return erpRows.length ? erpRows : exportedRows;
+  });
+}
+
+function applyConfirmedLotAllocations(current, updates) {
+  const next = { ...(current || {}) };
+  (Array.isArray(updates) ? updates : []).forEach((update) => {
+    const previous = next[update.key] || {};
+    const allocations = (Array.isArray(update.allocations) ? update.allocations : []).map((allocation) => {
+      const option = (previous.options || []).find((item) => item.lotNo === allocation.lotNo) || {};
+      return { ...option, lotNo: allocation.lotNo, qty: roundQty(allocation.qty) };
+    });
+    const allocatedQty = roundQty(allocations.reduce((sum, item) => sum + toNumber(item.qty), 0));
+    next[update.key] = {
+      ...previous,
+      requiredQty: roundQty(update.qty),
+      allocatedQty,
+      shortageQty: roundQty(Math.max(0, toNumber(update.qty) - allocatedQty)),
+      complete: Math.abs(toNumber(update.qty) - allocatedQty) <= 0.001,
+      allocations,
+    };
+  });
+  return next;
+}
+
+export function RequisitionDocument({
   doc,
+  masterPlanNo,
+  active = false,
   pageColumns,
   editable = false,
   showExportState = true,
-  onOpenManager,
-  onOpenAddMaterial,
-  onOpenSupplemental,
-  onResetDocument,
+  onManage,
+  onDeleteLine,
+  onSupplemental,
+  onReset,
+  onHide,
   onUpdateQty,
-  onHideDocument,
+  lotPreviewByKey,
+  lotPreviewStatus,
+  onSaveLotAllocations,
 }) {
+  const [collapsed, setCollapsed] = useState(false);
   const [breakdownState, setBreakdownState] = useState(null);
+  const [expandedLineKeys, setExpandedLineKeys] = useState(() => new Set());
+  const [lotEditorState, setLotEditorState] = useState(null);
+  const [lotEditorDraft, setLotEditorDraft] = useState({});
+  const [lotReservationDetails, setLotReservationDetails] = useState(null);
   const displayColumns = pageColumns.flatMap((dateValue) => {
     const matchingColumns = (Array.isArray(doc?.previewColumns) ? doc.previewColumns : [])
       .filter((column) => column.dateValue === dateValue);
@@ -1495,129 +1167,75 @@ function RequisitionDocument({
     dateValue,
     columns: displayColumns.filter((column) => column.dateValue === dateValue),
   }));
-  const actionColspan = 4 + displayColumns.length;
+  const actionColspan = 6 + displayColumns.length + (editable ? 1 : 0);
   const shiftLabel = formatShiftName(doc);
   const actionDocumentKeys = normalizeDocumentKeys(
     doc?.sourceDocumentKeys?.length ? doc.sourceDocumentKeys : doc.documentKey
   );
   const actionDocumentKey = actionDocumentKeys[0] || doc.documentKey;
   const isColumnExported = (column) => showExportState && column?.exported === true;
-  const exportedDateOptions = getExportedDateOptions(doc, pageColumns);
-  const tableMinWidth = Math.max(1040, 545 + (displayColumns.length * 88));
+  const tableMinWidth = Math.max(1120, 660 + (displayColumns.length * 88));
+  const lotEditorRequiredQty = roundQty(
+    (lotEditorState?.requirements || []).reduce((sum, item) => sum + toNumber(item?.qty), 0)
+  );
+  const lotEditorOptions = useMemo(() => {
+    const map = new Map();
+    (lotEditorState?.requirements || []).forEach((requirement) => {
+      const preview = lotPreviewByKey?.[requirement.key];
+      (preview?.options || []).forEach((option) => {
+        const key = `${String(option?.lotNo || "").trim()}|${String(option?.warehouseCode || "").trim()}`;
+        const current = map.get(key);
+        if (!current || toNumber(option?.availableQty) > toNumber(current?.availableQty)) {
+          map.set(key, { ...option, key });
+        }
+      });
+    });
+    return Array.from(map.values()).sort((left, right) => {
+      const dateCompare = String(left?.fifoDate || "").localeCompare(String(right?.fifoDate || ""));
+      if (dateCompare !== 0) return dateCompare;
+      return String(left?.lotNo || "").localeCompare(String(right?.lotNo || ""), "th", { numeric: true });
+    });
+  }, [lotEditorState, lotPreviewByKey]);
+  const lotEditorAllocatedQty = roundQty(
+    Object.values(lotEditorDraft).reduce((sum, qty) => sum + toNumber(qty), 0)
+  );
+  const openLotEditor = (state) => {
+    setLotReservationDetails(null);
+    const rows = aggregateLotRows(state.requirements || [], lotPreviewByKey);
+    setLotEditorDraft(Object.fromEntries(rows.map((row) => [
+      `${row.lotNo}|${row.warehouseCode}`,
+      roundQty(row.qty),
+    ])));
+    setLotEditorState(state);
+  };
 
   return (
-    <article className="bg-white">
-      <div className="w-full">
-        <div className="w-full bg-white">
-          <header className="border-b border-[#102C57] bg-gradient-to-r from-[#082b5e] to-[#0d3975] px-4 py-4 text-white">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <h2 className="text-2xl font-black tracking-[0.5px]">ใบสั่งงาน / ใบขอเบิกวัตถุดิบ (Preview)</h2>
-                <p className="mt-1 text-sm font-bold text-[#f6e7a8]">
-                  แผนก : {doc.ownerDepartmentName || doc.ownerDepartmentCode || "-"}
-                </p>
-                {doc.previewProductCount > 1 ? (
-                  <p className="mt-1 text-sm font-bold text-[#f6e7a8]">
-                    สินค้า : {doc.previewProductCount.toLocaleString("th-TH")} รายการ · แยกตามวันที่ผลิต
-                  </p>
-                ) : doc.parentSku ? (
-                  <p className="mt-1 text-sm font-bold text-[#f6e7a8]">
-                    สินค้า : {doc.parentSkuName && doc.parentSkuName !== doc.parentSku ? `${doc.parentSkuName} (${doc.parentSku})` : doc.parentSku}
-                  </p>
-                ) : null}
-              </div>
-              {editable ? (
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => onResetDocument(actionDocumentKeys)}
-                    className="inline-flex items-center gap-1.5 rounded-[2px] border border-white/30 bg-transparent px-3.5 py-2 text-xs font-black tracking-[0.5px] text-white transition hover:bg-white/10"
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    รีเซ็ตใบนี้
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onOpenManager(actionDocumentKeys)}
-                    className="inline-flex items-center gap-1.5 rounded-[2px] border border-[#d4af37] bg-[#fff8e2] px-3.5 py-2 text-xs font-black tracking-[0.5px] text-[#8a6a00] transition hover:bg-[#f6e7a8]"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                    จัดการรายการ
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onOpenAddMaterial(actionDocumentKeys)}
-                    className="inline-flex items-center gap-1.5 rounded-[2px] border border-[#d4af37] bg-[#d4af37] px-3.5 py-2 text-xs font-black tracking-[0.5px] text-[#102C57] transition hover:bg-[#c39b22]"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    เพิ่มวัตถุดิบ
-                  </button>
-                  {exportedDateOptions.length > 0 ? (
-                    <button
-                      type="button"
-                      onClick={() => onOpenSupplemental(actionDocumentKey)}
-                      className="inline-flex items-center gap-1.5 rounded-[2px] border border-[#f6e7a8] bg-white px-3.5 py-2 text-xs font-black tracking-[0.5px] text-[#102C57] transition hover:bg-[#fff8e2]"
-                    >
-                      <FileSpreadsheet className="h-3.5 w-3.5" />
-                      ใบเบิกเพิ่มเติม
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => onHideDocument && onHideDocument(actionDocumentKeys)}
-                    className="inline-flex items-center gap-1.5 rounded-[2px] border border-red-500/30 bg-red-50 px-3.5 py-2 text-xs font-black tracking-[0.5px] text-red-600 transition hover:bg-red-100 cursor-pointer"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    ซ่อนใบนี้
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          </header>
-
-          <div className="grid grid-cols-4 border-b border-black bg-white text-sm font-bold text-black">
-            <div className="border-r border-black p-3">
-              <div className="text-[11px] font-black uppercase tracking-[1px] text-[#667085]">วันที่</div>
-              <div className="mt-1 font-black text-[#8f2d1f]">
-                {formatDate(pageColumns[0])} ถึง {formatDate(pageColumns[pageColumns.length - 1])}
-              </div>
-            </div>
-            <div className="border-r border-black p-3">
-              <div className="text-[11px] font-black uppercase tracking-[1px] text-[#667085]">ผู้จัดทำ</div>
-              <div className="mt-1 inline-flex items-center gap-2 font-black text-black">
-                <User className="h-4 w-4" />
-                <span>{doc.qaDepartmentName || doc.qaDepartmentCode || "-"}</span>
-              </div>
-            </div>
-            <div className="border-r border-black p-3">
-              <div className="text-[11px] font-black uppercase tracking-[1px] text-[#667085]">เดินงาน (Area)</div>
-              <div className="mt-1 inline-flex items-center gap-2 font-black text-black">
-                <MapPin className="h-4 w-4" />
-                <span>{formatRoomName(doc.roomLabel, doc.roomId)}</span>
-              </div>
-            </div>
-            <div className="p-3">
-              <div className="text-[11px] font-black uppercase tracking-[1px] text-[#667085]">กะ (Shift)</div>
-              <div className="mt-1 inline-flex items-center gap-2 font-black text-black">
-                <Clock3 className="h-4 w-4" />
-                <span>{shiftLabel}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="w-full overflow-x-auto">
-          <table className="w-full table-fixed border-collapse text-xs text-black" style={{ minWidth: `${tableMinWidth}px` }}>
+    <RequisitionPaper id={requisitionDocumentId(doc.documentKey)} documentKey={doc.documentKey} active={active}
+      department={doc.ownerDepartmentName || doc.ownerDepartmentCode} masterPlanNo={masterPlanNo}
+      creator={doc.qaDepartmentName || doc.qaDepartmentCode || "-"} shift={shiftLabel}
+      room={formatRoomName(doc.roomLabel, doc.roomId)} period={`${formatDate(pageColumns[0])} – ${formatDate(pageColumns[pageColumns.length - 1])}`}
+      dateAction={
+              <button type="button" aria-label={collapsed ? "ขยายใบเบิก" : "ย่อใบเบิก"} aria-expanded={!collapsed} aria-controls={requisitionDocumentId(doc.documentKey) + "-table"} onClick={() => setCollapsed((value) => !value)}>
+                <ChevronDown className={collapsed ? "h-4 w-4" : "h-4 w-4 rotate-180"} />
+              </button>
+      }
+      actions={editable ? <RequisitionDocumentActions document={doc} dateColumns={pageColumns} onManage={onManage} onSupplemental={onSupplemental} onReset={onReset} onHide={onHide} /> : null}>
+          <RequisitionPaperTable id={requisitionDocumentId(doc.documentKey) + "-table"} hidden={collapsed} minWidth={tableMinWidth}>
             <colgroup>
+              <col style={{ width: "32px" }} />
               <col style={{ width: "110px" }} />
               <col style={{ width: "290px" }} />
               <col style={{ width: "70px" }} />
               {displayColumns.map((column) => <col key={`${doc.documentKey}-col-${column.key}`} style={{ width: "88px" }} />)}
               <col style={{ width: "75px" }} />
+              <col style={{ width: "85px" }} />
+              {editable && <col style={{ width: "48px" }} />}
             </colgroup>
             <thead>
               <tr>
+                <th rowSpan={3} className="border-r border-b px-1 py-2 text-center">#</th>
                 <th rowSpan={3} className="sticky left-0 z-30 border-r border-b border-black bg-[#f8f4d8] px-2 py-2 text-center text-xs font-black text-black shadow-[2px_0_0_#000]">
-                  รหัส
+                  รหัสวัตถุดิบ
                 </th>
                 <th rowSpan={3} className="sticky left-[110px] z-30 border-r border-b border-black bg-[#f8f4d8] px-2 py-2 text-center text-xs font-black text-black shadow-[2px_0_0_#000]">
                   รายการวัตถุดิบ
@@ -1629,16 +1247,28 @@ function RequisitionDocument({
                   <th
                     key={`${doc.documentKey}-day-${dateValue}`}
                     colSpan={columns.length}
+                    data-day-tone={index % DAY_TONE_CLASSES.length}
+                    data-exported={columns.every(isColumnExported)}
                     className={`border-r border-b border-black px-1.5 py-1.5 text-center text-[10px] font-black text-black ${
                       columns.every(isColumnExported) ? "bg-[#d1d5db]" : DAY_TONE_CLASSES[index % DAY_TONE_CLASSES.length]
                     }`}
                   >
-                    {formatDate(dateValue)}
+                    <span className="block">{formatDayHeader(dateValue).weekday}</span>
+                    <span>{formatDayHeader(dateValue).date}</span>
+                    {columns.some(isColumnExported) ? (
+                      <span className={presentation.exportLock} role="img" aria-label={columns.every(isColumnExported) ? "Export แล้ว แก้ไขไม่ได้" : "มีรายการที่ Export แล้ว"} title={columns.every(isColumnExported) ? "Export แล้ว แก้ไขไม่ได้" : "มีรายการที่ Export แล้ว"}>
+                        <LockKeyhole size={11} aria-hidden="true" />
+                      </span>
+                    ) : null}
                   </th>
                 ))}
-                <th rowSpan={3} className="w-[6%] border-b border-black bg-[#f1d4d0] px-2 py-3 text-center text-xs font-black text-[#8f2d1f]">
+                <th data-total-column rowSpan={3} className="w-[6%] border-b border-black px-2 py-3 text-center text-xs">
                   ยอดรวม
                 </th>
+                <th rowSpan={3} className="border-r border-b border-black bg-[#f8f4d8] px-2 py-3 text-center text-xs font-black text-black">
+                  สถานะ LOT
+                </th>
+                {editable && <th rowSpan={3} className="border-b border-r border-black px-2 py-2 text-center text-xs">ลบ</th>}
               </tr>
               <tr>
                 {displayColumns.map((column) => {
@@ -1651,14 +1281,7 @@ function RequisitionDocument({
                         isColumnExported(column) ? "bg-[#e5e7eb]" : "bg-white"
                       }`}
                     >
-                      {productLabel ? (
-                        <div className="break-words text-black">
-                          <div>{productLabel}</div>
-                          {column.productCode ? <div className="mt-0.5 text-[8px] font-black">{column.productCode}</div> : null}
-                        </div>
-                      ) : (
-                        <span className="font-mono text-[#98a2b3]">-</span>
-                      )}
+                      <RequisitionWorkLabel name={productLabel} code={column.productCode} />
                     </th>
                   );
                 })}
@@ -1677,78 +1300,205 @@ function RequisitionDocument({
               </tr>
             </thead>
             <tbody>
-              {(doc.lines || []).map((line) => {
+              {(doc.lines || []).map((line, lineIndex) => {
                 const lineKey = buildLineKey(line);
+                const requirementsByColumn = new Map(
+                  displayColumns.map((column) => [
+                    column.key,
+                    isColumnExported(column) ? [] : getLotRequirementRefs(line, column),
+                  ])
+                );
+                const allRequirements = Array.from(requirementsByColumn.values()).flat();
+                const erpLotRows = Object.values(line?.erpLotsByDate || {}).flat();
+                const exportedLotRows = Object.values(line?.exportedLotsByDate || {}).flat();
+                const savedLotRows = collectSavedLotRows(line);
+                const savedLotSource = erpLotRows.length > 0 && exportedLotRows.length > 0
+                  ? "ERP / EXPORT"
+                  : erpLotRows.length > 0 ? "ERP" : "EXPORT";
+                const lotRows = aggregateLotRows(allRequirements, lotPreviewByKey, savedLotRows, savedLotSource);
+                const isErpActual = erpLotRows.length > 0;
+                const isExportSnapshot = !isErpActual && exportedLotRows.length > 0;
+                const isExpanded = expandedLineKeys.has(lineKey);
+                const isLotComplete = allRequirements.length > 0
+                  && allRequirements.every((requirement) => lotPreviewByKey?.[requirement.key]?.complete === true);
+                const hasAllocatedLot = allRequirements.some(
+                  (requirement) => toNumber(lotPreviewByKey?.[requirement.key]?.allocatedQty) > 0
+                );
                 return (
-                  <tr key={`${doc.documentKey}-${lineKey}`} className="transition-colors hover:bg-slate-50">
-                    <td className="sticky left-0 z-10 border-r border-b border-black bg-white px-2 py-2 font-mono text-xs font-bold tracking-[0.2px] text-black shadow-[2px_0_0_#000]">
-                      {line.materialGoodsCode || line.materialSkuCode}
-                    </td>
-                    <td className="sticky left-[110px] z-10 border-r border-b border-black bg-white px-2 py-2 text-xs font-bold leading-[1.2] text-black shadow-[2px_0_0_#000]">
-                      {line.materialName}
-                    </td>
-                    <td className="border-r border-b border-black px-1.5 py-2 text-center text-xs font-bold text-black">
-                      {line.unit || "-"}
-                    </td>
-                    {displayColumns.map((column) => {
-                      const qty = resolveRequisitionPreviewCellQty({ line, column });
-                      const breakdown = Array.isArray(line?.breakdownByPreviewColumn?.[column.key])
-                        ? line.breakdownByPreviewColumn[column.key]
-                        : [];
-                      return (
-                        <td
-                          key={`${doc.documentKey}-${lineKey}-${column.key}`}
-                          className={`border-r border-b border-black px-1.5 py-2 text-center text-xs font-semibold ${
-                            isColumnExported(column)
-                              ? qty > 0
-                                ? "bg-[#e5e7eb] font-black text-black"
-                                : "bg-[#f3f4f6] text-[#6b7280]"
-                              : qty > 0
-                                ? "bg-[#fff8e2] font-black text-[#8a6a00]"
-                                : "text-[#98a2b3]"
-                          }`}
+                  <Fragment key={`${doc.documentKey}-${lineKey}`}>
+                    <tr data-lot-expanded={isExpanded} className={`transition-colors hover:bg-slate-50 ${isExpanded ? "bg-[#eef5ff]" : ""}`}>
+                      <td className="border-r border-b text-center">{lineIndex + 1}</td>
+                      <td className={`sticky left-0 z-10 border-r border-b border-black px-2 py-2 font-mono text-xs font-bold tracking-[0.2px] text-black shadow-[2px_0_0_#000] ${isExpanded ? "bg-[#eef5ff]" : "bg-white"}`}>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedLineKeys((current) => {
+                            const next = new Set(current);
+                            if (next.has(lineKey)) next.delete(lineKey);
+                            else next.add(lineKey);
+                            return next;
+                          })}
+                          className="inline-flex items-center gap-1.5 text-left font-mono font-black text-[#0866d6]"
+                          aria-expanded={isExpanded}
                         >
-                          {column.isDailyRoomConsolidated && (breakdown.length > 1 || (editable && breakdown.length > 0)) ? (
-                            <button
-                              type="button"
-                              onClick={() => setBreakdownState({
-                                materialCode: line.materialGoodsCode || line.materialSkuCode,
-                                materialName: line.materialName,
-                                unit: line.unit,
-                                dateValue: column.dateValue,
-                                totalQty: qty,
-                                lineKey,
-                                breakdown,
-                              })}
-                              className="inline-flex items-center justify-center gap-1 rounded-sm px-1 py-0.5 font-black text-[#8a6a00] hover:bg-[#f6e7a8] focus:outline-none focus:ring-2 focus:ring-[#102C57]"
-                              title={`รวมจากสินค้า ${breakdown.length} รายการ — กดดูรายละเอียด`}
-                              aria-label={`ดูที่มายอดรวม ${formatQty(qty)} ${line.unit || ""} ของ ${line.materialName}`}
-                            >
-                              <span>{formatQty(qty)}</span>
-                              {breakdown.length > 1 ? (
-                                <Info className="h-3.5 w-3.5 text-[#102C57]" aria-hidden="true" />
-                              ) : null}
-                            </button>
-                          ) : editable && !column.isDailyRoomConsolidated ? (
-                            <EditableQtyCell
-                              value={qty}
-                              onSave={(nextQty) => onUpdateQty(
-                                column.sourceDocumentKey || actionDocumentKey,
-                                lineKey,
-                                column.dateValue,
-                                nextQty
-                              )}
-                            />
-                          ) : (
-                            formatQty(qty)
-                          )}
+                          {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                          {line.materialGoodsCode || line.materialSkuCode}
+                        </button>
+                      </td>
+                      <td className={`sticky left-[110px] z-10 border-r border-b border-black px-2 py-2 text-xs font-bold leading-[1.2] text-black shadow-[2px_0_0_#000] ${isExpanded ? "bg-[#eef5ff]" : "bg-white"}`}>
+                        {line.materialName}
+                      </td>
+                      <td className="border-r border-b border-black px-1.5 py-2 text-center text-xs font-bold text-black">
+                        {line.unit || "-"}
+                      </td>
+                      {displayColumns.map((column) => {
+                        const qty = resolveRequisitionPreviewCellQty({ line, column });
+                        const breakdown = Array.isArray(line?.breakdownByPreviewColumn?.[column.key])
+                          ? line.breakdownByPreviewColumn[column.key]
+                          : [];
+                        const requirements = requirementsByColumn.get(column.key) || [];
+                        const canEditLot = editable && !column.exported && qty > 0 && requirements.length > 0;
+                        const editableDocumentKey = resolveRequisitionEditableDocumentKey(column, actionDocumentKey);
+                        const requiresSourceSelection = column.isDailyRoomConsolidated
+                          && (column.sourceDocumentKeys?.length || 0) > 1;
+                        const editableBreakdown = requiresSourceSelection
+                          ? column.sourceDocumentKeys.map((sourceDocumentKey) => (
+                            breakdown.find((item) => item.sourceDocumentKey === sourceDocumentKey)
+                            || { sourceDocumentKey, productName: column.productName, qty: 0 }
+                          ))
+                          : breakdown;
+                        return (
+                          <td
+                            key={`${doc.documentKey}-${lineKey}-${column.key}`}
+                            data-exported={isColumnExported(column)}
+                            data-quantity-cell
+                            data-editable={editable && !column.exported && Boolean(editableDocumentKey || requiresSourceSelection)}
+                            className="border-r border-b border-black px-1 py-1.5 text-center text-xs font-semibold"
+                          >
+                            {requiresSourceSelection && (breakdown.length > 1 || (editable && !column.exported)) ? (
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setBreakdownState({
+                                    materialCode: line.materialGoodsCode || line.materialSkuCode,
+                                    materialName: line.materialName,
+                                    unit: line.unit,
+                                    dateValue: column.dateValue,
+                                    totalQty: qty,
+                                    lineKey,
+                                    breakdown: editableBreakdown,
+                                    isExported: column.exported === true,
+                                  })}
+                                  className="inline-flex items-center justify-center gap-1 px-1 py-0.5 font-black text-[#8a6a00] hover:bg-[#f6e7a8]"
+                                  title={column.exported ? "ดูรายละเอียดยอดรวม" : "แก้ไขจำนวน"}
+                                >
+                                  <span>{formatQty(qty)}</span>
+                                  {!column.exported && <Pencil className="h-3 w-3" aria-hidden="true" />}
+                                </button>
+                                {canEditLot ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => openLotEditor({ line, column, requirements })}
+                                    className="border border-[#c49a00] bg-white px-1 py-0.5 text-[8px] font-black text-[#8a6a00] hover:bg-[#f6e7a8]"
+                                    title={`เปลี่ยน LOT วันที่ ${formatDate(column.dateValue)}`}
+                                  >
+                                    LOT
+                                  </button>
+                                ) : null}
+                              </div>
+                            ) : canEditLot ? (
+                              <div className="flex items-center justify-center gap-1">
+                                <EditableQtyCell
+                                  value={qty}
+                                  onSave={(nextQty) => onUpdateQty(
+                                    column.sourceDocumentKey || actionDocumentKey,
+                                    lineKey,
+                                    column.dateValue,
+                                    nextQty
+                                  )}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => openLotEditor({ line, column, requirements })}
+                                  className="border border-[#c49a00] bg-white px-1 py-0.5 text-[8px] font-black text-[#8a6a00] hover:bg-[#f6e7a8]"
+                                  title={`เปลี่ยน LOT วันที่ ${formatDate(column.dateValue)}`}
+                                >
+                                  LOT
+                                </button>
+                              </div>
+                            ) : editable && editableDocumentKey ? (
+                              <EditableQtyCell
+                                value={qty}
+                                onSave={(nextQty) => onUpdateQty(
+                                  editableDocumentKey,
+                                  lineKey,
+                                  column.dateValue,
+                                  nextQty
+                                )}
+                              />
+                            ) : formatQty(qty)}
+                          </td>
+                        );
+                      })}
+                      <td data-total-column className="border-b border-black px-2 py-2 text-right text-xs">
+                        {formatQty(line.totalQty)}
+                      </td>
+                      <td className="border-r border-b border-black px-1.5 py-2 text-center text-[10px] font-black">
+                        {lotPreviewStatus === "loading" ? (
+                          <span className="text-[#667085]">กำลังจัด LOT</span>
+                        ) : lotPreviewStatus === "error" ? (
+                          <span className="inline-flex items-center gap-1 text-red-700"><AlertTriangle className="h-3.5 w-3.5" />โหลด LOT ไม่สำเร็จ</span>
+                        ) : isErpActual ? (
+                          <span className="inline-flex items-center gap-1 text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" />Bplus</span>
+                        ) : isExportSnapshot ? (
+                          <span className="inline-flex items-center gap-1 text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" />Export แล้ว</span>
+                        ) : isLotComplete ? (
+                          <span className="inline-flex items-center gap-1 text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" />ครบ</span>
+                        ) : hasAllocatedLot ? (
+                          <span className="inline-flex items-center gap-1 text-amber-700"><AlertTriangle className="h-3.5 w-3.5" />มี LOT บางส่วน</span>
+                        ) : allRequirements.length ? (
+                          <span className="text-[#667085]">ไม่มี LOT พร้อมใช้</span>
+                        ) : <span className="text-[#98a2b3]">-</span>}
+                      </td>
+                      {editable && <td className="border-b border-r border-black px-2 py-2 text-center"><button type="button" className={presentation.deleteLineAction} disabled={isRequisitionLineExportLocked(doc, line)} title={isRequisitionLineExportLocked(doc, line) ? "มีการ Export แล้ว ไม่สามารถลบแถวนี้ได้" : "ลบวัตถุดิบทั้งแถว"} onClick={() => onDeleteLine?.(actionDocumentKeys, { ...line, lineKey, docKeys: actionDocumentKeys })}>ลบ</button></td>}
+                    </tr>
+                    {isExpanded ? lotRows.map((lotRow, lotIndex) => (
+                      <tr key={`${doc.documentKey}-${lineKey}-lot-${lotRow.lotNo || "NO_LOT"}-${lotRow.warehouseCode}`} className="bg-[#f7faff] text-[10px] text-[#344054]">
+                        <td className="border-r border-b" />
+                        <td className="sticky left-0 z-10 border-r border-b border-[#b8c6d8] bg-[#f7faff] px-3 py-1.5 font-mono shadow-[2px_0_0_#b8c6d8]">
+                          <span className="pl-5">└ LOT {lotRow.lotNo || "ไม่ระบุ"}</span>
                         </td>
-                      );
-                    })}
-                    <td className="border-b border-black bg-[#fef3f2] px-2 py-2 text-right text-xs font-black text-[#8f2d1f]">
-                      {formatQty(line.totalQty)}
-                    </td>
-                  </tr>
+                        <td className="sticky left-[110px] z-10 border-r border-b border-[#b8c6d8] bg-[#f7faff] px-2 py-1.5 shadow-[2px_0_0_#b8c6d8]">
+                          คลัง {lotRow.warehouseCode || "-"}
+                        </td>
+                        <td className="border-r border-b border-[#b8c6d8] px-1 py-1.5 text-center">{line.unit || "-"}</td>
+                        {displayColumns.map((column) => {
+                          const rows = aggregateLotRows(
+                            requirementsByColumn.get(column.key) || [],
+                            lotPreviewByKey,
+                            line?.erpLotsByDate?.[column.dateValue]?.length
+                              ? line.erpLotsByDate[column.dateValue]
+                              : line?.exportedLotsByDate?.[column.dateValue] || [],
+                            line?.erpLotsByDate?.[column.dateValue]?.length ? "ERP" : "EXPORT"
+                          );
+                          const matched = rows.find((item) => item.lotNo === lotRow.lotNo && item.warehouseCode === lotRow.warehouseCode);
+                          return (
+                            <td key={`${lineKey}-${lotRow.lotNo}-${column.key}`} className="border-r border-b border-[#b8c6d8] px-1 py-1.5 text-center font-bold">
+                              {formatQty(matched?.qty)}
+                            </td>
+                          );
+                        })}
+                        <td data-total-column className="border-b border-[#b8c6d8] px-2 py-1.5 text-right">{formatQty(lotRow.qty)}</td>
+                        <td className="border-r border-b border-[#b8c6d8] px-1 py-1.5 text-center">
+                          {lotRow.source ? (
+                            <span className="bg-emerald-100 px-2 py-0.5 font-black text-emerald-800">{lotRow.source}</span>
+                          ) : lotIndex === 0 ? (
+                            <span className="bg-[#f4b400] px-2 py-0.5 font-black text-[#102C57]">FIFO</span>
+                          ) : "-"}
+                        </td>
+                        {editable && <td className="border-b border-r" />}
+                      </tr>
+                    )) : null}
+                  </Fragment>
                 );
               })}
 
@@ -1762,7 +1512,7 @@ function RequisitionDocument({
 
               {showExportState ? (
                 <tr className="bg-[#f8fafc]">
-                  <td colSpan={3} className="border-r border-t border-black px-3 py-2 text-right text-[11px] font-black text-black">
+                  <td colSpan={4} className="border-r border-t border-black px-3 py-2 text-right text-[11px] font-black text-black">
                     เลขเอกสารใบเบิก
                   </td>
                   {displayColumns.map((column) => (
@@ -1772,23 +1522,65 @@ function RequisitionDocument({
                         isColumnExported(column) ? "bg-[#e5e7eb] text-black" : "text-[#8a6a00]"
                       }`}
                     >
-                      {column.documentNo || "-"}
+                      {doc?.erpSyncByDate?.[column.dateValue]?.status === "review" ? (
+                        <span
+                          className="inline-flex flex-col items-center gap-0.5 text-amber-700"
+                          title={doc.erpSyncByDate[column.dateValue]?.reason || "ต้องตรวจสอบการจับคู่ใบเบิก ERP"}
+                        >
+                          <span className="inline-flex items-center gap-1">
+                            <AlertTriangle className="h-3 w-3" />
+                            {column.documentNo || "-"}
+                          </span>
+                          <span className="text-[8px] font-black">รอตรวจสอบ</span>
+                        </span>
+                      ) : column.documentNo || "-"}
                     </td>
                   ))}
-                  <td className="border-t border-black px-3 py-2 text-center text-[10px] font-bold text-[#98a2b3]">
+                  <td colSpan={2 + (editable ? 1 : 0)} className="border-t border-black px-3 py-2 text-center text-[10px] font-bold text-[#98a2b3]">
                     -
                   </td>
                 </tr>
               ) : null}
             </tbody>
-          </table>
-          </div>
-        </div>
-      </div>
+          </RequisitionPaperTable>
+
+      {lotEditorState ? <RequisitionLotDialog
+        document={doc} masterPlanNo={masterPlanNo} state={lotEditorState}
+        options={lotEditorOptions} draft={lotEditorDraft} requiredQty={lotEditorRequiredQty} allocatedQty={lotEditorAllocatedQty}
+        details={lotReservationDetails} onDetails={setLotReservationDetails} onChangeDraft={setLotEditorDraft}
+        onClose={() => { setLotEditorState(null); setLotReservationDetails(null); }}
+        formatDate={formatDate} formatQty={formatQty} formatQtyOrZero={formatQtyOrZero} roundQty={roundQty} toNumber={toNumber}
+        onConfirm={async () => {
+                  const queue = lotEditorOptions
+                    .map((option) => ({
+                      lotNo: String(option.lotNo || "").trim(),
+                      qty: roundQty(lotEditorDraft[option.key]),
+                    }))
+                    .filter((item) => item.qty > 0);
+                  let queueIndex = 0;
+                  let queueRemaining = queue[0]?.qty || 0;
+                  const updates = (lotEditorState.requirements || []).map((requirement) => {
+                    let requiredRemaining = roundQty(requirement.qty);
+                    const allocations = [];
+                    while (requiredRemaining > 0.001 && queueIndex < queue.length) {
+                      const take = roundQty(Math.min(requiredRemaining, queueRemaining));
+                      if (take > 0) allocations.push({ lotNo: queue[queueIndex].lotNo, qty: take });
+                      requiredRemaining = roundQty(requiredRemaining - take);
+                      queueRemaining = roundQty(queueRemaining - take);
+                      if (queueRemaining <= 0.001) {
+                        queueIndex += 1;
+                        queueRemaining = queue[queueIndex]?.qty || 0;
+                      }
+                    }
+                    return { ...requirement, allocations };
+                  });
+                  if (await onSaveLotAllocations(updates)) setLotEditorState(null);
+                }}
+      /> : null}
 
       {breakdownState ? (
         <div
-          className="fixed inset-0 z-[90] flex items-center justify-center bg-[#102C57]/55 p-4"
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-[var(--surface-navy,#102C57)]/55 p-4"
           role="dialog"
           aria-modal="true"
           aria-labelledby="requisition-breakdown-title"
@@ -1797,7 +1589,7 @@ function RequisitionDocument({
           }}
         >
           <div className="w-full max-w-lg overflow-hidden border border-[#102C57] bg-white shadow-2xl">
-            <div className="flex items-start justify-between bg-[#102C57] px-5 py-4 text-white">
+            <div className="flex items-start justify-between bg-[var(--surface-navy,#102C57)] px-5 py-4 text-white">
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-[1.5px] text-[#f6e7a8]">ที่มาของยอดรวม</div>
                 <h3 id="requisition-breakdown-title" className="mt-1 text-lg font-black">
@@ -1828,17 +1620,17 @@ function RequisitionDocument({
                       <div className="mt-0.5 text-sm font-bold leading-5 text-[#344054]">{item.productName || "-"}</div>
                     </div>
                     <div className="text-right font-black text-[#8a6a00]">
-                      {editable ? (
+                      {editable && !breakdownState.isExported ? (
                         <EditableQtyCell
                           value={item.qty}
-                          onSave={(nextQty) => {
-                            const result = onUpdateQty(
+                          onSave={async (nextQty) => {
+                            const result = await onUpdateQty(
                               item.sourceDocumentKey,
                               breakdownState.lineKey,
                               breakdownState.dateValue,
                               nextQty
                             );
-                            setBreakdownState(null);
+                            if (result !== false) setBreakdownState(null);
                             return result;
                           }}
                         />
@@ -1859,45 +1651,45 @@ function RequisitionDocument({
           </div>
         </div>
       ) : null}
-    </article>
+    </RequisitionPaper>
   );
 }
 
 export function RequisitionPreviewGeneratorClient({
   initialMasterPlanNo = "",
-  initialDateFrom = "",
-  initialDateTo = "",
 }) {
   const pathname = usePathname();
   const [masterPlanNo, setMasterPlanNo] = useState(String(initialMasterPlanNo || "").trim().toUpperCase());
-  const [dateFrom, setDateFrom] = useState(String(initialDateFrom || "").trim());
-  const [dateTo, setDateTo] = useState(String(initialDateTo || "").trim());
-  const [planSearch, setPlanSearch] = usePersistentRouteState("requisition-preview.planSearch", "");
+  const [planPickerOpen, setPlanPickerOpen] = useState(false);
   const [activeTab, setActiveTab] = usePersistentRouteState("requisition-preview.activeTab", "overview");
+  const [activeDocumentKey, setActiveDocumentKey] = useState("");
+  const draftWriteInFlight = useRef(false);
   const [activeCentralTab, setActiveCentralTab] = usePersistentRouteState("requisition-preview.activeCentralTab", "all");
   const [itemManagerState, setItemManagerState] = useState(null);
   const [deleteConfirmState, setDeleteConfirmState] = useState(null);
   const [draftSaveStatus, setDraftSaveStatus] = useState("idle");
   const [draftSaveMessage, setDraftSaveMessage] = useState("");
   const [isScheduleExpanded, setIsScheduleExpanded] = useState(false);
+  const [isSubplanExpanded, setIsSubplanExpanded] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportErrorMessage, setExportErrorMessage] = useState("");
   const [exportSelectedDate, setExportSelectedDate] = useState("");
   const [selectedDepartmentIdsDaily, setSelectedDepartmentIdsDaily] = useState([]);
   const [selectedDepartmentIdsWeekly, setSelectedDepartmentIdsWeekly] = useState([]);
-  const [activeEmbeddedSection, setActiveEmbeddedSection] = useState(null);
   const [supplementalState, setSupplementalState] = useState(null);
   const [supplementalExporting, setSupplementalExporting] = useState(false);
   const [hiddenDocKeys, setHiddenDocKeys] = useState([]);
   const [isHiddenDocsModalOpen, setIsHiddenDocsModalOpen] = useState(false);
   const [hideConfirmDocKey, setHideConfirmDocKey] = useState(null);
+  const [resetConfirmState, setResetConfirmState] = useState(null);
+  const [resetSaving, setResetSaving] = useState(false);
+  const resetInFlight = useRef(false);
+  const [restoreMessage, setRestoreMessage] = useState("");
+  const [lotPreviewByKey, setLotPreviewByKey] = useState({});
+  const [lotPreviewStatus, setLotPreviewStatus] = useState("idle");
 
-  useEffect(() => {
-    setHiddenDocKeys([]);
-  }, [dateFrom, dateTo, masterPlanNo]);
-
-  const { data: planPayload } = useSWR("/api/production-planning/master-plan-options", fetcher, {
+  const { data: planPayload, error: planOptionsError, mutate: reloadPlans } = useSWR("/api/production-planning/master-plan-options", fetcher, {
     revalidateOnFocus: false,
   });
 
@@ -1916,15 +1708,18 @@ export function RequisitionPreviewGeneratorClient({
     return Array.from(map.values()).sort((a, b) => b.planNo.localeCompare(a.planNo));
   }, [planPayload]);
 
-  const filteredPlanOptions = useMemo(() => {
-    const term = String(planSearch || "").trim().toUpperCase();
-    if (!term) return planOptions;
-    return planOptions.filter((item) => item.planNo.includes(term));
-  }, [planOptions, planSearch]);
+  const selectedPlan = planOptions.find((option) => option.planNo === masterPlanNo);
+  const dateFrom = selectedPlan?.periodStart || "";
+  const dateTo = selectedPlan?.periodEnd || "";
+
+  useEffect(() => {
+    setHiddenDocKeys([]);
+  }, [dateFrom, dateTo, masterPlanNo]);
+
 
   const previewUrl = useMemo(() => {
     const normalizedPlanNo = String(masterPlanNo || "").trim().toUpperCase();
-    if (!normalizedPlanNo) return null;
+    if (!normalizedPlanNo || !dateFrom || !dateTo) return null;
     const query = new URLSearchParams();
     query.set("masterPlanNo", normalizedPlanNo);
     if (dateFrom) query.set("dateFrom", dateFrom);
@@ -1933,12 +1728,14 @@ export function RequisitionPreviewGeneratorClient({
   }, [masterPlanNo, dateFrom, dateTo]);
 
   const { data, error, isLoading } = useSWR(previewUrl, fetcher, {
-    revalidateOnFocus: false,
+    revalidateOnFocus: true,
+    revalidateOnMount: true,
+    dedupingInterval: 0,
   });
 
   const draftUrl = useMemo(() => {
     const normalizedPlanNo = String(masterPlanNo || "").trim().toUpperCase();
-    if (!normalizedPlanNo) return null;
+    if (!normalizedPlanNo || !dateFrom || !dateTo) return null;
     const query = new URLSearchParams();
     query.set("masterPlanNo", normalizedPlanNo);
     if (dateFrom) query.set("dateFrom", dateFrom);
@@ -1947,7 +1744,9 @@ export function RequisitionPreviewGeneratorClient({
   }, [masterPlanNo, dateFrom, dateTo]);
 
   const { data: draftPayload, mutate: mutateDraft } = useSWR(draftUrl, fetcher, {
-    revalidateOnFocus: false,
+    revalidateOnFocus: true,
+    revalidateOnMount: true,
+    dedupingInterval: 0,
   });
 
   const { data: departmentsPayload } = useSWR("/api/production-planning/departments?scope=all", fetcher, {
@@ -1956,18 +1755,6 @@ export function RequisitionPreviewGeneratorClient({
 
   const { data: sequencesPayload, mutate: mutateSequences, isLoading: loadingSequences } = useSWR(
     activeTab === "sequences" ? "/api/production-planning/requisition/sequences" : null,
-    fetcher,
-    { revalidateOnFocus: false }
-  );
-
-  const embeddedSubplanUrl = useMemo(() => {
-    const normalizedPlanNo = String(masterPlanNo || "").trim().toUpperCase();
-    if (!normalizedPlanNo || !isScheduleExpanded) return null;
-    return `/api/production-planning/schedule/master-report-detail?masterPlanNo=${encodeURIComponent(normalizedPlanNo)}`;
-  }, [isScheduleExpanded, masterPlanNo]);
-
-  const { data: embeddedSubplanPayload, error: embeddedSubplanError, isLoading: embeddedSubplanLoading } = useSWR(
-    embeddedSubplanUrl,
     fetcher,
     { revalidateOnFocus: false }
   );
@@ -1985,14 +1772,17 @@ export function RequisitionPreviewGeneratorClient({
       ...doc,
       lines: normalizeLines(
         Object.prototype.hasOwnProperty.call(draftOverridesByDocKey, doc.documentKey)
-          ? draftOverridesByDocKey[doc.documentKey]
+          ? mergeRequisitionDraftLines(doc.lines, draftOverridesByDocKey[doc.documentKey], doc)
           : doc.lines
       ),
     }));
   }, [draftOverridesByDocKey, sourceDocuments]);
 
   const dateColumns = useMemo(() => {
-    const values = new Set(Array.isArray(data?.meta?.dateColumns) ? data.meta.dateColumns : []);
+    const values = new Set([
+      ...buildDateRange(dateFrom, dateTo),
+      ...(Array.isArray(data?.meta?.dateColumns) ? data.meta.dateColumns : []),
+    ]);
     workingDocuments.forEach((doc) => {
       if (doc.workDate) values.add(doc.workDate);
       (doc.lines || []).forEach((line) => {
@@ -2000,7 +1790,71 @@ export function RequisitionPreviewGeneratorClient({
       });
     });
     return Array.from(values).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [data, workingDocuments]);
+  }, [data, dateFrom, dateTo, workingDocuments]);
+
+  const lotRequirements = useMemo(() => {
+    return workingDocuments
+      .filter((doc) => !hiddenDocKeys.includes(doc.documentKey) && hasAssignedRoom(doc))
+      .flatMap((doc) =>
+      (doc.lines || []).flatMap((line) =>
+        Object.entries(line.qtyByDate || {})
+          .filter(([dateValue, qty]) => toNumber(qty) > 0 && doc?.exportedByDate?.[dateValue] !== true)
+          .map(([dateValue, qty]) => ({
+            key: buildLotRequirementKey(doc.documentKey, line, dateValue),
+            documentKey: doc.documentKey,
+            lineKey: buildLineKey(line),
+            dateValue,
+            materialSkuCode: line.materialSkuCode,
+            materialGoodsCode: line.materialGoodsCode,
+            materialName: line.materialName,
+            unit: line.unit,
+            qty: roundQty(qty),
+            departmentName: doc.ownerDepartmentName || doc.ownerDepartmentCode || "",
+            roomLabel: doc.roomLabel || doc.roomId || "",
+            productCode: doc.parentSku || "",
+            productName: doc.parentSkuName || "",
+            allocations: line.lotAllocationsByDate?.[dateValue] || [],
+          }))
+      )
+    ).sort((left, right) => {
+      const dateCompare = left.dateValue.localeCompare(right.dateValue);
+      if (dateCompare !== 0) return dateCompare;
+      return left.key.localeCompare(right.key);
+    });
+  }, [hiddenDocKeys, workingDocuments]);
+
+  useEffect(() => {
+    if (!lotRequirements.length) {
+      setLotPreviewByKey({});
+      setLotPreviewStatus("idle");
+      return undefined;
+    }
+    const controller = new AbortController();
+    setLotPreviewStatus("loading");
+    fetch("/api/production-planning/requisition/lot-preview", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ masterPlanNo, requirements: lotRequirements }),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload?.error || "โหลดข้อมูล LOT ไม่สำเร็จ");
+        return payload;
+      })
+      .then((payload) => {
+        setLotPreviewByKey(payload?.data || {});
+        setLotPreviewStatus("ready");
+      })
+      .catch((lotError) => {
+        if (lotError?.name === "AbortError") return;
+        setLotPreviewByKey({});
+        setLotPreviewStatus("error");
+        setDraftSaveStatus("error");
+        setDraftSaveMessage(String(lotError?.message || "โหลดข้อมูล LOT ไม่สำเร็จ"));
+      });
+    return () => controller.abort();
+  }, [lotRequirements, masterPlanNo]);
 
   const centralDepartmentIdSet = useMemo(() => {
     const set = new Set();
@@ -2118,9 +1972,18 @@ export function RequisitionPreviewGeneratorClient({
     return String(activeTabEntry?.documents?.[0]?.ownerDepartmentId || "").trim();
   }, [activeTabEntry, centralDepartmentTabs, safeActiveTab, safeCentralTab]);
 
-  useEffect(() => {
-    setActiveEmbeddedSection(null);
-  }, [dateFrom, dateTo, masterPlanNo, scheduleDeptId]);
+  const embeddedSubplanUrl = useMemo(() => {
+    const normalizedPlanNo = String(masterPlanNo || "").trim().toUpperCase();
+    if (!normalizedPlanNo || !isSubplanExpanded || !scheduleDeptId) return null;
+    return `/api/production-planning/wip-plan/draft?masterPlanNo=${encodeURIComponent(normalizedPlanNo)}&departmentId=${encodeURIComponent(scheduleDeptId)}&includeWeight=1`;
+  }, [isSubplanExpanded, masterPlanNo, scheduleDeptId]);
+  const { data: embeddedSubplanPayload, error: embeddedSubplanError, isLoading: embeddedSubplanLoading } = useSWR(
+    embeddedSubplanUrl, fetcher, { revalidateOnFocus: false }
+  );
+  const { data: embeddedRoomsPayload, error: embeddedRoomsError, isLoading: embeddedRoomsLoading } = useSWR(
+    embeddedSubplanUrl ? `/api/production-work-centers?departmentId=${encodeURIComponent(scheduleDeptId)}` : null,
+    fetcher, { revalidateOnFocus: false }
+  );
 
   const canShowEmbeddedSchedule = Boolean(masterPlanNo && scheduleDeptId);
   const scheduleDeptLabel = useMemo(() => {
@@ -2131,84 +1994,23 @@ export function RequisitionPreviewGeneratorClient({
     }
     return String(activeTabEntry?.label || "ไม่ระบุแผนก").trim();
   }, [activeTabEntry, centralDepartmentTabs, safeActiveTab, safeCentralTab]);
-  const activeEmbeddedSectionId = String(activeEmbeddedSection?.id || "").trim();
-  const activeEmbeddedSectionLabel = String(activeEmbeddedSection?.label || activeEmbeddedSection?.name || "").trim();
-  const embeddedSubplanItems = useMemo(() => {
-    const detail = embeddedSubplanPayload?.data;
-    const rows = Array.isArray(detail?.dailyRows) ? detail.dailyRows : [];
-    if (!scheduleDeptId) return [];
-    return rows.flatMap((dayRow) =>
-      (Array.isArray(dayRow?.subPlanItems) ? dayRow.subPlanItems : [])
-        .filter((item) => String(item?.departmentId || "").trim() === scheduleDeptId)
-        .filter((item) => !activeEmbeddedSectionId || String(item?.sectionId || "").trim() === activeEmbeddedSectionId)
-        .map((item, index) => ({
-          key: `${String(dayRow?.date || "")}-${String(item?.subPlanNo || "")}-${String(item?.skuCode || "")}-${index}`,
-          date: String(dayRow?.date || "").trim(),
-          subPlanNo: String(item?.subPlanNo || "").trim() || "-",
-          sectionId: String(item?.sectionId || "").trim(),
-          sectionName: String(item?.sectionName || "").trim(),
-          skuCode: String(item?.skuCode || "").trim() || "-",
-          skuName: String(item?.skuName || "").trim() || "-",
-          batchQty: item?.batchQty == null ? null : toNumber(item?.batchQty),
-          displayQty: toNumber(item?.displayQty ?? item?.plannedQty),
-          displayUnit: String(item?.displayUnit || item?.unit || "").trim() || "-",
-          workTime:
-            item?.workStartTime || item?.workEndTime
-              ? `${String(item?.workStartTime || "-").trim()} - ${String(item?.workEndTime || "-").trim()}`
-              : "-",
-          confirmed: Boolean(item?.confirmedAt),
-        }))
-    );
-  }, [activeEmbeddedSectionId, embeddedSubplanPayload, scheduleDeptId]);
-  const embeddedSubplanMatrixRows = useMemo(() => {
-    const map = new Map();
-    embeddedSubplanItems.forEach((item) => {
-      const rowKey = `${normalizeTextKey(item.skuCode)}|${normalizeTextKey(item.displayUnit)}`;
-      if (!map.has(rowKey)) {
-        map.set(rowKey, {
-          key: rowKey,
-          skuCode: item.skuCode,
-          skuName: item.skuName,
-          displayUnit: item.displayUnit,
-          qtyByDate: {},
-          batchQtyByDate: {},
-          totalQty: 0,
-          totalBatchQty: 0,
-        });
-      }
-      const target = map.get(rowKey);
-      const dateValue = String(item.date || "").trim();
-      if (!dateValue) return;
-      const displayQty = roundQty(item.displayQty);
-      target.qtyByDate[dateValue] = roundQty(toNumber(target.qtyByDate[dateValue]) + displayQty);
-      target.totalQty = roundQty(target.totalQty + displayQty);
-      if (item.batchQty != null) {
-        const batchQty = roundQty(item.batchQty);
-        target.batchQtyByDate[dateValue] = roundQty(toNumber(target.batchQtyByDate[dateValue]) + batchQty);
-        target.totalBatchQty = roundQty(target.totalBatchQty + batchQty);
-      }
-    });
-    return Array.from(map.values()).sort((left, right) => {
-      const codeCompare = String(left.skuCode || "").localeCompare(String(right.skuCode || ""));
-      if (codeCompare !== 0) return codeCompare;
-      return String(left.displayUnit || "").localeCompare(String(right.displayUnit || ""));
-    });
-  }, [embeddedSubplanItems]);
-
-  const handleEmbeddedSectionChange = useCallback((sectionIndex, section) => {
-    setActiveEmbeddedSection({
-      id: String(section?.id || "").trim(),
-      label: String(section?.name || section?.label || `Section ${sectionIndex + 1}`).trim(),
-    });
-  }, []);
+  const embeddedSubplanMatrixRows = useMemo(() => buildPlannedWipPreviewRows(
+    embeddedSubplanPayload?.data?.lines || [], embeddedRoomsPayload?.data || [], scheduleDeptId, dateColumns
+  ), [embeddedSubplanPayload, embeddedRoomsPayload, scheduleDeptId, dateColumns]);
 
   const workingTotalLines = useMemo(() => {
     return workingDocuments.reduce((sum, doc) => sum + (Array.isArray(doc.lines) ? doc.lines.length : 0), 0);
   }, [workingDocuments]);
 
-  const commitDrafts = async (nextDrafts) => {
-    if (!draftUrl || !masterPlanNo) return;
+  const commitDrafts = async (nextDrafts, { reviewRelease = false } = {}) => {
+    if (!draftUrl || !masterPlanNo || draftWriteInFlight.current) return false;
+    if (draftPayload?.data?.staleDraft && !reviewRelease) {
+      setDraftSaveStatus("error");
+      setDraftSaveMessage("กรุณาเลือกใช้แผนล่าสุดหรือยืนยันแบบร่างเดิมก่อนแก้ไข");
+      return false;
+    }
     const normalizedDrafts = normalizeDraftMap(nextDrafts);
+    draftWriteInFlight.current = true;
     setDraftSaveStatus("saving");
     setDraftSaveMessage("กำลังบันทึกแบบร่าง...");
     try {
@@ -2219,6 +2021,7 @@ export function RequisitionPreviewGeneratorClient({
           dateTo,
           drafts: normalizedDrafts,
           baseUpdatedAt: draftPayload?.data?.updatedAt || null,
+          sourceRevision: draftPayload?.data?.sourceRevision,
         }),
         {
           optimisticData: buildDraftCachePayload({
@@ -2227,6 +2030,7 @@ export function RequisitionPreviewGeneratorClient({
             dateTo,
             drafts: normalizedDrafts,
             updatedAt: draftPayload?.data?.updatedAt || null,
+            sourceRevision: draftPayload?.data?.sourceRevision,
           }),
           rollbackOnError: true,
           populateCache: true,
@@ -2235,50 +2039,159 @@ export function RequisitionPreviewGeneratorClient({
       );
       setDraftSaveStatus("saved");
       setDraftSaveMessage("บันทึกแบบร่างแล้ว");
+      return true;
     } catch (saveError) {
       setDraftSaveStatus("error");
       setDraftSaveMessage(String(saveError?.message || "บันทึกแบบร่างไม่สำเร็จ"));
       if (saveError?.status === 409) {
         void mutateDraft();
       }
+      return false;
+    } finally {
+      draftWriteInFlight.current = false;
     }
   };
 
-  const resetAllDrafts = () => {
-    void commitDrafts({});
+  const syncLotReservations = async ({ updates = [], releaseKeys = [] }) => {
+    const response = await fetch("/api/production-planning/requisition/lot-reservations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        masterPlanNo,
+        requirements: lotRequirements,
+        updates,
+        releaseKeys,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload?.error || "บันทึกการจอง LOT ไม่สำเร็จ");
+    return payload;
   };
 
-  const resetDocument = (docKey) => {
+  const resetAllDrafts = () => setResetConfirmState({ all: true });
+  const performResetAllDrafts = async () => {
+    return (async () => {
+      const previousKeys = Object.entries(draftPayload?.data?.previousDrafts || {}).flatMap(([docKey, lines]) => (
+        lines.flatMap((line) => Object.keys(line.qtyByDate || {}).map((date) => buildLotRequirementKey(docKey, line, date)))
+      ));
+      if (await commitDrafts({}, { reviewRelease: true })) {
+        await syncLotReservations({ releaseKeys: [...new Set([...lotRequirements.map((item) => item.key), ...previousKeys])] });
+        return true;
+      }
+      return false;
+    })();
+  };
+
+  const resetDocument = (docKey) => setResetConfirmState({ docKey });
+  const performResetDocument = async (docKey) => {
     const docKeys = normalizeDocumentKeys(docKey);
     const next = { ...draftOverridesByDocKey };
     docKeys.forEach((key) => {
       delete next[key];
     });
-    void commitDrafts(next);
+    return (async () => {
+      if (await commitDrafts(next)) {
+        await syncLotReservations({
+          releaseKeys: lotRequirements.filter((item) => docKeys.includes(item.documentKey)).map((item) => item.key),
+        });
+        return true;
+      }
+      return false;
+    })();
   };
 
-  const updateQty = (docKey, lineKey, dateValue, nextQty) => {
+  const updateQty = async (docKey, lineKey, dateValue, nextQty) => {
     const workingDocument = workingDocuments.find((doc) => doc.documentKey === docKey);
+    if (workingDocument?.exportedByDate?.[dateValue] === true) return false;
     const lines = normalizeLines(workingDocument?.lines || []);
     const referenceLine = lines.find((line) => buildLineKey(line) === lineKey)
       || workingDocuments
         .flatMap((doc) => doc.lines || [])
         .find((line) => buildLineKey(line) === lineKey);
     if (!workingDocument || !referenceLine) return false;
+    setLotPreviewByKey((current) => {
+      const nextPreview = { ...current };
+      delete nextPreview[buildLotRequirementKey(docKey, referenceLine, dateValue)];
+      return nextPreview;
+    });
     const updatedLines = upsertRequisitionSourceLineQty(
       lines,
       referenceLine,
       dateValue,
       nextQty
-    );
-    void commitDrafts(
+    ).map((line) => {
+      if (buildLineKey(line) !== lineKey) return line;
+      const lotAllocationsByDate = { ...(line.lotAllocationsByDate || {}) };
+      delete lotAllocationsByDate[dateValue];
+      return { ...line, lotAllocationsByDate };
+    });
+    if (await commitDrafts(
       mergeDraftDocument(draftOverridesByDocKey, sourceDocuments, docKey, updatedLines)
-    );
-    return true;
+    )) {
+      await syncLotReservations({
+        releaseKeys: [buildLotRequirementKey(docKey, referenceLine, dateValue)],
+      });
+      return true;
+    }
+    return false;
   };
 
-  const deleteLine = (docKey, lineKey) => {
+  const saveLotAllocations = async (updates) => {
+    const updatesByDocument = new Map();
+    (Array.isArray(updates) ? updates : []).forEach((update) => {
+      const documentKey = String(update?.documentKey || "").trim();
+      if (!documentKey) return;
+      const list = updatesByDocument.get(documentKey) || [];
+      list.push(update);
+      updatesByDocument.set(documentKey, list);
+    });
+    if (!updatesByDocument.size) return false;
+
+    let nextDrafts = normalizeDraftMap(draftOverridesByDocKey);
+    updatesByDocument.forEach((documentUpdates, documentKey) => {
+      const document = workingDocuments.find((item) => item.documentKey === documentKey);
+      if (!document) return;
+      const lines = normalizeLines(document.lines || []).map((line) => {
+        const lineKey = buildLineKey(line);
+        const lineUpdates = documentUpdates.filter((item) => item.lineKey === lineKey);
+        if (!lineUpdates.length) return line;
+        const lotAllocationsByDate = { ...(line.lotAllocationsByDate || {}) };
+        lineUpdates.forEach((item) => {
+          const allocations = (Array.isArray(item.allocations) ? item.allocations : [])
+            .map((allocation) => ({
+              lotNo: String(allocation?.lotNo || "").trim(),
+              qty: roundQty(allocation?.qty),
+            }))
+            .filter((allocation) => allocation.qty > 0);
+          if (allocations.length) lotAllocationsByDate[item.dateValue] = allocations;
+          else delete lotAllocationsByDate[item.dateValue];
+        });
+        return { ...line, lotAllocationsByDate };
+      });
+      nextDrafts = mergeDraftDocument(nextDrafts, sourceDocuments, documentKey, lines);
+    });
+
+    if (!await commitDrafts(nextDrafts)) return false;
+    try {
+      await syncLotReservations({ updates });
+      setLotPreviewByKey((current) => applyConfirmedLotAllocations(current, updates));
+      return true;
+    } catch (reservationError) {
+      setDraftSaveStatus("error");
+      setDraftSaveMessage(String(reservationError?.message || "บันทึกการจอง LOT ไม่สำเร็จ"));
+      return false;
+    }
+  };
+
+  const deleteLine = async (docKey, lineKey) => {
     const docKeys = normalizeDocumentKeys(docKey);
+    if (docKeys.some(key => {
+      const doc = workingDocuments.find(item => item.documentKey === key);
+      const line = doc?.lines?.find(item => buildLineKey(item) === lineKey);
+      return line && isRequisitionLineExportLocked(doc, line);
+    })) {
+      setDraftSaveStatus("error"); setDraftSaveMessage("แถวนี้มีการ Export แล้ว ไม่สามารถลบได้"); return false;
+    }
     let nextDrafts = normalizeDraftMap(draftOverridesByDocKey);
     docKeys.forEach((key) => {
       const workingDocument = workingDocuments.find((doc) => doc.documentKey === key);
@@ -2288,10 +2201,20 @@ export function RequisitionPreviewGeneratorClient({
       );
       nextDrafts = mergeDraftDocument(nextDrafts, sourceDocuments, key, lines);
     });
-    void commitDrafts(nextDrafts);
+    if (!await commitDrafts(nextDrafts)) return false;
+    await syncLotReservations({ releaseKeys: lotRequirements
+      .filter((item) => docKeys.includes(item.documentKey) && item.lineKey === lineKey)
+      .map((item) => item.key) });
+    return true;
   };
 
   const requestDeleteLine = (docKey, lineMeta) => {
+    const keys = normalizeDocumentKeys(lineMeta?.docKeys || docKey);
+    if (keys.some(key => {
+      const doc = workingDocuments.find(item => item.documentKey === key);
+      const line = doc?.lines?.find(item => buildLineKey(item) === lineMeta?.lineKey);
+      return line && isRequisitionLineExportLocked(doc, line);
+    })) return;
     setDeleteConfirmState({
       docKey,
       docKeys: normalizeDocumentKeys(lineMeta?.docKeys || docKey),
@@ -2299,9 +2222,9 @@ export function RequisitionPreviewGeneratorClient({
     });
   };
 
-  const addMaterialToDocument = (docKey, option) => {
+  const addMaterialToDocument = async (docKey, options) => {
     const docKeys = normalizeDocumentKeys(docKey);
-    const newLine = {
+    const newLines = options.map(option => ({
       materialSkuCode: String(option?.skuCode || "").trim(),
       materialGoodsCode: String(option?.goodsCode || option?.skuCode || "").trim(),
       materialName: String(option?.name || "").trim(),
@@ -2310,22 +2233,19 @@ export function RequisitionPreviewGeneratorClient({
       qtyByDate: {},
       totalQty: 0,
       isManual: true,
-    };
-    const newLineKey = buildLineKey(newLine);
+    }));
     let nextDrafts = normalizeDraftMap(draftOverridesByDocKey);
     docKeys.forEach((key) => {
       const workingDocument = workingDocuments.find((doc) => doc.documentKey === key);
       if (!workingDocument) return;
       const lines = normalizeLines(workingDocument?.lines || []);
-      if (lines.some((line) => buildLineKey(line) === newLineKey)) return;
-      nextDrafts = mergeDraftDocument(nextDrafts, sourceDocuments, key, [...lines, newLine]);
+      const seen = new Set(lines.map(buildLineKey));
+      const additions = newLines.filter(line => { const id = buildLineKey(line); if (seen.has(id)) return false; seen.add(id); return true; });
+      nextDrafts = mergeDraftDocument(nextDrafts, sourceDocuments, key, [...lines, ...additions]);
     });
-    void commitDrafts(nextDrafts);
-    setItemManagerState((current) => (
-      current?.docKeys?.some((key) => docKeys.includes(key))
-        ? { ...current, mode: "list" }
-        : current
-    ));
+    if (!await commitDrafts(nextDrafts)) return false;
+    setItemManagerState(null);
+    return true;
   };
 
   const openSupplementalDrawer = (docKey) => {
@@ -2500,6 +2420,49 @@ export function RequisitionPreviewGeneratorClient({
       setExportErrorMessage("กรุณาเลือกวันที่สำหรับ Export รายวัน");
       return;
     }
+    if (lotPreviewStatus !== "ready") {
+      const message = lotPreviewStatus === "error"
+        ? "โหลดข้อมูล LOT ไม่สำเร็จ กรุณารีเฟรชก่อน Export"
+        : "กำลังคำนวณ LOT กรุณารอสักครู่";
+      setDraftSaveStatus("error");
+      setDraftSaveMessage(message);
+      setExportErrorMessage(message);
+      return;
+    }
+
+    const selectedDailySet = new Set(dailyIds);
+    const selectedWeeklySet = new Set(weeklyIds);
+    const hiddenSet = new Set(hiddenDocKeys);
+    const lotAllocationOverrides = {};
+    const lotReservationKeys = [];
+    workingDocuments.forEach((doc) => {
+      const departmentId = String(doc?.ownerDepartmentId || "").trim();
+      if (hiddenSet.has(doc.documentKey)) return;
+      const includedDates = selectedDailySet.has(departmentId)
+        ? [exportSelectedDate]
+        : selectedWeeklySet.has(departmentId)
+          ? dateColumns.filter((dateValue) => dateValue >= dateFrom && dateValue <= dateTo)
+          : [];
+      if (!includedDates.length) return;
+      (doc.lines || []).forEach((line) => {
+        const allocations = new Map();
+        includedDates.forEach((dateValue) => {
+          if (toNumber(line?.qtyByDate?.[dateValue]) <= 0) return;
+          lotReservationKeys.push(buildLotRequirementKey(doc.documentKey, line, dateValue));
+          const preview = lotPreviewByKey[buildLotRequirementKey(doc.documentKey, line, dateValue)];
+          (preview?.allocations || []).forEach((allocation) => {
+            const lotNo = String(allocation?.lotNo || "").trim();
+            allocations.set(lotNo, roundQty(toNumber(allocations.get(lotNo)) + toNumber(allocation?.qty)));
+          });
+        });
+        if (allocations.size) {
+          lotAllocationOverrides[`${doc.documentKey}::${buildLineKey(line)}`] = Array.from(
+            allocations,
+            ([lotNo, qty]) => ({ lotNo, qty })
+          );
+        }
+      });
+    });
 
     setExportingExcel(true);
     setExportErrorMessage("");
@@ -2513,6 +2476,8 @@ export function RequisitionPreviewGeneratorClient({
         selectedDepartmentIdsDaily: dailyIds,
         selectedDepartmentIdsConsolidated: weeklyIds,
         excludedDocumentKeys: hiddenDocKeys,
+        lotAllocationOverrides,
+        lotReservationKeys,
       };
       const response = await fetch("/api/production-planning/requisition/confirm-daily", {
         method: "POST",
@@ -2625,7 +2590,7 @@ export function RequisitionPreviewGeneratorClient({
   }, [dateFrom, dateTo, masterPlanNo, pathname]);
 
   return (
-    <main className="min-h-screen bg-[#FCFCF9] pb-12 text-black font-sans">
+    <main className={`${presentation.workspace} ${presentation.deepTextTrial}`}>
       <PlanningHeader
         activeTab="requisition-preview"
         title="Preview Demand → ใบเบิก"
@@ -2634,97 +2599,47 @@ export function RequisitionPreviewGeneratorClient({
         maxWidth="max-w-[1800px]"
       />
 
-      <div className="mx-auto mt-6 w-full max-w-[1800px] space-y-6 px-3 sm:px-4 lg:px-6">
-        {/* Search Panel (Ferrari Design System) */}
-        <section className="rounded-[2px] border-2 border-[#102C57] bg-white p-6 shadow-none">
-          <div className="grid gap-4 sm:grid-cols-4">
-            <div className="sm:col-span-2">
-              <label className="mb-1.5 block text-[11px] font-black uppercase tracking-[1.5px] text-[#667085]">เลขแผนหลัก</label>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <input
-                  value={planSearch}
-                  onChange={(event) => setPlanSearch(String(event.target.value || ""))}
-                  placeholder="ค้นหาเลขแผน..."
-                  className="h-10 w-full rounded-[2px] border-2 border-[#CCCCCC] bg-white px-3 text-xs font-bold text-black placeholder-[#98a2b3] outline-none focus:border-[#102C57] transition"
-                />
-                <select
-                  value={masterPlanNo}
-                  onChange={(event) => {
-                    const selected = String(event.target.value || "").trim().toUpperCase();
-                    setMasterPlanNo(selected);
-                    const option = planOptions.find((item) => item.planNo === selected);
-                    setDateFrom(option?.periodStart || "");
-                    setDateTo(option?.periodEnd || "");
-                  }}
-                  className="h-10 w-full rounded-[2px] border-2 border-[#CCCCCC] bg-white px-3 text-xs font-bold text-black outline-none focus:border-[#102C57] transition cursor-pointer font-mono"
-                >
-                  <option value="">เลือกเลขแผนหลัก...</option>
-                  {filteredPlanOptions.map((item) => (
-                    <option key={item.planNo} value={item.planNo}>
-                      {item.planNo}
-                    </option>
-                  ))}
-                </select>
+      <div className={presentation.content}>
+        <section className={presentation.filters} aria-label="เงื่อนไขใบเบิก">
+          <div className={presentation.filterGrid}>
+            <div>
+              <label htmlFor="requisition-plan">เลขที่แผนการผลิต</label>
+              <div className={presentation.planChoice}>
+                <button id="requisition-plan" type="button" aria-haspopup="dialog" aria-expanded={planPickerOpen} onClick={() => setPlanPickerOpen(true)} className="flex h-10 w-full items-center justify-between gap-3 rounded-[3px] border border-[#c6d5e6] bg-white px-3 text-left text-sm text-[#102c57]">{masterPlanNo || "เลือกเลขแผนหลัก..."}<ChevronDown size={15} /></button>
+                <button type="button" aria-label="ค้นหาเลขแผน" onClick={() => setPlanPickerOpen(true)} className="flex h-10 items-center justify-center rounded-[3px] border border-[#c6d5e6] bg-white px-3"><Search size={15} /></button>
               </div>
             </div>
             <div>
-              <label className="mb-1.5 block text-[11px] font-black uppercase tracking-[1.5px] text-[#667085]">เริ่มวันที่</label>
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={(event) => setDateFrom(event.target.value)}
-                className="h-10 w-full rounded-[2px] border-2 border-[#CCCCCC] bg-white px-3 text-xs font-bold text-black outline-none focus:border-[#102C57] transition"
-              />
+              <label id="requisition-period-label">ช่วงวันที่ตามแผนหลัก</label>
+              <div className={presentation.planPeriod} aria-labelledby="requisition-period-label">
+                <CalendarDays size={14} />
+                <span>{dateFrom && dateTo ? `${formatDate(dateFrom)} – ${formatDate(dateTo)}` : !masterPlanNo ? "เลือกแผนหลักก่อน" : planOptionsError ? "โหลดช่วงวันที่แผนหลักไม่สำเร็จ" : !planPayload ? "กำลังโหลดช่วงวันที่ของแผนหลัก" : "ไม่พบช่วงวันที่ของแผนหลักนี้"}</span>
+              </div>
             </div>
             <div>
-              <label className="mb-1.5 block text-[11px] font-black uppercase tracking-[1.5px] text-[#667085]">ถึงวันที่</label>
-              <input
-                type="date"
-                value={dateTo}
-                onChange={(event) => setDateTo(event.target.value)}
-                className="h-10 w-full rounded-[2px] border-2 border-[#CCCCCC] bg-white px-3 text-xs font-bold text-black outline-none focus:border-[#102C57] transition"
-              />
+              <label htmlFor="requisition-department">แผนก</label>
+              <select id="requisition-department" value={safeActiveTab} onChange={(event) => setActiveTab(event.target.value)}>
+                {tabItems.map((tab) => <option key={tab.key} value={tab.key}>{tab.label}</option>)}
+              </select>
+              {safeActiveTab === "central" ? <select aria-label="แผนกกลาง" value={safeCentralTab} onChange={(event) => setActiveCentralTab(event.target.value)}>
+                {centralDepartmentTabs.map((tab) => <option key={tab.key} value={tab.key}>{tab.label}</option>)}
+              </select> : null}
             </div>
-          </div>
-          <div className="mt-4 flex flex-wrap items-center justify-end gap-3 border-t border-[#102C57]/10 pt-4">
-            <button
-              type="button"
-              onClick={openExportModal}
-              disabled={!masterPlanNo || exportingExcel}
-              className="inline-flex items-center gap-2 rounded-[2px] border border-[#102C57] bg-[#102C57] px-4 py-2 text-xs font-black uppercase tracking-[1.2px] text-white transition hover:bg-[#0c2345] disabled:cursor-not-allowed disabled:border-[#cbd5e1] disabled:bg-[#e2e8f0] disabled:text-[#94a3b8]"
-            >
-              <Download className="h-4 w-4" />
-              {exportingExcel ? "กำลัง Export..." : "Export Excel"}
-            </button>
+            <div className={presentation.filterStatus} aria-live="polite">
+              <span>{draftPayload?.data?.staleDraft ? "แผนเปลี่ยนแล้ว: แบบร่างเดิมยังเก็บไว้" : draftSaveMessage || "ฉบับร่าง"}</span>
+              <span>พบ {visibleDocuments.length.toLocaleString("th-TH")} ใบเบิก · {workingTotalLines.toLocaleString("th-TH")} รายการวัตถุดิบ</span>
+            </div>
+            <button type="button" onClick={openExportModal} disabled={!masterPlanNo || !dateFrom || !dateTo || exportingExcel} className={presentation.exportButton}><Download size={15} />{exportingExcel ? "กำลัง Export..." : "Export Excel"}</button>
+            <div className={presentation.referenceToggles}>
+              <button type="button" className={presentation.planToggle} disabled={!masterPlanNo || !scheduleDeptId} aria-expanded={isScheduleExpanded} onClick={() => setIsScheduleExpanded((value) => !value)}>แผนหลัก <ChevronDown size={14} /></button>
+              <button type="button" className={presentation.planToggle} disabled={!masterPlanNo || !scheduleDeptId} aria-expanded={isSubplanExpanded} onClick={() => setIsSubplanExpanded((value) => !value)}>แผนย่อย WIP ทั้งหมด <ChevronDown size={14} /></button>
+            </div>
           </div>
         </section>
 
-        {/* Collapsible MPS Panel (Ferrari Design System - Lazy Loaded) */}
-        {masterPlanNo && (
-          <section className="overflow-hidden rounded-[2px] border border-[#102C57]/15 bg-white shadow-[0_18px_40px_rgba(16,44,87,0.08)]">
-            <div className="flex flex-col gap-4 bg-[#102C57] p-5 text-white transition duration-200 md:flex-row md:items-center md:justify-between">
-              <div className="flex items-center gap-3">
-                <div className="h-2.5 w-2.5 bg-[#fff8e2]" />
-                <div>
-                  <h3 className="text-xs font-black uppercase tracking-[1.5px] text-white">ตารางวางแผนผลิตหลัก (Master Production Schedule)</h3>
-                  <p className="text-[11px] font-bold text-[#8F8F8F] uppercase tracking-[1px] mt-0.5">
-                    แผนหลักเลขที่: <span className="text-[#f6e7a8] font-mono">{masterPlanNo}</span>
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsScheduleExpanded(!isScheduleExpanded)}
-                className="inline-flex items-center gap-2 bg-white hover:bg-[#1EAEDB] text-black hover:text-white font-extrabold text-[11px] tracking-[1.28px] uppercase py-2 px-4 rounded-[2px] border border-transparent transition duration-200 cursor-pointer"
-              >
-                {isScheduleExpanded ? "ซ่อนแผนหลัก" : "แสดงแผนหลัก"}
-              </button>
-            </div>
-            
-            {isScheduleExpanded && (
-              <div className="border-t border-[#CCCCCC] bg-[#FCFCF9] p-3 transition duration-300">
-                {canShowEmbeddedSchedule ? (
-                  <div className="space-y-3">
+        {canShowEmbeddedSchedule && isScheduleExpanded && (
+          <PlanningReferencePaper title="แผนการผลิตหลัก" metadata={`${masterPlanNo} · ${scheduleDeptLabel} · ${formatDate(dateFrom)} – ${formatDate(dateTo)}`} onCollapse={() => setIsScheduleExpanded(false)}>
+            {canShowEmbeddedSchedule && <div className={presentation.referenceSchedule}>
                     <ProductionScheduleClient
                       key={`${masterPlanNo}-${scheduleDeptId}-${dateFrom}-${dateTo}`}
                       masterPlanNo={masterPlanNo}
@@ -2733,33 +2648,17 @@ export function RequisitionPreviewGeneratorClient({
                       dateTo={dateTo}
                       embedded={true}
                       readOnly={true}
-                      onSectionChange={handleEmbeddedSectionChange}
                     />
-
-                    <section className="rounded-[2px] border border-[#102C57]/15 bg-white shadow-[0_8px_24px_rgba(16,44,87,0.06)]">
-                      <div className="flex flex-col gap-3 border-b border-[#102C57]/10 bg-[#fff8e2] px-4 py-3 md:flex-row md:items-center md:justify-between">
-                        <div>
-                          <div className="text-[10px] font-black uppercase tracking-[1.4px] text-[#8a6a00]">
-                            WIP Subplan
-                          </div>
-                          <div className="mt-1 text-sm font-black text-[#102C57]">
-                            แผนย่อย WIP ของแผนนี้
-                          </div>
-                          <div className="mt-1 text-[11px] font-bold text-black/70">
-                            แสดงเฉพาะแผนก {scheduleDeptLabel}
-                            {activeEmbeddedSectionLabel ? ` / ${activeEmbeddedSectionLabel}` : ""}
-                          </div>
-                        </div>
-                        <div className="text-[11px] font-black text-[#102C57]">
-                          {embeddedSubplanMatrixRows.length.toLocaleString("th-TH")} รายการ
-                        </div>
-                      </div>
-
-                      {embeddedSubplanLoading ? (
+            </div>}
+          </PlanningReferencePaper>
+        )}
+        {canShowEmbeddedSchedule && isSubplanExpanded && (
+          <PlanningReferencePaper title="แผนย่อย WIP · ทุกห้องผลิต" metadata={`${masterPlanNo} · ${scheduleDeptLabel} · ${formatDate(dateFrom)} – ${formatDate(dateTo)} · ${embeddedSubplanMatrixRows.length} รายการ`} onCollapse={() => setIsSubplanExpanded(false)}>
+                      {embeddedSubplanLoading || embeddedRoomsLoading ? (
                         <div className="px-4 py-8 text-center text-xs font-bold uppercase tracking-[1px] text-[#667085]">
                           กำลังโหลดแผนย่อย WIP...
                         </div>
-                      ) : embeddedSubplanError ? (
+                      ) : embeddedSubplanError || embeddedRoomsError ? (
                         <div className="px-4 py-8 text-center text-xs font-bold uppercase tracking-[1px] text-[#8a6a00]">
                           โหลดแผนย่อย WIP ไม่สำเร็จ
                         </div>
@@ -2768,106 +2667,14 @@ export function RequisitionPreviewGeneratorClient({
                           ยังไม่มีแผนย่อย WIP ของแผนกนี้ในเลขแผนที่เลือก
                         </div>
                       ) : (
-                        <div>
-                          <table className="w-full table-fixed border-collapse text-[11px] text-black">
-                            <thead>
-                              <tr>
-                                <th rowSpan={2} className="w-[14%] border-r border-b border-black bg-[#f8f4d8] px-3 py-3 text-center text-sm font-black text-black">
-                                  รหัส WIP
-                                </th>
-                                <th rowSpan={2} className="w-[34%] border-r border-b border-black bg-[#f8f4d8] px-3 py-3 text-center text-sm font-black text-black">
-                                  ชื่อ WIP
-                                </th>
-                                {dateColumns.map((dateValue, index) => (
-                                  <th
-                                    key={`wip-matrix-date-${dateValue}`}
-                                    className={`border-r border-b border-black px-3 py-2 text-center text-xs font-black text-black ${DAY_TONE_CLASSES[index % DAY_TONE_CLASSES.length]}`}
-                                  >
-                                    {formatDate(dateValue)}
-                                  </th>
-                                ))}
-                                <th rowSpan={2} className="w-[8%] border-b border-black bg-[#f1d4d0] px-2 py-3 text-center text-xs font-black text-[#8f2d1f]">
-                                  ยอดรวม
-                                </th>
-                              </tr>
-                              <tr>
-                                {dateColumns.map((dateValue) => (
-                                  <th
-                                    key={`wip-matrix-qty-${dateValue}`}
-                                    className="border-r border-b border-black bg-[#fff4cc] px-3 py-1.5 text-center text-sm font-black text-black"
-                                  >
-                                    จำนวน
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {embeddedSubplanMatrixRows.map((row) => (
-                                <tr key={row.key} className="bg-white transition-colors hover:bg-slate-50">
-                                  <td className="border-r border-b border-black px-3 py-3 font-mono text-sm font-bold tracking-[0.5px] text-black">
-                                    {row.skuCode}
-                                  </td>
-                                  <td className="border-r border-b border-black px-3 py-3 text-sm font-bold leading-snug text-black">
-                                    {row.skuName}
-                                  </td>
-                                  {dateColumns.map((dateValue) => {
-                                    const qty = toNumber(row.qtyByDate?.[dateValue]);
-                                    const batchQty = row.batchQtyByDate?.[dateValue];
-                                    return (
-                                      <td
-                                        key={`${row.key}-${dateValue}`}
-                                        className={`border-r border-b border-black px-3 py-2 text-center text-sm font-semibold ${
-                                          qty > 0 ? "bg-[#fff8e2] font-black text-[#8a6a00]" : "text-[#98a2b3]"
-                                        }`}
-                                      >
-                                        {qty > 0 ? (
-                                          <div className="leading-tight">
-                                            {batchQty != null ? (
-                                              <div className="text-sm font-black text-[#8a6a00]">
-                                                {formatQty(batchQty)} ชุด
-                                              </div>
-                                            ) : null}
-                                            <div className={batchQty != null ? "mt-0.5 text-[10px] font-bold text-black" : ""}>
-                                              {formatQty(qty)}
-                                            </div>
-                                          </div>
-                                        ) : (
-                                          "-"
-                                        )}
-                                      </td>
-                                    );
-                                  })}
-                                  <td className="border-b border-black bg-[#fef3f2] px-3 py-3 text-center text-sm font-black text-[#8f2d1f]">
-                                    {row.totalBatchQty > 0 ? (
-                                      <div className="text-sm font-black text-[#8f2d1f]">
-                                        {formatQty(row.totalBatchQty)} ชุด
-                                      </div>
-                                    ) : null}
-                                    <div className={row.totalBatchQty > 0 ? "mt-0.5 text-[10px] font-bold text-black" : ""}>
-                                      {formatQty(row.totalQty)}
-                                    </div>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                        <WipWeeklyTable rows={embeddedSubplanMatrixRows} dates={dateColumns} formatDate={formatDate} showRooms />
                       )}
-                    </section>
-                  </div>
-                ) : (
-                  <div className="rounded-[2px] border-2 border-[#102C57] bg-white px-4 py-8 text-center text-xs font-bold uppercase tracking-[1px] text-[#667085]">
-                    เลือกแท็บแผนกก่อนเพื่อแสดงแผนหลักของแผนกนั้น
-                  </div>
-                )}
-              </div>
-            )}
-          </section>
+          </PlanningReferencePaper>
         )}
 
         {/* Draft Workspace Status Banner */}
         {workingDocuments.length > 0 ? (
-          <section className="rounded-[2px] border-2 border-[#102C57] bg-[#fff8e2] p-4 shadow-none">
+          <section className={presentation.status}>
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
                 <div className="text-xs font-black uppercase tracking-[1.5px] text-black">โหมดแก้ไขแบบร่างในหน้า Preview</div>
@@ -2887,12 +2694,22 @@ export function RequisitionPreviewGeneratorClient({
                           : "text-black"
                   }`}
                 >
-                  {draftSaveMessage || "ยังไม่มีการแก้ไขล่าสุด"}
+                  {draftPayload?.data?.staleDraft ? "แผนเปลี่ยนแล้ว: แบบร่างเดิมยังเก็บไว้" : draftSaveMessage || "ยังไม่มีการแก้ไขล่าสุด"}
                 </span>
+                {draftPayload?.data?.staleDraft ? (
+                  <>
+                    <button type="button" disabled={draftSaveStatus === "saving"} onClick={resetAllDrafts} className="border border-[#102C57] bg-white px-3 py-2 text-xs font-bold">ใช้ยอดจากแผนล่าสุด</button>
+                    <button type="button" disabled={draftSaveStatus === "saving"} onClick={() => {
+                      if (window.confirm("ตรวจสอบแล้วและต้องการใช้จำนวนที่แก้ไว้ในแบบร่างเดิมกับแผนฉบับล่าสุดหรือไม่?")) {
+                        void commitDrafts(draftPayload.data.previousDrafts || {}, { reviewRelease: true });
+                      }
+                    }} className="border border-[#102C57] bg-white px-3 py-2 text-xs font-bold">ยืนยันใช้แบบร่างเดิมต่อ</button>
+                  </>
+                ) : null}
                 <button
                   type="button"
                   onClick={resetAllDrafts}
-                  className="inline-flex items-center gap-2 rounded-[2px] border-2 border-[#102C57] bg-[#102C57] hover:bg-[#0c2345] hover:border-[#0c2345] text-white hover:text-white px-4 py-2 text-xs font-black uppercase tracking-[1.5px] transition cursor-pointer"
+                  className="inline-flex items-center gap-2 rounded-[2px] border-2 border-[#102C57] bg-[var(--surface-navy,#102C57)] hover:bg-[var(--surface-navy,#0c2345)] hover:border-[#0c2345] text-white hover:text-white px-4 py-2 text-xs font-black uppercase tracking-[1.5px] transition cursor-pointer"
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                   รีเซ็ตแบบร่างทั้งหมด
@@ -2909,7 +2726,7 @@ export function RequisitionPreviewGeneratorClient({
         ) : null}
 
         {/* Stats Section */}
-        <section className="grid gap-4 sm:grid-cols-3">
+        <section className={presentation.statistics}>
           <div className="rounded-[2px] border-2 border-[#102C57] bg-white p-5 shadow-none flex flex-col justify-between">
             <p className="text-[10px] font-black uppercase tracking-[1.5px] text-[#667085]">จำนวนเอกสารที่จะแสดง</p>
             <p className="text-3xl font-black text-black tracking-tight mt-2">{workingDocuments.length.toLocaleString("th-TH")} ใบ</p>
@@ -2928,7 +2745,7 @@ export function RequisitionPreviewGeneratorClient({
 
         {/* Tabs Selectors */}
         {!isLoading && workingDocuments.length > 0 ? (
-          <section className="rounded-[2px] border-2 border-[#102C57] bg-white p-4 shadow-none">
+          <section className={presentation.departmentNavigation}>
             <div className="flex flex-wrap gap-2">
               {tabItems.map((tab) => {
                 const isActive = tab.key === safeActiveTab;
@@ -2937,9 +2754,10 @@ export function RequisitionPreviewGeneratorClient({
                     key={tab.key}
                     type="button"
                     onClick={() => setActiveTab(tab.key)}
+                    aria-pressed={isActive}
                     className={`rounded-[2px] border-2 px-4 py-2 text-xs font-black uppercase tracking-[1.28px] transition cursor-pointer ${
                       isActive
-                        ? "border-[#102C57] bg-[#102C57] text-white"
+                        ? "border-[#102C57] bg-[var(--surface-navy,#102C57)] text-white"
                         : "border-[#CCCCCC] bg-white text-black hover:border-[#102C57] hover:bg-slate-50"
                     }`}
                   >
@@ -2959,6 +2777,7 @@ export function RequisitionPreviewGeneratorClient({
                         key={tab.key}
                         type="button"
                         onClick={() => setActiveCentralTab(tab.key)}
+                        aria-pressed={isActive}
                         className={`rounded-[2px] border-2 px-3 py-1.5 text-xs font-extrabold uppercase tracking-[1px] transition cursor-pointer ${
                           isActive
                             ? "border-[#102C57] bg-[#fff8e2] text-black"
@@ -2975,35 +2794,14 @@ export function RequisitionPreviewGeneratorClient({
           </section>
         ) : null}
 
-        {hiddenDocKeys.length > 0 ? (
-          <div className="flex flex-col gap-3 rounded-[2px] border border-red-200 bg-red-50 p-4 md:flex-row md:items-center md:justify-between text-xs font-bold text-red-700">
-            <div className="flex items-center gap-2">
-              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-[10px] font-black">!</span>
-              <div>
-                <span className="font-extrabold block md:inline">มีใบเบิกที่ถูกซ่อนอยู่ ${hiddenDocKeys.length} ใบ</span>
-                <span className="text-red-600/80 md:ml-2">(ใบเบิกที่ถูกซ่อนจะไม่แสดงผลและจะไม่รวมอยู่ในไฟล์ Excel ที่กำลังจะออก)</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setIsHiddenDocsModalOpen(true)}
-                className="underline hover:text-red-900 cursor-pointer font-black decoration-dotted underline-offset-4"
-              >
-                ดูรายการ / กู้คืนบางใบ
-              </button>
-              <span className="text-red-300">|</span>
-              <button
-                type="button"
-                onClick={() => setHiddenDocKeys([])}
-                className="underline hover:text-red-900 cursor-pointer font-black decoration-dotted underline-offset-4"
-              >
-                กู้คืนทั้งหมด
-              </button>
-            </div>
+        {hiddenDocKeys.length > 0 && <details className={dialogStyles.hiddenList} open>
+          <summary>ใบเบิกที่ซ่อน ({hiddenDocKeys.length})</summary>
+          <div className={dialogStyles.listTools}>
+            <button type="button" className={dialogStyles.link} onClick={() => setIsHiddenDocsModalOpen(true)}>ดูรายการทั้งหมด</button>
+            <button type="button" className={dialogStyles.link + " ml-4"} onClick={() => { setHiddenDocKeys([]); setRestoreMessage("แสดงใบเบิกทั้งหมดแล้ว"); }}>แสดงทั้งหมด</button>
           </div>
-        ) : null}
-
+          <HiddenDocumentsTable documents={workingDocuments.filter((doc) => hiddenDocKeys.includes(doc.documentKey))} onRestore={(key) => { setHiddenDocKeys((current) => current.filter((item) => item !== key)); setRestoreMessage("แสดงใบเบิกแล้ว"); }} />
+        </details>}
         {/* Loading and Empty States */}
         {safeActiveTab === "sequences" ? (
           <RequisitionSequenceSettingsPanel
@@ -3025,6 +2823,10 @@ export function RequisitionPreviewGeneratorClient({
               </section>
             ) : null}
 
+            <RequisitionDocumentToolbar
+              documents={visibleDocuments}
+              onActiveChange={setActiveDocumentKey}
+            />
             {/* Requisition Documents List */}
             {visibleDocuments.map((doc) => {
               const pageColumns = dateColumns.length ? dateColumns : [doc.workDate].filter(Boolean);
@@ -3033,17 +2835,20 @@ export function RequisitionPreviewGeneratorClient({
                 <RequisitionDocument
                   key={doc.documentKey}
                   doc={doc}
+                  masterPlanNo={masterPlanNo}
+                  active={doc.documentKey === activeDocumentKey}
                   pageColumns={pageColumns}
                   editable={isEditable}
                   showExportState={safeActiveTab !== "overview"}
-                  onOpenManager={(docKey) => openItemManager(docKey, "list")}
-                  onOpenAddMaterial={(docKey) => openItemManager(docKey, "add")}
-                  onOpenSupplemental={openSupplementalDrawer}
-                  onResetDocument={resetDocument}
+                  onManage={(keys) => openItemManager(keys, "add")}
+                  onDeleteLine={requestDeleteLine}
+                  onSupplemental={openSupplementalDrawer}
+                  onReset={resetDocument}
+                  onHide={setHideConfirmDocKey}
                   onUpdateQty={updateQty}
-                  onHideDocument={(docKey) => {
-                    setHideConfirmDocKey(docKey);
-                  }}
+                  lotPreviewByKey={lotPreviewByKey}
+                  lotPreviewStatus={lotPreviewStatus}
+                  onSaveLotAllocations={saveLotAllocations}
                 />
               );
             })}
@@ -3051,21 +2856,18 @@ export function RequisitionPreviewGeneratorClient({
         )}
       </div>
 
-      <RequisitionItemsDrawer
+      <RequisitionMaterialPicker
         key={activeManagerDocument?.documentKey || "closed"}
+        masterPlanNo={masterPlanNo}
+        periodLabel={`${formatDate(dateFrom)} – ${formatDate(dateTo)}`}
         open={Boolean(activeManagerDocument)}
         document={activeManagerDocument}
-        documentActionKeys={activeManagerDocumentKeys}
-        addMode={itemManagerState?.mode === "add"}
         existingLineKeys={managerLineKeys}
         onClose={closeItemManager}
-        onOpenAddMode={() => setItemManagerState((current) => (current ? { ...current, mode: "add" } : current))}
-        onCloseAddMode={() => setItemManagerState((current) => (current ? { ...current, mode: "list" } : current))}
-        onConfirmAddMaterial={(option) => {
-          if (!activeManagerDocumentKeys.length) return;
-          addMaterialToDocument(activeManagerDocumentKeys, option);
+        onConfirm={(options) => {
+          if (!activeManagerDocumentKeys.length) return false;
+          return addMaterialToDocument(activeManagerDocumentKeys, options);
         }}
-        onRequestDeleteLine={requestDeleteLine}
       />
 
       <SupplementalRequisitionDrawer
@@ -3084,16 +2886,43 @@ export function RequisitionPreviewGeneratorClient({
 
       <DeleteConfirmModal
         state={deleteConfirmState}
+        saving={draftSaveStatus === "saving"}
+        error={draftSaveStatus === "error" ? draftSaveMessage : ""}
         onCancel={() => setDeleteConfirmState(null)}
-        onConfirm={() => {
-          if ((deleteConfirmState?.docKeys?.length || deleteConfirmState?.docKey) && deleteConfirmState?.lineKey) {
-            deleteLine(deleteConfirmState.docKeys || deleteConfirmState.docKey, deleteConfirmState.lineKey);
+        onConfirm={async () => {
+          try {
+            if ((deleteConfirmState?.docKeys?.length || deleteConfirmState?.docKey) && deleteConfirmState?.lineKey) {
+              if (!await deleteLine(deleteConfirmState.docKeys || deleteConfirmState.docKey, deleteConfirmState.lineKey)) return;
+            }
+            setDeleteConfirmState(null);
+          } catch (error) {
+            setDraftSaveStatus("error");
+            setDraftSaveMessage(error?.message || "ลบรายการไม่สำเร็จ");
           }
-          setDeleteConfirmState(null);
         }}
       />
 
+      {resetConfirmState && <RequisitionDialog title="ละทิ้งการเปลี่ยนแปลง?" onClose={() => setResetConfirmState(null)} busy={resetSaving || draftSaveStatus === "saving"} footer={<>
+        <button type="button" disabled={resetSaving || draftSaveStatus === "saving"} onClick={() => setResetConfirmState(null)}>กลับไปแก้ไข</button>
+        <button type="button" className={dialogStyles.primary} disabled={resetSaving || draftSaveStatus === "saving"} onClick={async () => {
+          if (resetInFlight.current) return;
+          resetInFlight.current = true;
+          setResetSaving(true);
+          try {
+            const ok = await (resetConfirmState.all ? performResetAllDrafts() : performResetDocument(resetConfirmState.docKey));
+            if (ok) setResetConfirmState(null);
+          } catch (resetError) {
+            setDraftSaveStatus("error");
+            setDraftSaveMessage(resetError?.message || "ละทิ้งการเปลี่ยนแปลงไม่สำเร็จ กรุณาลองใหม่");
+          } finally {
+            resetInFlight.current = false;
+            setResetSaving(false);
+          }
+        }}>ละทิ้งการเปลี่ยนแปลง</button>
+      </>}><p>จำนวนและ LOT ที่แก้ในแบบร่าง{resetConfirmState.all ? "ทั้งหมด" : "ใบนี้"}จะกลับไปใช้ค่าจากแผน โดยไม่ลบประวัติที่ Export แล้ว</p>{draftSaveStatus === "error" && <p role="alert" className="text-red-700">{draftSaveMessage}</p>}</RequisitionDialog>}
       <HideDocumentConfirmModal
+        document={workingDocuments.find((doc) => normalizeDocumentKeys(hideConfirmDocKey).includes(doc.documentKey))}
+        masterPlanNo={masterPlanNo}
         open={Boolean(hideConfirmDocKey)}
         onCancel={() => setHideConfirmDocKey(null)}
         onConfirm={() => {
@@ -3124,6 +2953,7 @@ export function RequisitionPreviewGeneratorClient({
         onClose={() => setExportErrorMessage("")}
       />
 
+      {planPickerOpen && <RequisitionPlanPicker plans={planOptions} selectedPlanNo={masterPlanNo} onSelect={setMasterPlanNo} onClose={() => setPlanPickerOpen(false)} formatDate={formatDate} loading={!planPayload && !planOptionsError} error={planOptionsError} onRetry={() => reloadPlans()} />}
       <HiddenDocumentsModal
         open={isHiddenDocsModalOpen}
         hiddenKeys={hiddenDocKeys}
@@ -3131,142 +2961,50 @@ export function RequisitionPreviewGeneratorClient({
         onClose={() => setIsHiddenDocsModalOpen(false)}
         onRestore={(docKey) => {
           setHiddenDocKeys((current) => current.filter((key) => key !== docKey));
+          setRestoreMessage("แสดงใบเบิกแล้ว");
         }}
         onRestoreAll={() => {
           setHiddenDocKeys([]);
+          setRestoreMessage("แสดงใบเบิกทั้งหมดแล้ว");
           setIsHiddenDocsModalOpen(false);
         }}
       />
+      {restoreMessage && <div role="status" className={dialogStyles.toast}><CheckCircle2 size={18} />{restoreMessage}<button type="button" aria-label="ปิดข้อความ" onClick={() => setRestoreMessage("")}><X size={16} /></button></div>}
     </main>
   );
 }
 
-function HiddenDocumentsModal({
-  open,
-  hiddenKeys,
-  allDocuments,
-  onClose,
-  onRestore,
-  onRestoreAll,
-}) {
+function HiddenDocumentsModal({ open, hiddenKeys, allDocuments, onClose, onRestore, onRestoreAll }) {
   if (!open) return null;
-
-  const hiddenDocs = allDocuments.filter((doc) => hiddenKeys.includes(doc.documentKey));
-
-  return (
-    <div className="fixed inset-0 z-[130] flex items-center justify-center bg-[#0b1220]/55 px-4 py-8">
-      <div className="w-full max-w-2xl overflow-hidden rounded-[2px] border border-red-600 bg-white shadow-[0_30px_80px_rgba(16,44,87,0.24)]">
-        <div className="flex items-center justify-between border-b border-red-600 bg-red-600 px-5 py-4 text-white">
-          <div>
-            <h3 className="text-lg font-black tracking-[0.2px]">
-              ใบเบิกที่ถูกซ่อนอยู่ ({hiddenDocs.length} ใบ)
-            </h3>
-            <p className="mt-1 text-xs font-bold text-white/75">
-              รายการด้านล่างนี้ถูกยกเว้นชั่วคราวและจะไม่รวมอยู่ในไฟล์ Excel ที่กำลังจะออก
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-[2px] border border-white/30 text-white transition hover:bg-white/10"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="max-h-[400px] overflow-y-auto p-5 space-y-3">
-          {hiddenDocs.length === 0 ? (
-            <p className="text-center text-xs font-bold text-[#667085] py-8">ไม่มีใบเบิกที่ถูกซ่อนอยู่</p>
-          ) : (
-            hiddenDocs.map((doc) => {
-              const shiftLabel = formatShiftName(doc);
-              return (
-                <div
-                  key={doc.documentKey}
-                  className="flex items-center justify-between gap-4 border border-[#e4e7ec] bg-slate-50 p-3 rounded-[2px]"
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm font-black text-black">
-                      แผนก: {doc.ownerDepartmentName || doc.ownerDepartmentCode}
-                    </p>
-                    <p className="text-xs text-[#475467] font-bold mt-0.5">
-                      Area: {formatRoomName(doc.roomLabel, doc.roomId)} | กะ: {shiftLabel}
-                    </p>
-                    {doc.parentSku ? (
-                      <p className="text-xs text-[#8a6a00] font-bold mt-0.5">
-                        สินค้า: {doc.parentSkuName || doc.parentSku}
-                      </p>
-                    ) : null}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => onRestore(doc.documentKey)}
-                    className="shrink-0 rounded-[2px] border border-[#CCCCCC] bg-white px-3 py-1.5 text-xs font-black text-black transition hover:bg-slate-100 cursor-pointer"
-                  >
-                    กู้คืนใบนี้
-                  </button>
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        <div className="flex items-center justify-between border-t border-[#e4e7ec] bg-slate-50 px-5 py-4">
-          <button
-            type="button"
-            onClick={onRestoreAll}
-            disabled={hiddenDocs.length === 0}
-            className="rounded-[2px] border border-red-600 bg-transparent px-4 py-2 text-xs font-black tracking-[0.5px] text-red-600 transition hover:bg-red-50 disabled:opacity-50 cursor-pointer"
-          >
-            กู้คืนทั้งหมด
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-[2px] border border-[#102C57] bg-[#102C57] px-4 py-2 text-xs font-black tracking-[0.5px] text-white transition hover:bg-[#0c2345] cursor-pointer"
-          >
-            ปิดหน้าต่าง
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+  const docs = allDocuments.filter((doc) => hiddenKeys.includes(doc.documentKey));
+  return <RequisitionDialog title={"ใบเบิกที่ซ่อน (" + docs.length + ")"} wide onClose={onClose} footer={<>
+    <button type="button" onClick={onRestoreAll} disabled={!docs.length}>แสดงทั้งหมด</button>
+    <button type="button" onClick={onClose}>ปิด</button>
+  </>}>
+    <p className="mb-3">ใบที่ซ่อนจะไม่แสดงใน Preview และไม่รวมในไฟล์ Excel สามารถแสดงคืนได้ภายหลัง</p>
+    <HiddenDocumentsTable documents={docs} onRestore={onRestore} />
+  </RequisitionDialog>;
 }
 
-function HideDocumentConfirmModal({ open, onCancel, onConfirm }) {
-  if (!open) return null;
+function HiddenDocumentsTable({ documents, onRestore }) {
+  return <div className="overflow-x-auto"><table className={dialogStyles.table}><thead><tr>
+    {["#", "ห้องผลิต", "แผนก", "กะ", "จำนวนรายการ", "จัดการ"].map((label) => <th key={label}>{label}</th>)}
+  </tr></thead><tbody>{documents.length ? documents.map((doc, index) => <tr key={doc.documentKey}>
+    <td>{index + 1}</td><td>{formatRoomName(doc.roomLabel, doc.roomId)}</td><td>{doc.ownerDepartmentName || doc.ownerDepartmentCode || "-"}</td>
+    <td>{formatShiftName(doc)}</td><td>{doc.lines?.length || 0}</td>
+    <td><button type="button" className={dialogStyles.link} onClick={() => onRestore(doc.documentKey)}>แสดงใบนี้</button></td>
+  </tr>) : <tr><td colSpan={6}>ไม่มีใบเบิกที่ซ่อน</td></tr>}</tbody></table></div>;
+}
 
-  return (
-    <div className="fixed inset-0 z-[140] flex items-center justify-center bg-[#0b1220]/55 px-4 py-8">
-      <div className="w-full max-w-md overflow-hidden rounded-[2px] border border-red-600 bg-white shadow-[0_30px_80px_rgba(16,44,87,0.24)]">
-        <div className="border-b border-red-600 bg-red-600 px-5 py-4 text-white">
-          <h3 className="text-lg font-black tracking-[0.2px]">ยืนยันการซ่อนใบเบิก</h3>
-        </div>
-        <div className="p-5">
-          <p className="text-sm font-bold text-black">คุณต้องการซ่อนใบเบิกใบนี้ใช่หรือไม่?</p>
-          <p className="mt-2 text-xs font-bold text-[#667085]">
-            * ใบเบิกที่ซ่อนไว้จะไม่แสดงผลในหน้าจอ Preview และจะไม่ถูกนำไปออกไฟล์ Excel (คุณสามารถแสดงรายการและกู้คืนกลับมาได้ภายหลัง)
-          </p>
-        </div>
-        <div className="flex items-center justify-end gap-2 border-t border-[#e4e7ec] bg-slate-50 px-5 py-4">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-[2px] border border-[#CCCCCC] bg-white px-4 py-2 text-xs font-black text-black transition hover:bg-slate-50 cursor-pointer"
-          >
-            ยกเลิก
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="rounded-[2px] border border-red-600 bg-red-600 px-4 py-2 text-xs font-black text-white transition hover:bg-red-700 cursor-pointer"
-          >
-            ยืนยันซ่อนใบเบิก
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+function HideDocumentConfirmModal({ open, document: doc, masterPlanNo, onCancel, onConfirm }) {
+  if (!open) return null;
+  return <RequisitionDialog title="ซ่อนใบเบิกนี้?" onClose={onCancel} footer={<>
+    <button type="button" onClick={onCancel}>ไม่ซ่อน</button>
+    <button type="button" className={dialogStyles.orange} onClick={onConfirm}>ซ่อนใบนี้</button>
+  </>}>
+    <p>{formatRoomName(doc?.roomLabel, doc?.roomId)} {masterPlanNo ? "(แผนหลัก " + masterPlanNo + ")" : ""}</p>
+    <p>จะไม่แสดงใน Preview และไม่รวมในไฟล์ Excel สามารถเรียกคืนได้ภายหลัง</p>
+  </RequisitionDialog>;
 }
 
 export default RequisitionPreviewGeneratorClient;

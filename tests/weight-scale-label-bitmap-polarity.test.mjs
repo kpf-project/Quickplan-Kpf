@@ -45,3 +45,20 @@ test("weight scale bitmap uses compact fonts and separated barcode text", () => 
   assert.match(source, /ctx\.font = "32px Arial, Tahoma, sans-serif"/);
   assert.match(source, /ctx\.fillText\(barcodeValue, 320, 386\)/);
 });
+
+test("weight scale label provides native hardware Code 128 barcode configuration for local-print-agent", () => {
+  const source = fs.readFileSync(bitmapServicePath, "utf8");
+
+  assert.match(source, /nativeBarcode:\s*\{/);
+  assert.match(source, /type:\s*"128"/);
+  assert.match(source, /height:\s*64/);
+  assert.match(source, /narrow:\s*2/);
+  assert.match(source, /wide:\s*4/);
+});
+
+test("weight scale label embeds Code 128 in the bitmap by default", () => {
+  const source = fs.readFileSync(bitmapServicePath, "utf8");
+
+  assert.match(source, /useNativeBarcode = false/);
+  assert.match(source, /if \(!useNativeBarcode\)\s*\{\s*ctx\.drawImage\(barcodeCanvas, 146, 292, 348, 58\)/);
+});

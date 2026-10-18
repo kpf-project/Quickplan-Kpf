@@ -25,6 +25,10 @@ export const PRODUCTION_STOCK_ISSUE_TYPE_OPTIONS = Object.freeze([
 ]);
 
 export const PRODUCTION_STOCK_PRISON_ISSUE_TYPES = Object.freeze(["PRISON"]);
+export const PRODUCTION_STOCK_KPF_DESTINATION_ROOMS = Object.freeze([
+  { value: "BISCUIT_PACKING", label: "ห้องบรรจุบิสกิต" },
+  { value: "PACKING_400", label: "ห้องบรรจุ 400" },
+]);
 
 function normalizeText(value) {
   return String(value ?? "").trim();
@@ -190,6 +194,11 @@ function normalizeIssueRow(row) {
     barcode: normalizeText(row?.barcode) || "-",
     productCode: normalizeUpperText(row?.product_code) || "-",
     productName: normalizeText(row?.product_name_snapshot) || "-",
+    targetProductCode: normalizeUpperText(row?.target_product_code),
+    targetProductName: normalizeText(row?.target_product_name_snapshot),
+    targetProductCategoryCode: normalizeUpperText(row?.target_product_category_code),
+    destinationRoomCode: normalizeUpperText(row?.destination_room_code),
+    destinationRoomName: normalizeText(row?.destination_room_name_snapshot),
     categoryCode: normalizeText(row?.category_code) || SCALE_CATEGORY_CODE,
     lotNo: normalizeText(row?.lot_no) || "-",
     quantity: normalizeDecimal(row?.quantity) || 0,
@@ -611,7 +620,7 @@ async function loadIssueRowsForScope(
       let query = supabaseAdmin
         .from("production_stock_issue_report_lines_v")
         .select(
-          "issue_document_id,issue_item_id,issue_no,department_id,department_code,issue_type,issue_date,issued_at,document_issued_at,document_status,item_status,document_voided_at,voided_at,document_restored_at,item_restored_at,created_at,barcode,product_code,product_name_snapshot,category_code,lot_no,quantity,weight_kg"
+          "issue_document_id,issue_item_id,issue_no,department_id,department_code,issue_type,issue_date,issued_at,document_issued_at,document_status,item_status,document_voided_at,voided_at,document_restored_at,item_restored_at,created_at,barcode,product_code,product_name_snapshot,category_code,lot_no,quantity,weight_kg,target_product_code,target_product_name_snapshot,target_product_category_code,destination_room_code,destination_room_name_snapshot"
         )
         .eq("department_id", departmentId)
         .eq("category_code", categoryCode)
@@ -712,6 +721,7 @@ export async function loadProductionStockIssuePageData(
     return {
       scope,
       issueTypes: PRODUCTION_STOCK_ISSUE_TYPE_OPTIONS,
+      destinationRooms: PRODUCTION_STOCK_KPF_DESTINATION_ROOMS,
       todayIssueDate: getBangkokTodayInput(),
       recentIssues: [],
       summary: {
@@ -736,6 +746,7 @@ export async function loadProductionStockIssuePageData(
   return {
     scope,
     issueTypes: PRODUCTION_STOCK_ISSUE_TYPE_OPTIONS,
+    destinationRooms: PRODUCTION_STOCK_KPF_DESTINATION_ROOMS,
     todayIssueDate,
     recentIssues: recentIssues,
     summary: buildIssueSummary(recentIssues),
@@ -750,6 +761,7 @@ export async function createProductionStockIssue(
   const issueType = normalizeIssueType(input?.issueType);
   const actorUserId = normalizeText(input?.actorUserId) || null;
   const remark = normalizeText(input?.remark) || null;
+  const destinationRoomCode = normalizeUpperText(input?.destinationRoomCode) || null;
 
   if (!barcode) {
     throw new ApiError(400, "กรุณากรอกหรือสแกนรหัสบาร์โค้ด");
@@ -757,6 +769,14 @@ export async function createProductionStockIssue(
 
   if (!issueType) {
     throw new ApiError(400, "กรุณาเลือกประเภทการเบิก");
+  }
+
+  if (issueType === "KPF" && !PRODUCTION_STOCK_KPF_DESTINATION_ROOMS.some((room) => room.value === destinationRoomCode)) {
+    throw new ApiError(400, "กรุณาเลือกห้องปลายทางก่อนเบิก KPF");
+  }
+
+  if (issueType !== "KPF" && destinationRoomCode) {
+    throw new ApiError(400, "ห้องปลายทางใช้ได้เฉพาะการเบิก KPF");
   }
 
   const customDateStr = input?.issueDate ? `${input.issueDate}T12:00:00Z` : null;
@@ -771,6 +791,8 @@ export async function createProductionStockIssue(
     p_actor_user_id: actorUserId,
     p_remark: finalRemark,
     p_issue_date: input?.issueDate || null,
+    p_target_product_code: null,
+    p_destination_room_code: destinationRoomCode,
   });
 
   if (rpcResult.error) {
@@ -798,12 +820,24 @@ export async function createProductionStockIssuesBatch(
     throw new ApiError(400, "เลือกได้ไม่เกิน 100 รายการต่อครั้ง");
   }
 
+  const issueType = normalizeIssueType(input?.issueType);
+  const destinationRoomCode = normalizeUpperText(input?.destinationRoomCode) || null;
+  if (!issueType) throw new ApiError(400, "กรุณาเลือกประเภทการเบิก");
+  if (issueType === "KPF" && !PRODUCTION_STOCK_KPF_DESTINATION_ROOMS.some((room) => room.value === destinationRoomCode)) {
+    throw new ApiError(400, "กรุณาเลือกห้องปลายทางก่อนเบิก KPF");
+  }
+  if (issueType !== "KPF" && destinationRoomCode) {
+    throw new ApiError(400, "ห้องปลายทางใช้ได้เฉพาะการเบิก KPF");
+  }
+
   const rpcResult = await supabaseAdmin.rpc("create_production_stock_issue_batch_atomic", {
     p_barcodes: barcodes,
-    p_issue_type: input?.issueType,
+    p_issue_type: issueType,
     p_actor_user_id: input?.actorUserId || null,
     p_remark: input?.remark || "เบิกจากหน้ารายการเลือกหลายบาร์โค้ด",
     p_issue_date: input?.issueDate || null,
+    p_target_product_code: null,
+    p_destination_room_code: destinationRoomCode,
   });
   if (rpcResult.error) {
     throw new ApiError(400, rpcResult.error.message || "ไม่สามารถเบิกรายการที่เลือกได้");

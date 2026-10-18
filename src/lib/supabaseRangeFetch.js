@@ -33,6 +33,7 @@ export async function fetchAllSupabaseRows(buildQuery, {
 export async function fetchSupabaseRowsByChunks(values, buildQuery, {
   chunkSize = 80,
   maxEncodedValuesLength = 1800,
+  concurrency = 3,
   onError,
 } = {}) {
   const normalizedValues = Array.from(
@@ -66,18 +67,27 @@ export async function fetchSupabaseRowsByChunks(values, buildQuery, {
   });
   if (currentChunk.length) chunks.push(currentChunk);
 
-  for (const chunk of chunks) {
-    const result = await buildQuery(chunk);
+  const results = new Array(chunks.length);
+  let nextIndex = 0;
+  let failure;
+  async function worker() {
+    while (!failure && nextIndex < chunks.length) {
+      const index = nextIndex++;
+      const result = await buildQuery(chunks[index]);
 
-    if (result.error) {
-      if (typeof onError === "function") {
-        return onError(result.error);
+      if (result.error) {
+        failure = result.error;
+        return;
       }
-      throw result.error;
+
+      results[index] = result.data || [];
     }
-
-    rows.push(...(result.data || []));
   }
-
+  await Promise.all(Array.from({ length: Math.min(chunks.length, Math.max(1, Math.min(4, Number(concurrency) || 3))) }, worker));
+  if (failure) {
+    if (typeof onError === "function") return onError(failure);
+    throw failure;
+  }
+  results.forEach((result) => rows.push(...(result || [])));
   return rows;
 }

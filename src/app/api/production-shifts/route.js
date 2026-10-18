@@ -1,5 +1,5 @@
 import { getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import {
   inferCrossesMidnight,
   mapShiftRow,
@@ -76,14 +76,7 @@ async function findDuplicateShift({
 
 export async function GET(request) {
   try {
-    await requirePermissionKeys(request, [
-      "production-line-settings-view",
-      "production-line-settings-manage",
-      "production-line-planning-view",
-      "production-line-planning-manage",
-      "plan.calculate_own_dept",
-      "plan.edit_own_dept",
-    ]);
+    await requireTaskPermission(request, "production-settings-shifts-view");
 
     const { searchParams } = new URL(request.url);
     const search = String(searchParams.get("search") || "").trim().toLowerCase();
@@ -123,9 +116,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const { userId } = await requirePermissionKeys(request, [
-      "production-line-settings-manage",
-    ]);
+    const { userId } = await requireTaskPermission(request, "production-settings-shifts-create");
 
     const input = normalizeShiftInput(await readJson(request));
     if (input.errors.length) {

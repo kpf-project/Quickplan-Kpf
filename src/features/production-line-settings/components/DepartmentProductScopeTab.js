@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { 
   CheckSquare, 
   Pencil, 
@@ -20,19 +20,28 @@ import {
   Filter,
   Tag
 } from "lucide-react";
+import SettingsListSidebar from "@/components/settings/SettingsListSidebar";
+import SettingsDialog from "@/components/settings/SettingsDialog";
+import styles from "./DepartmentProductScope.module.css";
+import { createDepartmentProductPager } from "../services/departmentProductPager";
 import {
   assignDepartmentProducts,
   assignDepartmentUsers,
+  createDepartmentProductSubcategory,
   createProductionDepartment,
+  deleteDepartmentProductSubcategory,
   deleteProductionDepartment,
   fetchDepartmentProducts,
+  fetchDepartmentProductSubcategories,
   fetchDepartmentUsers,
   fetchProductsCache,
   fetchProductionDepartments,
   fetchProductionUsers,
   unassignDepartmentProducts,
   unassignDepartmentUsers,
+  renameDepartmentProductSubcategory,
   updateProductionDepartment,
+  updateDepartmentProductSubcategory,
 } from "@/features/production-line-settings/services/productionLineSettingsClient";
 
 const DEFAULT_FORM = {
@@ -62,6 +71,9 @@ const QUICK_TAGS = [
 
 export default function DepartmentProductScopeTab({ canManage = false }) {
   const [errorMessage, setErrorMessage] = useState("");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [addProductsOpen, setAddProductsOpen] = useState(false);
+  const [addUsersOpen, setAddUsersOpen] = useState(false);
   const [departmentSearch, setDepartmentSearch] = useState("");
   const [productSearch, setProductSearch] = useState("");
   const [userSearch, setUserSearch] = useState("");
@@ -71,22 +83,32 @@ export default function DepartmentProductScopeTab({ canManage = false }) {
   const [products, setProducts] = useState([]);
   const [users, setUsers] = useState([]);
   const [assignedProducts, setAssignedProducts] = useState([]);
+  const [subcategories, setSubcategories] = useState([]);
   const [assignedUsers, setAssignedUsers] = useState([]);
   const [selectedDepartmentId, setSelectedDepartmentId] = useState(null);
 
   const [selectedProducts, setSelectedProducts] = useState(new Set());
   const [selectedAssignedProducts, setSelectedAssignedProducts] = useState(new Set());
+  const [selectedSubcategoryId, setSelectedSubcategoryId] = useState("");
+  const [newSubcategoryName, setNewSubcategoryName] = useState("");
+  const [viewingProductSubcategories, setViewingProductSubcategories] = useState(null);
+  const [selectedAddMoreSubcategoryId, setSelectedAddMoreSubcategoryId] = useState("");
   const [selectedUsers, setSelectedUsers] = useState(new Set());
   const [selectedAssignedUsers, setSelectedAssignedUsers] = useState(new Set());
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form, setForm] = useState(DEFAULT_FORM);
-  const [activeSubTab, setActiveSubTab] = useState("products"); // "products" or "users"
+  const [activeSubTab, setActiveSubTab] = useState("products"); // "products", "subcategories", or "users"
   
   // Client-side search and pagination states to prevent endless scrolling
   const [assignedSearch, setAssignedSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
   const [assignedPage, setAssignedPage] = useState(1);
   const [availablePage, setAvailablePage] = useState(1);
+  const [availableHasMore, setAvailableHasMore] = useState(false);
+  const productPager = useRef(null);
+  const productRequest = useRef(0);
+  if (!productPager.current) productPager.current = createDepartmentProductPager(fetchProductsCache);
   
   const [assignedUserSearch, setAssignedUserSearch] = useState("");
   const [assignedUserPage, setAssignedUserPage] = useState(1);
@@ -117,15 +139,42 @@ export default function DepartmentProductScopeTab({ canManage = false }) {
     [assignedUsers]
   );
 
+  const categoryFilterOptions = useMemo(() => {
+    const names = new Set();
+    for (const s of subcategories) {
+      if (s.name) names.add(s.name);
+    }
+    for (const item of assignedProducts) {
+      if (item.subcategory_name) names.add(item.subcategory_name);
+      if (Array.isArray(item.subcategories)) {
+        item.subcategories.forEach((s) => s.name && names.add(s.name));
+      }
+    }
+    return Array.from(names).sort((a, b) => a.localeCompare(b, "th"));
+  }, [subcategories, assignedProducts]);
+
   // Client-side filtering for Assigned Products
   const filteredAssignedProducts = useMemo(() => {
     const term = String(assignedSearch || "").trim().toLowerCase();
-    if (!term) return assignedProducts;
-    return assignedProducts.filter(item => 
-      String(item.sku_code || "").toLowerCase().includes(term) ||
-      String(item.sku_name || "").toLowerCase().includes(term)
-    );
-  }, [assignedProducts, assignedSearch]);
+    return assignedProducts.filter((item) => {
+      const matchCategory =
+        !categoryFilter ||
+        item.subcategory_name === categoryFilter ||
+        (Array.isArray(item.subcategories) &&
+          item.subcategories.some((s) => s.name === categoryFilter));
+      if (!matchCategory) return false;
+      if (!term) return true;
+      return (
+        String(item.sku_code || "").toLowerCase().includes(term) ||
+        String(item.sku_name || "").toLowerCase().includes(term) ||
+        String(item.subcategory_name || "").toLowerCase().includes(term) ||
+        (Array.isArray(item.subcategories) &&
+          item.subcategories.some((s) =>
+            String(s.name || "").toLowerCase().includes(term)
+          ))
+      );
+    });
+  }, [assignedProducts, assignedSearch, categoryFilter]);
 
   // Paginated Assigned Products
   const paginatedAssignedProducts = useMemo(() => {
@@ -137,15 +186,7 @@ export default function DepartmentProductScopeTab({ canManage = false }) {
     return Math.ceil(filteredAssignedProducts.length / ITEMS_PER_PAGE) || 1;
   }, [filteredAssignedProducts]);
 
-  // Paginated Available Products
-  const paginatedAvailableProducts = useMemo(() => {
-    const start = (availablePage - 1) * ITEMS_PER_PAGE;
-    return products.slice(start, start + ITEMS_PER_PAGE);
-  }, [products, availablePage]);
-
-  const totalAvailablePages = useMemo(() => {
-    return Math.ceil(products.length / ITEMS_PER_PAGE) || 1;
-  }, [products]);
+  const paginatedAvailableProducts = products;
 
   // Client-side filtering for Assigned Users
   const filteredAssignedUsers = useMemo(() => {
@@ -202,29 +243,31 @@ export default function DepartmentProductScopeTab({ canManage = false }) {
     }
   }, [departmentSearch]);
 
-  const loadProducts = useCallback(async (customSearchText = null) => {
+  const loadProducts = useCallback(async (action = "open", search = "") => {
+    const request = ++productRequest.current;
     setIsLoadingProducts(true);
-    const searchVal = customSearchText !== null ? customSearchText : productSearch;
+    setErrorMessage("");
     try {
-      const result = await fetchProductsCache({
-        page: "1",
-        pageSize: "150",
-        search: searchVal,
-        iccatCodes: "03,04,04-1,04-2",
-      });
-      if (!result.ok) {
-        setErrorMessage(result.error?.message || "โหลดสินค้าไม่สำเร็จ");
-        return [];
-      }
-      setAvailablePage(1); // Reset page on new load
-      return result.data?.data ?? [];
-    } catch (err) {
-      setErrorMessage("เกิดข้อผิดพลาดในการโหลดสินค้า");
-      return [];
+      const result = await productPager.current[action](search);
+      if (request !== productRequest.current || !result) return;
+      setProducts(result.data);
+      setAvailablePage(result.page);
+      setAvailableHasMore(result.hasMore);
+    } catch (error) {
+      if (request === productRequest.current) setErrorMessage(error.message || "โหลดสินค้าไม่สำเร็จ");
     } finally {
-      setIsLoadingProducts(false);
+      if (request === productRequest.current) setIsLoadingProducts(false);
     }
-  }, [productSearch]);
+  }, []);
+
+  function openAddProducts() {
+    setProductSearch("");
+    setProducts([]);
+    setAvailablePage(1);
+    setAvailableHasMore(false);
+    setAddProductsOpen(true);
+    loadProducts("open");
+  }
 
   const loadUsers = useCallback(async () => {
     setIsLoadingUsers(true);
@@ -252,13 +295,15 @@ export default function DepartmentProductScopeTab({ canManage = false }) {
     if (!departmentId) {
       setAssignedProducts([]);
       setAssignedUsers([]);
+      setSubcategories([]);
       return;
     }
     setIsLoadingAssigned(true);
     try {
-      const [productsResult, usersResult] = await Promise.all([
+      const [productsResult, usersResult, subcategoriesResult] = await Promise.all([
         fetchDepartmentProducts(departmentId),
         fetchDepartmentUsers(departmentId),
+        fetchDepartmentProductSubcategories(departmentId),
       ]);
       if (productsResult.ok) {
         setAssignedProducts(productsResult.data?.data ?? []);
@@ -266,7 +311,10 @@ export default function DepartmentProductScopeTab({ canManage = false }) {
       if (usersResult.ok) {
         setAssignedUsers(usersResult.data?.data ?? []);
       }
-      if (!productsResult.ok || !usersResult.ok) {
+      if (subcategoriesResult.ok) {
+        setSubcategories(subcategoriesResult.data?.data ?? []);
+      }
+      if (!productsResult.ok || !usersResult.ok || !subcategoriesResult.ok) {
         setErrorMessage("โหลดข้อมูลการผูกแผนกไม่สำเร็จ");
       }
       // Reset pagination when department changes
@@ -275,6 +323,8 @@ export default function DepartmentProductScopeTab({ canManage = false }) {
       setAssignedSearch("");
       setAssignedUserSearch("");
       setSelectedAssignedProducts(new Set());
+      setSelectedSubcategoryId("");
+      setNewSubcategoryName("");
       setSelectedAssignedUsers(new Set());
       setSelectedProducts(new Set());
       setSelectedUsers(new Set());
@@ -289,14 +339,12 @@ export default function DepartmentProductScopeTab({ canManage = false }) {
     let mounted = true;
     const loadInitial = async () => {
       setErrorMessage("");
-      const [nextDepartments, nextProducts, nextUsers] = await Promise.all([
+      const [nextDepartments, nextUsers] = await Promise.all([
         loadDepartments(),
-        loadProducts(),
         loadUsers(),
       ]);
       if (!mounted) return;
       setDepartments(nextDepartments);
-      setProducts(nextProducts);
       setUsers(nextUsers);
       const firstDepartmentId = nextDepartments[0]?.id ?? null;
       setSelectedDepartmentId(firstDepartmentId);
@@ -414,6 +462,106 @@ export default function DepartmentProductScopeTab({ canManage = false }) {
     await loadAssigned(selectedDepartmentId);
   };
 
+  const unassignedCount = useMemo(() => {
+    return assignedProducts.filter(
+      (item) => !item.subcategory_id && (!item.subcategories || item.subcategories.length === 0)
+    ).length;
+  }, [assignedProducts]);
+
+  const subcategoryCountMap = useMemo(() => {
+    const map = new Map();
+    for (const item of assignedProducts) {
+      const ids = new Set();
+      if (item.subcategory_id) ids.add(item.subcategory_id);
+      if (Array.isArray(item.subcategories)) {
+        item.subcategories.forEach((s) => s.id && ids.add(s.id));
+      }
+      for (const id of ids) {
+        map.set(id, (map.get(id) || 0) + 1);
+      }
+    }
+    return map;
+  }, [assignedProducts]);
+
+  const handleSetProductSubcategory = async (action = "add") => {
+    if (!selectedDepartmentId || !selectedAssignedProducts.size || !canManage) return;
+    setIsLoadingAssigned(true);
+    const result = await updateDepartmentProductSubcategory(
+      selectedDepartmentId,
+      Array.from(selectedAssignedProducts),
+      selectedSubcategoryId || null,
+      action
+    );
+    if (!result.ok) {
+      setErrorMessage(result.error?.message || "บันทึกหมวดหมู่ย่อยไม่สำเร็จ");
+      setIsLoadingAssigned(false);
+      return;
+    }
+    setSelectedAssignedProducts(new Set());
+    await loadAssigned(selectedDepartmentId);
+  };
+
+  const handleCreateSubcategory = async () => {
+    const name = newSubcategoryName.trim();
+    if (!selectedDepartmentId || !name || !canManage) return;
+    setIsLoadingAssigned(true);
+    const result = await createDepartmentProductSubcategory(selectedDepartmentId, name);
+    if (!result.ok) {
+      setErrorMessage(result.error?.message || "สร้างหมวดหมู่ย่อยไม่สำเร็จ");
+      setIsLoadingAssigned(false);
+      return;
+    }
+    setNewSubcategoryName("");
+    setSelectedSubcategoryId(result.data?.data?.id || "");
+    const categoriesResult = await fetchDepartmentProductSubcategories(selectedDepartmentId);
+    if (categoriesResult.ok) {
+      setSubcategories(categoriesResult.data?.data ?? []);
+    }
+    setIsLoadingAssigned(false);
+  };
+
+  const handleRenameSubcategory = async (subcategory) => {
+    if (!selectedDepartmentId || !subcategory?.id || !canManage) return;
+    const name = window.prompt("แก้ไขชื่อหมวดหมู่ย่อย", subcategory.name)?.trim();
+    if (!name || name === subcategory.name) return;
+    setIsLoadingAssigned(true);
+    const result = await renameDepartmentProductSubcategory(
+      selectedDepartmentId,
+      subcategory.id,
+      name
+    );
+    if (!result.ok) {
+      setErrorMessage(result.error?.message || "แก้ไขชื่อหมวดหมู่ย่อยไม่สำเร็จ");
+      setIsLoadingAssigned(false);
+      return;
+    }
+    await loadAssigned(selectedDepartmentId);
+    setSelectedSubcategoryId(subcategory.id);
+  };
+
+  const handleDeleteSubcategory = async (subcategory) => {
+    if (!selectedDepartmentId || !subcategory?.id || !canManage) return;
+    const assignedCount = assignedProducts.filter(
+      (item) => item.subcategory_id === subcategory.id || item.subcategories?.some((s) => s.id === subcategory.id)
+    ).length;
+    if (assignedCount > 0) {
+      setErrorMessage(`ลบไม่ได้ กรุณาย้ายหรือล้างหมวดของสินค้า ${assignedCount} รายการก่อน`);
+      return;
+    }
+    if (!window.confirm(`ต้องการลบหมวดหมู่ “${subcategory.name}” ใช่หรือไม่?`)) return;
+    setIsLoadingAssigned(true);
+    const result = await deleteDepartmentProductSubcategory(
+      selectedDepartmentId,
+      subcategory.id
+    );
+    if (!result.ok) {
+      setErrorMessage(result.error?.message || "ลบหมวดหมู่ย่อยไม่สำเร็จ");
+      setIsLoadingAssigned(false);
+      return;
+    }
+    await loadAssigned(selectedDepartmentId);
+  };
+
   const handleUnassignProducts = async () => {
     if (!selectedDepartmentId || !selectedAssignedProducts.size || !canManage) return;
     setIsLoadingAssigned(true);
@@ -456,36 +604,11 @@ export default function DepartmentProductScopeTab({ canManage = false }) {
 
   const handleQuickTagFilter = async (tagValue) => {
     setProductSearch(tagValue);
-    const nextProducts = await loadProducts(tagValue);
-    setProducts(nextProducts);
+    await loadProducts("search", tagValue);
   };
 
   return (
-    <div className="w-full max-w-[1700px] mx-auto py-6 px-3 sm:px-6">
-      {/* Premium Eyebrow Header */}
-      <header className="mb-6 border-b border-[#102C57]/10 pb-5 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
-        <div>
-          <span className="text-xs font-black tracking-[0.25em] text-[#d4af37] uppercase font-mono block mb-1">
-            DEPARTMENT & PRODUCTS SCOPE
-          </span>
-          <h1 className="text-3xl font-black text-[#102C57] tracking-tight">
-            จัดการหมวดหมู่และขอบเขตแผนก
-          </h1>
-          <p className="text-sm font-bold text-[#102C57] mt-1">
-            กำหนดรหัสแผนกของ ERP และบริหารจัดการสิทธิ์สินค้าความรับผิดชอบ รวมถึงสมาชิกบุคลากรในแต่ละส่วนการผลิต
-          </p>
-        </div>
-        <button 
-          type="button" 
-          onClick={openCreateModal} 
-          disabled={!canManage} 
-          className="h-10 px-5 rounded-[3px] bg-[#d4af37] text-[#102C57] text-sm font-black flex items-center gap-2 hover:bg-[#c39e2b] transition duration-200 shadow-sm border border-[#d4af37] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-        >
-          <FolderPlus size={16} />
-          <span>เพิ่มแผนกผลิตใหม่</span>
-        </button>
-      </header>
-
+    <div className={styles.page}>
       {errorMessage ? (
         <div className="mb-6 rounded-[3px] border-l-4 border-red-500 bg-red-50 px-4 py-3 text-sm font-bold text-red-800 flex items-center justify-between shadow-sm animate-fadeIn">
           <span>{errorMessage}</span>
@@ -495,198 +618,89 @@ export default function DepartmentProductScopeTab({ canManage = false }) {
         </div>
       ) : null}
 
-      {/* Main Grid: Left sidebar for departments, Right workspace for details */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        
-        {/* Left Side: Spacious Department List */}
-        <section className="lg:col-span-3 bg-white border border-[#102C57]/10 rounded-[3px] shadow-sm overflow-hidden flex flex-col h-[700px]">
-          <div className="bg-[#102C57] px-4 py-3.5 flex flex-col gap-2.5">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-black tracking-[0.2em] text-[#d4af37] uppercase font-mono">
-                DEPARTMENTS ({departments.length})
-              </span>
-              {isLoadingDepartments && <Loader2 className="animate-spin text-[#d4af37]" size={14} />}
-            </div>
-            
-            <div className="relative">
-              <input 
-                value={departmentSearch} 
-                onChange={(e) => setDepartmentSearch(e.target.value)} 
-                placeholder="ค้นหาชื่อแผนก / รหัสแผนก..." 
-                className="w-full h-10 rounded-[3px] border border-white/10 bg-white/10 pl-10 pr-4 text-sm font-bold text-white placeholder-white/80 outline-none focus:bg-white/15 focus:border-[#d4af37] transition-all" 
-              />
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/90" size={14} />
-            </div>
-          </div>
-
-          <div className="overflow-y-auto p-2.5 space-y-2 flex-1 scrollbar-thin">
-            {departments.map((department) => {
-              const isSelected = selectedDepartmentId === department.id;
-              return (
-                <button 
-                  key={department.id} 
-                  type="button" 
-                  onClick={async () => { 
-                    setSelectedDepartmentId(department.id); 
-                    await loadAssigned(department.id); 
-                  }} 
-                  className={`w-full rounded-[3px] border px-3.5 py-3.5 text-left transition-all duration-200 cursor-pointer ${
-                    isSelected 
-                      ? "border-[#d4af37] bg-[#fff8e2] shadow-sm relative before:absolute before:left-0 before:top-0 before:bottom-0 before:w-1 before:bg-[#d4af37]" 
-                      : "border-[#102C57]/5 bg-white hover:bg-slate-50 hover:border-[#102C57]/20"
-                  }`}
-                >
-                  <div className="flex justify-between items-start gap-2">
-                    <span className="text-xs font-mono font-black tracking-wider text-[#102C57] block uppercase">
-                      {department.code}
-                    </span>
-                    {department.is_central_department ? (
-                      <span className="rounded-full bg-[#102C57] px-2 py-0.5 text-[10px] font-black text-white tracking-wider uppercase">
-                        แผนกกลาง
-                      </span>
-                    ) : null}
-                  </div>
-                  <h3 className={`text-base font-extrabold mt-1.5 tracking-tight text-[#102C57]`}>
-                    {department.name}
-                  </h3>
-                  
-                  <div className="mt-3 flex items-center justify-between text-xs font-extrabold text-[#102C57] pt-2 border-t border-[#102C57]/10 font-mono">
-                    <span className="flex items-center gap-1.5">
-                      <Package size={12} className="text-[#d4af37]" /> สินค้าผูก: <strong>{department.product_count || 0}</strong>
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <Users size={12} className="text-[#d4af37]" /> สมาชิก: <strong>{department.user_count || 0}</strong>
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
-            {!departments.length && !isLoadingDepartments ? (
-              <div className="py-12 text-center text-sm font-black text-[#102C57]">
-                ไม่พบข้อมูลแผนกเบิกจ่าย
-              </div>
-            ) : null}
-          </div>
-        </section>
-
-        {/* Right Side: Workspace with client-side paginated tables to prevent infinite scroll */}
-        <section className="lg:col-span-9 flex flex-col gap-5">
+      <div className={styles.layout} data-collapsed={sidebarCollapsed}>
+        <SettingsListSidebar title="แผนก" items={departments} selectedId={selectedDepartmentId}
+          search={departmentSearch} onSearch={setDepartmentSearch} loading={isLoadingDepartments}
+          collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(value => !value)}
+          onCreate={openCreateModal} canCreate={canManage} createLabel="เพิ่มแผนก"
+          onSelect={async id => { setCategoryFilter(""); setSelectedDepartmentId(id); await loadAssigned(id); }} />
+        <section className={styles.workspace}>
           {selectedDepartment ? (
             <>
-              {/* Department Header Spotlight */}
-              <div className="bg-white border border-[#102C57]/10 rounded-[3px] p-5 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative overflow-hidden">
-                <div className="absolute right-0 top-0 translate-x-12 -translate-y-12 opacity-5 pointer-events-none">
-                  <Layers size={180} className="text-[#102C57]" />
+              <div className={styles.heading}>
+                <div><h2>{selectedDepartment.code} · {selectedDepartment.name}</h2>
+                  <button type="button" onClick={openEditModal} disabled={!canManage} aria-label="แก้ไขแผนก"><Pencil size={15} /></button>
                 </div>
-                
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono font-black tracking-widest text-[#d4af37] uppercase bg-[#102C57] px-2.5 py-1 rounded-[2px]">
-                      {selectedDepartment.code}
-                    </span>
-                    {selectedDepartment.is_central_department && (
-                      <span className="text-[10px] font-black tracking-wider text-emerald-950 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-[2px] uppercase">
-                        CENTRAL DEPT
-                      </span>
-                    )}
-                  </div>
-                  <h2 className="text-2xl font-black text-[#102C57] mt-2 tracking-tight">
-                    {selectedDepartment.name}
-                  </h2>
-                  <p className="text-sm font-bold text-[#102C57] mt-1 max-w-xl">
-                    {selectedDepartment.description || "— ไม่มีคำอธิบายแผนก —"}
-                  </p>
-                </div>
-
-                <div className="flex gap-2 shrink-0 z-10 w-full md:w-auto">
-                  <button 
-                    type="button" 
-                    onClick={openEditModal} 
-                    disabled={!canManage} 
-                    className="flex-1 md:flex-initial h-9 px-4 rounded-[3px] border border-[#102C57]/20 bg-white text-xs font-black text-[#102C57] flex items-center justify-center gap-1.5 hover:bg-slate-50 transition duration-200 disabled:opacity-50 cursor-pointer"
-                  >
-                    <Pencil size={13} />
-                    <span>แก้ไขแผนก</span>
-                  </button>
-                  <button 
-                    type="button" 
-                    onClick={handleDeactivateDepartment} 
-                    disabled={!canManage} 
-                    className="flex-1 md:flex-initial h-9 px-4 rounded-[3px] border border-red-200 bg-red-50 text-xs font-black text-red-600 flex items-center justify-center gap-1.5 hover:bg-red-100/55 transition duration-200 disabled:opacity-50 cursor-pointer"
-                  >
-                    <Trash2 size={13} />
-                    <span>ปิดใช้งานแผนก</span>
-                  </button>
-                </div>
+                <details><summary aria-label="ตัวเลือกแผนก"><Layers size={16} /></summary>
+                  <button type="button" onClick={handleDeactivateDepartment} disabled={!canManage}><Trash2 size={14} /> ปิดใช้งานแผนก</button>
+                </details>
               </div>
-
               {/* Tab Navigation inside Workspace */}
-              <div className="border-b border-[#102C57]/10 flex gap-2 bg-white">
+              <div className={styles.tabs}>
                 <button
                   type="button"
                   onClick={() => setActiveSubTab("products")}
-                  className={`px-5 py-3 text-sm font-black flex items-center gap-2 border-b-2 transition duration-200 cursor-pointer ${
+                  className={`shrink-0 whitespace-nowrap px-5 py-3 text-sm font-black flex items-center gap-2 border-b-2 transition duration-200 cursor-pointer ${
                     activeSubTab === "products"
                       ? "border-[#d4af37] text-[#102C57] bg-[#fff8e2]/20 font-black"
                       : "border-transparent text-[#102C57]/60 hover:text-[#102C57]"
                   }`}
                 >
                   <Package size={15} />
-                  <span>สินค้าความรับผิดชอบ ({assignedProducts.length})</span>
+                  <span>สินค้า {assignedProducts.length}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveSubTab("subcategories")}
+                  className={`shrink-0 whitespace-nowrap px-5 py-3 text-sm font-black flex items-center gap-2 border-b-2 transition duration-200 cursor-pointer ${
+                    activeSubTab === "subcategories"
+                      ? "border-[#d4af37] text-[#102C57] bg-[#fff8e2]/20 font-black"
+                      : "border-transparent text-[#102C57]/60 hover:text-[#102C57]"
+                  }`}
+                >
+                  <Layers size={15} />
+                  <span>หมวดหมู่ย่อย ({subcategories.length})</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveSubTab("users")}
-                  className={`px-5 py-3 text-sm font-black flex items-center gap-2 border-b-2 transition duration-200 cursor-pointer ${
+                  className={`shrink-0 whitespace-nowrap px-5 py-3 text-sm font-black flex items-center gap-2 border-b-2 transition duration-200 cursor-pointer ${
                     activeSubTab === "users"
                       ? "border-[#d4af37] text-[#102C57] bg-[#fff8e2]/20 font-black"
                       : "border-transparent text-[#102C57]/60 hover:text-[#102C57]"
                   }`}
                 >
                   <Users size={15} />
-                  <span>รายชื่อสมาชิกในแผนก ({assignedUsers.length})</span>
+                  <span>ผู้ใช้งาน {assignedUsers.length}</span>
                 </button>
               </div>
 
               {/* Sub-tab 1: Products Mapping (Redesigned with Pagination & Filters) */}
               {activeSubTab === "products" && (
-                <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 animate-fadeIn">
+                <div className={styles.products}>
                   
                   {/* Left Column: Assigned Products (Now Paginated + Instant Filtered) */}
-                  <div className="xl:col-span-6 bg-white border border-[#102C57]/10 rounded-[3px] p-4.5 shadow-sm flex flex-col h-[520px]">
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-3">
-                      <div>
-                        <h4 className="text-sm font-black text-[#102C57]">
-                          สินค้าในแผนกที่ผูกไว้
-                        </h4>
-                        <p className="text-xs font-bold text-[#102C57] mt-0.5">
-                          รายการทั้งหมด ({filteredAssignedProducts.length} สินค้า)
-                        </p>
+                  <div className={styles.assigned}>
+                    <div className={styles.toolbar} hidden={!selectedAssignedProducts.size}>
+                      <div>{selectedAssignedProducts.size ? `เลือก ${selectedAssignedProducts.size} รายการ` : `สินค้าในแผนก ${filteredAssignedProducts.length} รายการ`}</div>
+                      <div className="flex items-center gap-2">
+                        {selectedAssignedProducts.size > 0 && <button type="button" onClick={handleUnassignProducts} disabled={!canManage || isLoadingAssigned}><Trash2 size={14} className="inline mr-1" />นำออกจากแผนก</button>}
                       </div>
-                      <button 
-                        type="button" 
-                        onClick={handleUnassignProducts} 
-                        disabled={!selectedAssignedProducts.size || !canManage || isLoadingAssigned} 
-                        className="h-8 px-3.5 rounded-[2px] border border-red-300 bg-red-50 text-xs font-black text-red-600 flex items-center gap-1.5 hover:bg-red-100/70 transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                      >
-                        <Trash2 size={13} />
-                        <span>ยกเลิกที่เลือก ({selectedAssignedProducts.size})</span>
-                      </button>
                     </div>
-
                     {/* Instant client-side search inside department */}
-                    <div className="relative mb-3.5">
+                    <div className={styles.filters}><div className="relative">
                       <input 
                         value={assignedSearch} 
                         onChange={(e) => {
                           setAssignedSearch(e.target.value);
                           setAssignedPage(1); // reset to page 1 on filter
                         }}
-                        placeholder="พิมพ์เพื่อค้นหา/กรองสินค้าในแผนกนี้ทันที..." 
+                        placeholder="ค้นหารหัสหรือชื่อสินค้า..."
+                        aria-label="ค้นหาสินค้าในแผนก"
                         className="w-full h-9 rounded-[3px] border border-[#102C57]/20 bg-slate-50 pl-9 pr-3 text-xs font-bold text-[#102C57] outline-none focus:bg-white focus:border-[#d4af37] transition"
                       />
                       <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#102C57]" size={14} />
-                    </div>
+                    </div><select aria-label="หมวดหมู่ย่อย" value={categoryFilter} onChange={event => { setCategoryFilter(event.target.value); setAssignedPage(1); }}><option value="">ทุกหมวดหมู่ย่อย</option>{categoryFilterOptions.map(name => <option key={name} value={name}>{name}</option>)}</select><button type="button" disabled={!canManage} onClick={openAddProducts}><Plus size={15} />เพิ่มสินค้า</button></div>
 
                     <div className="overflow-hidden border border-[#102C57]/10 rounded-[2px] flex-1 flex flex-col bg-white">
                       <table className="w-full text-xs text-[#102C57] border-collapse table-fixed">
@@ -694,6 +708,7 @@ export default function DepartmentProductScopeTab({ canManage = false }) {
                           <col className="w-[40px]" />
                           <col className="w-[105px]" />
                           <col />
+                          <col className="w-[105px]" />
                           <col className="w-[95px]" />
                         </colgroup>
                         <thead className="bg-[#eef3f8] border-b border-[#102C57]/10 text-xs font-black uppercase tracking-wider text-[#102C57]">
@@ -701,6 +716,7 @@ export default function DepartmentProductScopeTab({ canManage = false }) {
                             <th className="px-2 py-2.5 text-center">เลือก</th>
                             <th className="px-2 py-2.5 text-left">รหัส SKU</th>
                             <th className="px-2 py-2.5 text-left">รายการสินค้า</th>
+                            <th className="px-2 py-2.5 text-left">หมวดย่อย</th>
                             <th className="px-2 py-2.5 text-center">คลัง / เจ้าของ</th>
                           </tr>
                         </thead>
@@ -731,6 +747,24 @@ export default function DepartmentProductScopeTab({ canManage = false }) {
                                 <td className="px-2 py-2 font-black align-middle truncate text-[#102C57]">
                                   {item.sku_name}
                                 </td>
+                                <td className="px-2 py-2 align-middle text-[11px] font-black text-[#7b6215]">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="truncate">{item.subcategory_name || "—"}</span>
+                                    {Array.isArray(item.subcategories) && item.subcategories.length > 1 && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setViewingProductSubcategories(item);
+                                        }}
+                                        title="คลิกเพื่อดูหมวดหมู่ทั้งหมด"
+                                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-[3px] bg-[#d4af37]/20 hover:bg-[#d4af37]/35 text-[#102C57] font-mono text-[10px] font-bold border border-[#d4af37]/50 cursor-pointer transition shrink-0"
+                                      >
+                                        <span>+{item.subcategories.length - 1}</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
                                 <td className="px-2 py-2 text-center align-middle" onClick={(e) => e.stopPropagation()}>
                                   <button
                                     type="button"
@@ -739,7 +773,7 @@ export default function DepartmentProductScopeTab({ canManage = false }) {
                                     className={`h-6.5 w-full rounded-[2px] text-[10px] font-black uppercase tracking-wider transition cursor-pointer ${
                                       isOwner 
                                         ? "bg-emerald-100 border border-emerald-300 text-emerald-950 cursor-default" 
-                                        : "bg-white border border-[#102C57]/25 text-[#102C57] hover:bg-[#102C57]/5"
+                                        : "bg-white border border-[#102C57]/25 text-[#102C57] hover:bg-[var(--surface-navy,#102C57)]/5"
                                     }`}
                                   >
                                     {isOwner ? "Owner" : "ตั้ง Owner"}
@@ -750,14 +784,14 @@ export default function DepartmentProductScopeTab({ canManage = false }) {
                           })}
                           {!filteredAssignedProducts.length && !isLoadingAssigned ? (
                             <tr>
-                              <td colSpan={4} className="py-12 text-center text-sm font-bold text-[#102C57]">
+                              <td colSpan={5} className="py-12 text-center text-sm font-bold text-[#102C57]">
                                 ไม่พบสินค้าผูกที่สอดคล้อง
                               </td>
                             </tr>
                           ) : null}
                           {isLoadingAssigned && (
                             <tr>
-                              <td colSpan={4} className="py-12 text-center text-sm font-bold text-[#102C57]">
+                              <td colSpan={5} className="py-12 text-center text-sm font-bold text-[#102C57]">
                                 <Loader2 className="animate-spin inline-block mr-2" size={16} />
                                 กำลังอัปเดตรายการ...
                               </td>
@@ -797,7 +831,10 @@ export default function DepartmentProductScopeTab({ canManage = false }) {
                   </div>
 
                   {/* Right Column: Add New Products (Now Paginated + Quick-Tags Filtered) */}
-                  <div className="xl:col-span-6 bg-white border border-[#102C57]/10 rounded-[3px] p-4.5 shadow-sm flex flex-col h-[520px]">
+                  {addProductsOpen && <SettingsDialog label="เพิ่มสินค้าเข้าแผนก" busy={isLoadingAssigned} onClose={() => setAddProductsOpen(false)}>
+                    <div className={styles.dialog}><header><h2>เพิ่มสินค้าเข้าแผนก · {selectedDepartment.code}</h2><button type="button" disabled={isLoadingAssigned} aria-label="ปิด" onClick={() => setAddProductsOpen(false)}><X size={18} /></button></header>
+                    {errorMessage && <p role="alert" className="mb-3 text-sm text-red-700">{errorMessage}</p>}
+                    <div className="bg-white flex flex-col">
                     <div>
                       <h4 className="text-sm font-black text-[#102C57]">
                         ผูกสินค้าเพิ่มเติม
@@ -819,8 +856,8 @@ export default function DepartmentProductScopeTab({ canManage = false }) {
                       </div>
                       <button 
                         type="button" 
-                        onClick={async () => setProducts(await loadProducts())} 
-                        className="h-9 px-3.5 rounded-[3px] bg-[#102C57] text-white text-xs font-bold hover:bg-[#102C57]/90 transition cursor-pointer"
+                        onClick={() => loadProducts("search", productSearch)}
+                        className="h-9 px-3.5 rounded-[3px] bg-[var(--surface-navy,#102C57)] text-white text-xs font-bold hover:bg-[var(--surface-navy,#102C57)]/90 transition cursor-pointer"
                       >
                         ค้นหา
                       </button>
@@ -920,24 +957,24 @@ export default function DepartmentProductScopeTab({ canManage = false }) {
                     {/* Pagination for Available Products */}
                     <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2.5">
                       <span className="text-xs font-mono font-black text-[#102C57]">
-                        แสดง {products.length > 0 ? (availablePage - 1) * ITEMS_PER_PAGE + 1 : 0} - {Math.min(availablePage * ITEMS_PER_PAGE, products.length)} จาก {products.length} รายการ
+                        {isLoadingProducts ? "กำลังโหลด..." : `แสดง ${products.length} รายการในหน้านี้`}
                       </span>
                       <div className="flex items-center gap-1.5">
                         <button
                           type="button"
-                          disabled={availablePage === 1}
-                          onClick={() => setAvailablePage(prev => Math.max(1, prev - 1))}
+                          disabled={availablePage === 1 || isLoadingProducts}
+                          onClick={() => loadProducts("previous")}
                           className="h-7 w-7 rounded-[2px] border border-[#102C57]/20 flex items-center justify-center hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed text-[#102C57] cursor-pointer"
                         >
                           <ChevronLeft size={14} />
                         </button>
                         <span className="text-xs font-black text-[#102C57] px-1 font-mono">
-                          {availablePage} / {totalAvailablePages}
+                          หน้า {availablePage}
                         </span>
                         <button
                           type="button"
-                          disabled={availablePage === totalAvailablePages}
-                          onClick={() => setAvailablePage(prev => Math.min(totalAvailablePages, prev + 1))}
+                          disabled={!availableHasMore || isLoadingProducts}
+                          onClick={() => loadProducts("next")}
                           className="h-7 w-7 rounded-[2px] border border-[#102C57]/20 flex items-center justify-center hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed text-[#102C57] cursor-pointer"
                         >
                           <ChevronRight size={14} />
@@ -954,16 +991,275 @@ export default function DepartmentProductScopeTab({ canManage = false }) {
                       <CheckSquare size={14} />
                       <span>ผูกสินค้าที่เลือกเข้าแผนก ({selectedProducts.size})</span>
                     </button>
+                    </div></div></SettingsDialog>}
+                </div>
+              )}
+
+              {/* Sub-tab 2: Department Product Subcategories */}
+              {activeSubTab === "subcategories" && (
+                <div className={styles.categoryLayout}>
+                  <div className={styles.categoryList}>
+                    <div>
+                      <h4 className="text-sm font-black text-[#102C57]">หมวดหมู่ย่อยในแผนก</h4>
+                      <p className="mt-0.5 text-xs font-bold text-[#102C57]">
+                        แยกกลุ่มสินค้าเพื่อค้นหาและจัดการได้ง่ายขึ้น
+                      </p>
+                    </div>
+
+                    <div className="mt-3 rounded-[3px] border border-[#d4af37]/40 bg-[#fff8e2]/50 p-2.5">
+                      <div>
+                        <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-[#102C57]">
+                          สร้างหมวดหมู่ย่อยใหม่ในแผนกนี้
+                        </span>
+                        <div className="flex gap-2">
+                          <input
+                            aria-label="ชื่อหมวดหมู่ย่อยใหม่"
+                            value={newSubcategoryName}
+                            onChange={(event) => setNewSubcategoryName(event.target.value)}
+                            maxLength={80}
+                            placeholder="เช่น เนื้อขนม, เปลือกขนม, ครีม"
+                            disabled={!canManage || isLoadingAssigned}
+                            className="h-9 min-w-0 flex-1 rounded-[3px] border border-[#102C57]/20 bg-white px-3 text-xs font-bold text-[#102C57] outline-none focus:border-[#d4af37]"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleCreateSubcategory}
+                            disabled={!newSubcategoryName.trim() || !canManage || isLoadingAssigned}
+                            className="flex h-9 shrink-0 items-center justify-center rounded-[3px] bg-[var(--surface-navy,#102C57)] px-3 text-xs font-black text-white transition hover:bg-[#173f70] disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <Plus size={14} />
+                            <span className="sr-only">สร้างหมวดใหม่</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex-1 overflow-y-auto rounded-[2px] border border-[#102C57]/10">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSubcategoryId("")}
+                        className={`flex w-full items-center justify-between border-b border-[#102C57]/5 px-3 py-2.5 text-left text-xs font-black transition ${
+                          selectedSubcategoryId === ""
+                            ? "bg-[var(--surface-navy,#102C57)] text-white"
+                            : "text-[#102C57] hover:bg-slate-50"
+                        }`}
+                      >
+                        <span>ยังไม่จัดหมวด / ล้างหมวด</span>
+                        <span>{unassignedCount}</span>
+                      </button>
+                      {subcategories.map((subcategory) => {
+                        const assignedCount = subcategoryCountMap.get(subcategory.id) || 0;
+                        const isSelected = selectedSubcategoryId === subcategory.id;
+                        return (
+                          <div
+                            key={subcategory.id}
+                            className={`flex items-center border-b border-[#102C57]/5 last:border-b-0 ${
+                              isSelected ? "bg-[var(--surface-navy,#102C57)] text-white" : "text-[#102C57] hover:bg-slate-50"
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => setSelectedSubcategoryId(subcategory.id)}
+                              className="flex min-w-0 flex-1 items-center justify-between px-3 py-2.5 text-left text-xs font-black"
+                            >
+                              <span className="truncate">{subcategory.name}</span>
+                              <span className="ml-2">{assignedCount}</span>
+                            </button>
+                            {canManage ? (
+                              <div className="flex shrink-0 items-center pr-1">
+                                <button
+                                  type="button"
+                                  aria-label={`แก้ไขหมวด ${subcategory.name}`}
+                                  title="แก้ไขชื่อหมวด"
+                                  onClick={() => handleRenameSubcategory(subcategory)}
+                                  disabled={isLoadingAssigned}
+                                  className="rounded p-1.5 hover:bg-white/15 disabled:opacity-40"
+                                >
+                                  <Pencil size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-label={`ลบหมวด ${subcategory.name}`}
+                                  title={assignedCount ? "ต้องย้ายหรือล้างสินค้าก่อนลบ" : "ลบหมวด"}
+                                  onClick={() => handleDeleteSubcategory(subcategory)}
+                                  disabled={isLoadingAssigned}
+                                  className="rounded p-1.5 hover:bg-red-500/20 disabled:opacity-40"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                      {!subcategories.length ? (
+                        <p className="px-3 py-10 text-center text-xs font-bold text-[#102C57]/60">
+                          ยังไม่มีหมวดหมู่ย่อย
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className={styles.categoryProducts}>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                      <div>
+                        <h4 className="text-sm font-black text-[#102C57]">จัดสินค้าเข้าหมวด</h4>
+                        <p className="mt-0.5 text-xs font-bold text-[#102C57]">
+                          {selectedSubcategoryId
+                            ? `หมวดที่เลือก: “${subcategories.find((s) => s.id === selectedSubcategoryId)?.name || ""}”`
+                            : "เลือกสินค้าแล้วกดเพิ่มเข้าหมวด หรือล้างหมวด"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {selectedSubcategoryId ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleSetProductSubcategory("add")}
+                              disabled={!selectedAssignedProducts.size || !canManage || isLoadingAssigned}
+                              className="h-9 shrink-0 rounded-[3px] bg-[#d4af37] px-4 text-xs font-black text-[#102C57] transition hover:bg-[#c39e2b] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              เพิ่มเข้าหมวดที่เลือก ({selectedAssignedProducts.size})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSetProductSubcategory("remove")}
+                              disabled={!selectedAssignedProducts.size || !canManage || isLoadingAssigned}
+                              className="h-9 shrink-0 rounded-[3px] border border-red-300 bg-red-50 px-3 text-xs font-black text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              นำออกจากหมวด ({selectedAssignedProducts.size})
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleSetProductSubcategory("clear")}
+                            disabled={!selectedAssignedProducts.size || !canManage || isLoadingAssigned}
+                            className="h-9 shrink-0 rounded-[3px] border border-red-300 bg-red-50 px-4 text-xs font-black text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            ล้างหมวดทั้งหมดให้สินค้าที่เลือก ({selectedAssignedProducts.size})
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="relative my-3">
+                      <input
+                        value={assignedSearch}
+                        onChange={(event) => {
+                          setAssignedSearch(event.target.value);
+                          setAssignedPage(1);
+                        }}
+                        placeholder="ค้นหารหัส ชื่อสินค้า หรือหมวดหมู่ย่อย..."
+                        className="h-9 w-full rounded-[3px] border border-[#102C57]/20 bg-slate-50 pl-9 pr-3 text-xs font-bold text-[#102C57] outline-none transition focus:border-[#d4af37] focus:bg-white"
+                      />
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#102C57]" size={14} />
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto rounded-[2px] border border-[#102C57]/10">
+                      <table className="w-full table-fixed border-collapse text-xs text-[#102C57]">
+                        <colgroup>
+                          <col className="w-[44px]" />
+                          <col className="w-[115px]" />
+                          <col />
+                          <col className="w-[150px]" />
+                        </colgroup>
+                        <thead className="sticky top-0 z-10 border-b border-[#102C57]/10 bg-[#eef3f8] font-black uppercase tracking-wider">
+                          <tr>
+                            <th className="px-2 py-2.5 text-center">เลือก</th>
+                            <th className="px-2 py-2.5 text-left">รหัส SKU</th>
+                            <th className="px-2 py-2.5 text-left">รายการสินค้า</th>
+                            <th className="px-2 py-2.5 text-left">หมวดปัจจุบัน</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#102C57]/5">
+                          {paginatedAssignedProducts.map((item) => {
+                            const isChecked = selectedAssignedProducts.has(item.sku_code);
+                            return (
+                              <tr
+                                key={item.sku_code}
+                                onClick={() => toggleSetValue(setSelectedAssignedProducts, item.sku_code)}
+                                className={`cursor-pointer font-bold transition hover:bg-slate-50 ${isChecked ? "bg-[#fff8e2]" : ""}`}
+                              >
+                                <td className="px-2 py-2 text-center" onClick={(event) => event.stopPropagation()}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => toggleSetValue(setSelectedAssignedProducts, item.sku_code)}
+                                    disabled={!canManage || isLoadingAssigned}
+                                    className="h-4 w-4 rounded-[2px] border-[#102C57]/20 accent-[#102C57]"
+                                  />
+                                </td>
+                                <td className="px-2 py-2 font-mono font-black">{item.sku_code}</td>
+                                <td className="truncate px-2 py-2 font-black">{item.sku_name}</td>
+                                <td className="px-2 py-2 text-[11px] font-black text-[#7b6215] align-middle">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="truncate">{item.subcategory_name || "—"}</span>
+                                    {Array.isArray(item.subcategories) && item.subcategories.length > 1 && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setViewingProductSubcategories(item);
+                                        }}
+                                        title="คลิกเพื่อดูหมวดหมู่ทั้งหมด"
+                                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-[3px] bg-[#d4af37]/20 hover:bg-[#d4af37]/35 text-[#102C57] font-mono text-[10px] font-bold border border-[#d4af37]/50 cursor-pointer transition shrink-0"
+                                      >
+                                        <span>+{item.subcategories.length - 1}</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          {!filteredAssignedProducts.length && !isLoadingAssigned ? (
+                            <tr>
+                              <td colSpan={4} className="py-12 text-center text-sm font-bold">
+                                ไม่พบสินค้าผูกที่สอดคล้อง
+                              </td>
+                            </tr>
+                          ) : null}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2.5">
+                      <span className="text-xs font-mono font-black text-[#102C57]">
+                        แสดง {filteredAssignedProducts.length > 0 ? (assignedPage - 1) * ITEMS_PER_PAGE + 1 : 0} - {Math.min(assignedPage * ITEMS_PER_PAGE, filteredAssignedProducts.length)} จาก {filteredAssignedProducts.length} รายการ
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          disabled={assignedPage === 1}
+                          onClick={() => setAssignedPage((previous) => Math.max(1, previous - 1))}
+                          className="h-7 w-7 rounded-[2px] border border-[#102C57]/20 flex items-center justify-center text-[#102C57] hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-30"
+                        >
+                          <ChevronLeft size={14} />
+                        </button>
+                        <span className="px-1 text-xs font-mono font-black text-[#102C57]">
+                          {assignedPage} / {totalAssignedPages}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={assignedPage === totalAssignedPages}
+                          onClick={() => setAssignedPage((previous) => Math.min(totalAssignedPages, previous + 1))}
+                          className="h-7 w-7 rounded-[2px] border border-[#102C57]/20 flex items-center justify-center text-[#102C57] hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-30"
+                        >
+                          <ChevronRight size={14} />
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
 
-              {/* Sub-tab 2: Users Mapping (Redesigned with Pagination & Filter) */}
+              {/* Sub-tab 3: Users Mapping (Redesigned with Pagination & Filter) */}
               {activeSubTab === "users" && (
-                <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 animate-fadeIn">
+                <div className={styles.users}>
                   
                   {/* Left Column: Current Users List (Paginated + Filtered) */}
-                  <div className="xl:col-span-6 bg-white border border-[#102C57]/10 rounded-[3px] p-4.5 shadow-sm flex flex-col h-[520px]">
+                  <div className={styles.assigned}>
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-3">
                       <div>
                         <h4 className="text-sm font-black text-[#102C57]">
@@ -984,6 +1280,7 @@ export default function DepartmentProductScopeTab({ canManage = false }) {
                       </button>
                     </div>
 
+                    <div className={styles.userSearchRow}><button type="button" className={styles.addUserButton} disabled={!canManage} onClick={() => { setAvailableUserPage(1); setAddUsersOpen(true); }}><Plus size={15} />เพิ่มผู้ใช้งาน</button></div>
                     <div className="relative mb-3.5">
                       <input 
                         value={assignedUserSearch} 
@@ -1086,7 +1383,7 @@ export default function DepartmentProductScopeTab({ canManage = false }) {
                   </div>
 
                   {/* Right Column: Add New Users (Paginated + Filter) */}
-                  <div className="xl:col-span-6 bg-white border border-[#102C57]/10 rounded-[3px] p-4.5 shadow-sm flex flex-col h-[520px]">
+                  {addUsersOpen && <SettingsDialog label="เพิ่มผู้ใช้งานในแผนก" busy={isLoadingAssigned} onClose={() => setAddUsersOpen(false)}><div className={styles.dialog}><header><h2>เพิ่มผู้ใช้งาน · {selectedDepartment.code}</h2><button type="button" aria-label="ปิด" disabled={isLoadingAssigned} onClick={() => setAddUsersOpen(false)}><X size={18} /></button></header>{errorMessage && <p role="alert" className="text-sm text-red-700">{errorMessage}</p>}<div className="bg-white flex flex-col">
                     <div>
                       <h4 className="text-xs font-black text-[#102C57]">
                         เพิ่มผู้ใช้งานในแผนก
@@ -1109,7 +1406,7 @@ export default function DepartmentProductScopeTab({ canManage = false }) {
                       <button 
                         type="button" 
                         onClick={async () => setUsers(await loadUsers())} 
-                        className="h-9 px-3.5 rounded-[3px] bg-[#102C57] text-white text-xs font-bold hover:bg-[#102C57]/90 transition cursor-pointer"
+                        className="h-9 px-3.5 rounded-[3px] bg-[var(--surface-navy,#102C57)] text-white text-xs font-bold hover:bg-[var(--surface-navy,#102C57)]/90 transition cursor-pointer"
                       >
                         ค้นหา
                       </button>
@@ -1237,7 +1534,7 @@ export default function DepartmentProductScopeTab({ canManage = false }) {
                       <UserCheck size={14} />
                       <span>มอบสิทธิ์ผู้ใช้ที่เลือก ({selectedUsers.size} คน)</span>
                     </button>
-                  </div>
+                    </div></div></SettingsDialog>}
                 </div>
               )}
             </>
@@ -1255,12 +1552,215 @@ export default function DepartmentProductScopeTab({ canManage = false }) {
         </section>
       </div>
 
+      {/* Modal for viewing and managing multiple subcategories of a single product */}
+      {viewingProductSubcategories && (
+        <SettingsDialog
+          label="หมวดหมู่ย่อยทั้งหมด"
+          busy={isLoadingAssigned}
+          onClose={() => setViewingProductSubcategories(null)}
+        >
+          <div className={styles.dialog}>
+            <header>
+              <div>
+                <h2>หมวดหมู่ย่อยของสินค้า</h2>
+                <p className="text-xs font-mono font-bold text-[#102C57]/70 mt-0.5">
+                  {viewingProductSubcategories.sku_code} · {viewingProductSubcategories.sku_name}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={isLoadingAssigned}
+                aria-label="ปิด"
+                onClick={() => setViewingProductSubcategories(null)}
+              >
+                <X size={18} />
+              </button>
+            </header>
+
+            <div className="bg-white flex flex-col p-1">
+              <h4 className="text-xs font-black text-[#102C57] mb-2 uppercase tracking-wider">
+                หมวดหมู่ย่อยที่สังกัดอยู่ ({viewingProductSubcategories.subcategories?.length || 0})
+              </h4>
+
+              <div className="overflow-hidden border border-[#102C57]/10 rounded-[2px] mb-4">
+                <table className="w-full text-xs border-collapse">
+                  <thead className="bg-[#eef3f8] border-b border-[#102C57]/10 text-xs font-black text-[#102C57]">
+                    <tr>
+                      <th className="px-3 py-2 text-left">ชื่อหมวดหมู่ย่อย</th>
+                      <th className="px-3 py-2 text-center w-[100px]">สถานะ</th>
+                      {canManage && <th className="px-3 py-2 text-center w-[140px]">จัดการ</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#102C57]/5">
+                    {(viewingProductSubcategories.subcategories || []).map((sub) => {
+                      const isPrimary = sub.is_primary || sub.id === viewingProductSubcategories.subcategory_id;
+                      return (
+                        <tr key={sub.id} className="hover:bg-slate-50 font-bold">
+                          <td className="px-3 py-2 text-[#102C57]">{sub.name}</td>
+                          <td className="px-3 py-2 text-center">
+                            {isPrimary ? (
+                              <span className="inline-block px-2 py-0.5 rounded-[2px] bg-[#fff8e2] border border-[#d4af37] text-[#102C57] text-[10px] font-black">
+                                ★ หมวดหลัก
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 font-normal">หมวดเสริม</span>
+                            )}
+                          </td>
+                          {canManage && (
+                            <td className="px-3 py-2 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                {!isPrimary && (
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      setIsLoadingAssigned(true);
+                                      await updateDepartmentProductSubcategory(
+                                        selectedDepartmentId,
+                                        [viewingProductSubcategories.sku_code],
+                                        sub.id,
+                                        "set_primary"
+                                      );
+                                      await loadAssigned(selectedDepartmentId);
+                                      setViewingProductSubcategories((prev) => {
+                                        if (!prev) return null;
+                                        return {
+                                          ...prev,
+                                          subcategory_id: sub.id,
+                                          subcategory_name: sub.name,
+                                          subcategories: prev.subcategories.map((s) => ({
+                                            ...s,
+                                            is_primary: s.id === sub.id,
+                                          })),
+                                        };
+                                      });
+                                      setIsLoadingAssigned(false);
+                                    }}
+                                    className="px-2 py-1 text-[10px] font-bold rounded bg-slate-100 hover:bg-slate-200 text-[#102C57]"
+                                  >
+                                    ตั้งเป็นหลัก
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  title="นำออกจากหมวดนี้"
+                                  onClick={async () => {
+                                    setIsLoadingAssigned(true);
+                                    await updateDepartmentProductSubcategory(
+                                      selectedDepartmentId,
+                                      [viewingProductSubcategories.sku_code],
+                                      sub.id,
+                                      "remove"
+                                    );
+                                    await loadAssigned(selectedDepartmentId);
+                                    setViewingProductSubcategories((prev) => {
+                                      if (!prev) return null;
+                                      const remaining = prev.subcategories.filter((s) => s.id !== sub.id);
+                                      const newPrimary = remaining[0];
+                                      return {
+                                        ...prev,
+                                        subcategory_id: newPrimary?.id || null,
+                                        subcategory_name: newPrimary?.name || "",
+                                        subcategories: remaining.map((s, idx) => ({
+                                          ...s,
+                                          is_primary: idx === 0,
+                                        })),
+                                      };
+                                    });
+                                    setIsLoadingAssigned(false);
+                                  }}
+                                  className="p-1 rounded text-red-600 hover:bg-red-50"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                    {(!viewingProductSubcategories.subcategories || !viewingProductSubcategories.subcategories.length) && (
+                      <tr>
+                        <td colSpan={canManage ? 3 : 2} className="py-4 text-center text-slate-400">
+                          ยังไม่มีหมวดหมู่ย่อย
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {canManage && (
+                <div className="mt-auto border-t border-slate-100 pt-3">
+                  <span className="block text-[11px] font-black text-[#102C57] mb-1">
+                    เพิ่มเข้าหมวดหมู่อื่นเพิ่มเติม:
+                  </span>
+                  <div className="flex gap-2">
+                    <select
+                      value={selectedAddMoreSubcategoryId}
+                      onChange={(e) => setSelectedAddMoreSubcategoryId(e.target.value)}
+                      className="h-8 flex-1 rounded border border-[#102C57]/20 bg-slate-50 px-2 text-xs font-bold text-[#102C57]"
+                    >
+                      <option value="">-- เลือกหมวดหมู่ย่อยที่ต้องการเพิ่ม --</option>
+                      {subcategories
+                        .filter(
+                          (s) =>
+                            !viewingProductSubcategories.subcategories?.some(
+                              (existing) => existing.id === s.id
+                            )
+                        )
+                        .map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                          </option>
+                        ))}
+                    </select>
+                    <button
+                      type="button"
+                      disabled={!selectedAddMoreSubcategoryId || isLoadingAssigned}
+                      onClick={async () => {
+                        if (!selectedAddMoreSubcategoryId) return;
+                        setIsLoadingAssigned(true);
+                        await updateDepartmentProductSubcategory(
+                          selectedDepartmentId,
+                          [viewingProductSubcategories.sku_code],
+                          selectedAddMoreSubcategoryId,
+                          "add"
+                        );
+                        await loadAssigned(selectedDepartmentId);
+                        const addedSub = subcategories.find((s) => s.id === selectedAddMoreSubcategoryId);
+                        setSelectedAddMoreSubcategoryId("");
+                        setViewingProductSubcategories((prev) => {
+                          if (!prev) return null;
+                          const exists = prev.subcategories?.some((s) => s.id === addedSub?.id);
+                          if (exists) return prev;
+                          return {
+                            ...prev,
+                            subcategories: [
+                              ...(prev.subcategories || []),
+                              { id: addedSub.id, name: addedSub.name, is_primary: false },
+                            ],
+                          };
+                        });
+                        setIsLoadingAssigned(false);
+                      }}
+                      className="h-8 px-3 rounded bg-[var(--surface-navy,#102C57)] text-white text-xs font-black hover:bg-[var(--surface-navy,#102C57)]/90 disabled:opacity-40"
+                    >
+                      <Plus size={13} className="inline mr-1" /> เพิ่ม
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </SettingsDialog>
+      )}
+
       {/* Modern Chiaroscuro Add/Edit Modal */}
       {isModalOpen && canManage ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-[2px] animate-fadeIn">
           <div className="w-full max-w-lg overflow-hidden bg-white shadow-2xl border border-[#102C57]/20 rounded-[4px] transform scale-100 transition duration-300">
             {/* Modal Header */}
-            <div className="flex items-center justify-between bg-[#102C57] px-6 py-4 text-white">
+            <div className="flex items-center justify-between bg-[var(--surface-navy,#102C57)] px-6 py-4 text-white">
               <div>
                 <span className="text-[10px] font-black tracking-[0.25em] text-[#d4af37] uppercase font-mono block">
                   DEPARTMENT CONFIGURATION

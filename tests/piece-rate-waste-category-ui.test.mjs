@@ -11,5 +11,11 @@ test("waste form requires and submits one visible waste category", () => {
   assert.match(source, /if \(!wasteCategory\)/);
   assert.match(source, /กรุณาเลือกประเภทของเสียก่อนบันทึก/);
   assert.match(source, /wasteCategory,/);
-  assert.match(source, /disabled=\{isSubmitting \|\| isScaleBusy \|\| !wasteCategory/);
+  assert.match(source, /disabled=\{isSubmitting \|\| isScaleBusy \|\| !wasteCategory \|\| !desktopScale\?\.canSave\}/);
+  assert.match(
+    source,
+    /if \(!desktopScale\?\.canSave \|\| Number\(exactWeightKg \|\| 0\) <= 0\)/,
+    "waste save must use the same centralized scale readiness as weigh-in"
+  );
+  assert.match(source, /desktopScale\?\.portOpen !== false/);
 });

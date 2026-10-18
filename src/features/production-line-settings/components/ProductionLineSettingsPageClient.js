@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { ArrowLeft, ArrowRight, Layers, Settings, Search, Plus, Trash2, Pencil, CheckSquare, X } from "lucide-react";
 import { usePermissions } from "@/lib/usePermissions";
+import { DATA_TASK_PERMISSIONS } from "@/lib/dataTaskPermissions";
 import DepartmentProductScopeTab from "@/features/production-line-settings/components/DepartmentProductScopeTab";
 import MachineSettingsTab from "@/features/production-line-settings/components/MachineSettingsTab";
 import PalletBarcodeSettingsTab from "@/features/production-line-settings/components/PalletBarcodeSettingsTab";
@@ -37,6 +38,22 @@ const TAB_CONFIG = [
   { key: "wip-policies", label: "โหมด WIP", href: "/production-line/settings/wip-policies" },
   { key: "material-owners", label: "เจ้าของวัตถุดิบ", href: "/production-line/settings/material-owners" },
 ];
+
+const TAB_RESOURCES = {
+  type: ["categories", "category-products", "products-cache"],
+  "department-products": ["department-products", "department-product-subcategories", "departments", "department-users"],
+  "work-centers": ["work-centers", "delivery-points"],
+  routing: ["routings", "routing-components", "routing-components-explode", "routing-components-completeness"],
+  machine: ["machine"],
+  shifts: ["shifts", "section-shifts"],
+  "pallet-barcodes": ["pallet-barcodes"],
+  "piece-rates": ["piece-rate", "piece-rate-rate", "snack-wage", "snack-wage-rate"],
+  "wip-policies": ["wip-policies"],
+  "material-owners": ["material-owners"],
+};
+const TAB_TASK_KEYS = Object.fromEntries(Object.entries(TAB_RESOURCES).map(([tab, resources]) => [tab,
+  Object.keys(DATA_TASK_PERMISSIONS).filter((key) => resources.some((resource) => key.replace(/-(view|create|edit|write|delete)$/, "") === "production-settings-" + resource)),
+]));
 
 const DEFAULT_FORM = {
   id: null,
@@ -95,7 +112,7 @@ function ProductTypeMatrix({
                 <Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} onKeyDown={(event) => event.key === "Enter" && onProductSearch()} placeholder="ค้นหา Trade Code หรือชื่อสินค้า..." className="h-11 w-full border border-slate-300 bg-white pl-10 pr-3 text-sm outline-none focus:border-[#102C57]" />
               </div>
-              <button type="button" onClick={onProductSearch} disabled={loadingProducts} className="h-11 w-12 bg-[#102C57] text-white disabled:opacity-50" aria-label="ค้นหาสินค้า"><Search size={18} className="mx-auto" /></button>
+              <button type="button" onClick={onProductSearch} disabled={loadingProducts} className="h-11 w-12 bg-[var(--surface-navy,#102C57)] text-white disabled:opacity-50" aria-label="ค้นหาสินค้า"><Search size={18} className="mx-auto" /></button>
             </div>
           </div>
           <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-600">
@@ -122,13 +139,13 @@ function ProductTypeMatrix({
           </div>
           <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-xs text-slate-600">
             <span>หน้า {pagination.page.toLocaleString()} / {pagination.totalPages.toLocaleString()}</span>
-            <div className="flex gap-2"><button type="button" onClick={onPrev} disabled={!canGoPrev || loadingProducts} className="h-8 border border-slate-300 px-3 disabled:opacity-40">ก่อนหน้า</button><button type="button" onClick={onNext} disabled={!canGoNext || loadingProducts} className="h-8 border border-[#102C57] bg-[#102C57] px-3 text-white disabled:opacity-40">ถัดไป</button></div>
+            <div className="flex gap-2"><button type="button" onClick={onPrev} disabled={!canGoPrev || loadingProducts} className="h-8 border border-slate-300 px-3 disabled:opacity-40">ก่อนหน้า</button><button type="button" onClick={onNext} disabled={!canGoNext || loadingProducts} className="h-8 border border-[#102C57] bg-[var(--surface-navy,#102C57)] px-3 text-white disabled:opacity-40">ถัดไป</button></div>
           </div>
         </div>
 
         <div className="flex flex-row items-center justify-center gap-3 border-b border-slate-200 bg-[#fbfcfd] p-4 lg:flex-col lg:border-b-0 lg:border-r">
           <div className="text-center"><div className="text-xs font-bold text-slate-500">กำลังเลือก</div><div className="mt-1 text-4xl font-black text-[#102C57]">{selectedProducts.size}</div><div className="text-xs text-slate-500">รายการ</div></div>
-          <button type="button" onClick={onAssign} disabled={!selectedCategoryId || selectedProducts.size === 0 || !canManage} className="inline-flex h-11 items-center gap-2 bg-[#102C57] px-5 text-sm font-bold text-white disabled:opacity-40">เพิ่มสินค้า <ArrowRight size={18} /></button>
+          <button type="button" onClick={onAssign} disabled={!selectedCategoryId || selectedProducts.size === 0 || !canManage} className="inline-flex h-11 items-center gap-2 bg-[var(--surface-navy,#102C57)] px-5 text-sm font-bold text-white disabled:opacity-40">เพิ่มสินค้า <ArrowRight size={18} /></button>
           <button type="button" onClick={onUnassign} disabled={!selectedCategoryId || selectedAssigned.size === 0 || !canManage} className="inline-flex h-10 items-center gap-2 border border-slate-300 px-4 text-sm font-semibold text-slate-600 disabled:opacity-40"><ArrowLeft size={17} /> นำออก</button>
         </div>
 
@@ -193,14 +210,21 @@ export default function ProductionLineSettingsPageClient({ initialTab = "type" }
   const [assignedPage, setAssignedPage] = useState(1);
   const [, startTransition] = useTransition();
 
+  const activeTab = ["type", "department-products", "work-centers", "routing", "machine", "shifts", "pallet-barcodes", "piece-rates", "wip-policies", "material-owners"].includes(initialTab)
+    ? initialTab
+    : "type";
+  const taskPermissionsEnabled = permissionState.taskPermissionsEnabled === true;
+  const legacySettingsAccess = permissionState.isAdmin || (!taskPermissionsEnabled && ["production-line-settings-view", "production-line-settings-manage"].some((key) => permissionState.permissions.includes(key)));
+  const visibleTabs = TAB_CONFIG.filter((tab) => legacySettingsAccess || (TAB_TASK_KEYS[tab.key] || []).some((key) => permissionState.permissions.includes(key)));
   const canView = permissionState.loaded
     ? permissionState.isAdmin
-      || permissionState.permissions.includes("production-line-settings-view")
-      || permissionState.permissions.includes("production-line-settings-manage")
+      || legacySettingsAccess
+      || (TAB_TASK_KEYS[activeTab] || []).some((key) => permissionState.permissions.includes(key))
     : false;
   const canManage = permissionState.loaded
     ? permissionState.isAdmin
-      || permissionState.permissions.includes("production-line-settings-manage")
+      || (!taskPermissionsEnabled && permissionState.permissions.includes("production-line-settings-manage"))
+      || (TAB_TASK_KEYS[activeTab] || []).some((key) => /-(create|edit|write|delete)$/.test(key) && permissionState.permissions.includes(key))
     : false;
 
   useEffect(() => {
@@ -208,13 +232,10 @@ export default function ProductionLineSettingsPageClient({ initialTab = "type" }
       return;
     }
     if (!canView) {
-      router.replace("/unauthorized");
+      const nextTab = TAB_CONFIG.find((tab) => (TAB_TASK_KEYS[tab.key] || []).some((key) => permissionState.permissions.includes(key)));
+      router.replace(nextTab?.href || "/unauthorized");
     }
-  }, [canView, permissionState.loaded, router]);
-
-  const activeTab = ["type", "department-products", "work-centers", "routing", "machine", "shifts", "pallet-barcodes", "piece-rates", "wip-policies", "material-owners"].includes(initialTab)
-    ? initialTab
-    : "type";
+  }, [canView, permissionState.loaded, permissionState.permissions, router]);
 
   useEffect(() => {
     productCursorMapRef.current = productCursorMap;
@@ -541,8 +562,8 @@ export default function ProductionLineSettingsPageClient({ initialTab = "type" }
             </div>
 
             <div className="w-full overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-              <div className="inline-flex min-w-max bg-[#102C57]/35 p-1 rounded-lg">
-                {TAB_CONFIG.map((tab) => (
+              <div className="inline-flex min-w-max bg-[var(--surface-navy,#102C57)]/35 p-1 rounded-lg">
+                {visibleTabs.map((tab) => (
                   tab.disabled ? (
                     <span
                       key={tab.key}
@@ -656,7 +677,7 @@ export default function ProductionLineSettingsPageClient({ initialTab = "type" }
                   <button
                     onClick={handleCategorySearch}
                     disabled={loadingCategories}
-                    className="h-9 px-4 bg-[#102C57] hover:bg-[#0b1f3f] text-white text-xs font-bold rounded-lg shadow-sm transition-all"
+                    className="h-9 px-4 bg-[var(--surface-navy,#102C57)] hover:bg-[#0b1f3f] text-white text-xs font-bold rounded-lg shadow-sm transition-all"
                   >
                     <Search size={14} />
                   </button>
@@ -679,7 +700,7 @@ export default function ProductionLineSettingsPageClient({ initialTab = "type" }
                         }}
                         className={`w-full text-left px-3 py-3 rounded-xl border transition-all mb-2 ${
                           isActive
-                            ? "border-[#102C57] bg-[#102C57]/10"
+                            ? "border-[#102C57] bg-[var(--surface-navy,#102C57)]/10"
                             : "border-transparent hover:border-gray-200 hover:bg-gray-50"
                         }`}
                       >
@@ -688,7 +709,7 @@ export default function ProductionLineSettingsPageClient({ initialTab = "type" }
                             <div className="text-xs font-bold text-[#102C57]">{category.code}</div>
                             <div className="text-sm font-semibold text-gray-800">{category.name}</div>
                           </div>
-                          <span className="text-[10px] bg-[#102C57] text-white px-2 py-0.5 rounded-full font-mono">
+                          <span className="text-[10px] bg-[var(--surface-navy,#102C57)] text-white px-2 py-0.5 rounded-full font-mono">
                             {(category.product_count ?? 0).toLocaleString()}
                           </span>
                         </div>
@@ -725,7 +746,7 @@ export default function ProductionLineSettingsPageClient({ initialTab = "type" }
                   <button
                     onClick={openEditModal}
                     disabled={!selectedCategory || !canManage}
-                    className="h-8 px-3 bg-[#102C57] hover:bg-[#0b1f3f] text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-2 disabled:opacity-50"
+                    className="h-8 px-3 bg-[var(--surface-navy,#102C57)] hover:bg-[#0b1f3f] text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-2 disabled:opacity-50"
                   >
                     <Pencil size={14} />
                     แก้ไข
@@ -815,7 +836,7 @@ export default function ProductionLineSettingsPageClient({ initialTab = "type" }
                     <button
                       onClick={handleProductSearch}
                       disabled={loadingProducts}
-                      className="h-9 px-4 bg-[#102C57] hover:bg-[#0b1f3f] text-white text-xs font-bold rounded-lg shadow-sm transition-all"
+                      className="h-9 px-4 bg-[var(--surface-navy,#102C57)] hover:bg-[#0b1f3f] text-white text-xs font-bold rounded-lg shadow-sm transition-all"
                     >
                       <Search size={14} />
                     </button>
@@ -848,7 +869,7 @@ export default function ProductionLineSettingsPageClient({ initialTab = "type" }
                     <div className="text-center text-xs text-gray-400 py-6">กำลังโหลดสินค้า...</div>
                   ) : products.length ? (
                     <table className="w-full text-xs">
-                      <thead className="bg-[#102C57] text-white sticky top-0">
+                      <thead className="bg-[var(--surface-navy,#102C57)] text-white sticky top-0">
                         <tr>
                           <th className="text-left py-2 px-2 w-8"></th>
                           <th className="text-left py-2 px-2">รหัส</th>
@@ -915,9 +936,9 @@ export default function ProductionLineSettingsPageClient({ initialTab = "type" }
       </div>
 
       {activeTab === "type" && isCategoryModalOpen && canManage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#102C57]/55 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[var(--surface-navy,#102C57)]/55 backdrop-blur-sm">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
-            <div className="px-6 py-4 bg-[#102C57] text-white flex justify-between items-center">
+            <div className="px-6 py-4 bg-[var(--surface-navy,#102C57)] text-white flex justify-between items-center">
               <div>
                 <h2 className="text-lg font-bold">
                   {categoryForm.id ? "แก้ไขประเภท" : "เพิ่มประเภท"}

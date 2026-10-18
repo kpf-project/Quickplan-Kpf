@@ -1,0 +1,26 @@
+.history { margin-top: 18px; background: white; color: #102c57; min-width: 0; }
+.history .toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; padding: 10px 0; border-top: 1px solid #dce5f0; }
+.history .toolbar h3 { margin: 0; font-size: 18px; line-height: 1.4; font-weight: 700; letter-spacing: 0; text-transform: none; }
+.history .toolbar small { font-size: 13px; font-weight: 400; color: #506886; }
+.controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 13px; }
+.history .toolbar button { display: inline-flex; align-items: center; gap: 6px; }
+.history .toolbar :is(button,input,select) { min-height: 34px; padding: 5px 10px; border: 1px solid #cbd7e6; border-radius: 4px; background: white; }
+.scroll { overflow-x: auto; border: 1px solid #dce5f0; border-radius: 4px; }
+.history table { width: 100%; min-width: 980px; border-collapse: collapse; font-size: 14px; line-height: 1.35; }
+.history table thead tr { background: #eaf0f6; color: #102c57; text-transform: none; letter-spacing: 0; }
+.history table th { padding: 10px 8px; height: 44px; font-size: 13px; font-weight: 600; color: #102c57; white-space: nowrap; background: #eaf0f6; border: 1px solid #d5dfeb; }
+.history table td { padding: 4px 8px; height: 36px; vertical-align: middle; font-size: 13px; font-weight: 400; border: 1px solid #e2e8f0; font-variant-numeric: tabular-nums; }
+.history table tr:nth-child(even) { background: #f8fafc; }
+.history table tbody tr:hover { background: #eef5fc; }
+.history table td p { display: inline; font-size: 13px; line-height: 1.35; }
+.history table td p + p::before { content: " · "; }
+.history table td button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 28px; height: 28px; padding: 3px 10px; font-size: 12px; white-space: nowrap; border-radius: 4px; }
+.history table td span { font-size: 12px; }
+.history table td.empty { padding: 18px; height: 64px; text-align: center; color: #64748b; }
+.history button:disabled { opacity: .45; cursor: not-allowed; }
+.history :is(button,input,select):focus-visible { outline: 2px solid #1683dd; outline-offset: 2px; }
+.history .footer > div { padding: 10px 0; background: white; border-top: 0; }
+.history .footer button { min-width: 30px; height: 30px; min-height: 30px; padding: 3px 8px; }
+.history .footer button[aria-current="page"] { color: white; background: var(--surface-navy, #10345d); }
+.history .footer select { height: 32px; min-height: 32px; padding: 3px 8px; }
+@media(max-width: 640px) { .history .toolbar h3 { font-size: 16px; } .controls { width: 100%; } }

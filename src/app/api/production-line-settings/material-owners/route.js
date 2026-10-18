@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { normalizeParam } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
@@ -40,7 +40,7 @@ async function loadUsedMaterialSkuCodesFromRouting(supabaseAdmin) {
 // GET - list material owner assignments
 export async function GET(request) {
   try {
-    await requirePermissionKeys(request, ["production-line-settings-view", "production-line-settings-manage"]);
+    await requireTaskPermission(request, "production-settings-material-owners-view");
 
     const { searchParams } = new URL(request.url);
     const search = normalizeParam(searchParams.get("search")) || "";
@@ -105,7 +105,7 @@ export async function GET(request) {
 // POST - assign material to department (upsert)
 export async function POST(request) {
   try {
-    const permission = await requirePermissionKeys(request, ["production-line-settings-manage"]);
+    const permission = await requireTaskPermission(request, "production-settings-material-owners-write");
 
     const body = await readJson(request);
     const materialSkuCode = normalizeParam(body?.materialSkuCode)?.toUpperCase();
@@ -143,7 +143,7 @@ export async function POST(request) {
 // DELETE - remove material owner assignment
 export async function DELETE(request) {
   try {
-    await requirePermissionKeys(request, ["production-line-settings-manage"]);
+    await requireTaskPermission(request, "production-settings-material-owners-delete");
 
     const { searchParams } = new URL(request.url);
     const materialSkuCode = normalizeParam(searchParams.get("materialSkuCode"))?.toUpperCase();

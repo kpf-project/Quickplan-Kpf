@@ -8,8 +8,11 @@ export const metadata = {
   description: "รายงานเบิกแบบละเอียด พร้อมจัดกลุ่มตามวันที่ LOT สินค้า และประเภทการเบิก",
 };
 
-export default async function ProductionStockIssueReportPage() {
+export default async function ProductionStockIssueReportPage({ searchParams }) {
+  const params = await searchParams;
   const reportData = await loadProductionStockIssueReportData(undefined, {
+    dateFrom: params?.dateFrom || null,
+    dateTo: params?.dateTo || null,
     includeAll: true,
     limit: 1000,
   });

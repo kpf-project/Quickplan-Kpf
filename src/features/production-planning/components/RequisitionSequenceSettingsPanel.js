@@ -166,7 +166,7 @@ export default function RequisitionSequenceSettingsPanel({ payload, mutate, isLo
               setErrorMsg("");
               setSuccessMsg("");
             }}
-            className="inline-flex items-center gap-2 rounded-[2px] border border-[#102C57] bg-[#102C57] px-4 py-2 text-xs font-black uppercase tracking-[1.28px] text-white transition hover:bg-[#fff8e2] hover:text-black hover:border-[#d4af37] cursor-pointer"
+            className="inline-flex items-center gap-2 rounded-[2px] border border-[#102C57] bg-[var(--surface-navy,#102C57)] px-4 py-2 text-xs font-black uppercase tracking-[1.28px] text-white transition hover:bg-[#fff8e2] hover:text-black hover:border-[#d4af37] cursor-pointer"
           >
             <Plus className="h-4 w-4" />
             เพิ่มพรีฟิกซ์ใหม่
@@ -177,7 +177,7 @@ export default function RequisitionSequenceSettingsPanel({ payload, mutate, isLo
         <div className="overflow-x-auto">
           <table className="w-full table-fixed border-collapse text-xs text-black border-2 border-black">
             <thead>
-              <tr className="bg-[#102C57] text-white">
+              <tr className="bg-[var(--surface-navy,#102C57)] text-white">
                 <th className="w-[20%] border-r border-b border-black px-4 py-3 text-left font-black uppercase tracking-[1px]">พรีฟิกซ์ (Prefix)</th>
                 <th className="w-[20%] border-r border-b border-black px-4 py-3 text-right font-black uppercase tracking-[1px]">เลขล่าสุด (Last Value)</th>
                 <th className="w-[25%] border-r border-b border-black px-4 py-3 text-center font-black uppercase tracking-[1px]">ตัวอย่างเลขถัดไป (Next Number)</th>
@@ -282,9 +282,9 @@ export default function RequisitionSequenceSettingsPanel({ payload, mutate, isLo
 
       {/* Create Sequence Modal (Ferrari Design) */}
       {isCreateOpen && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-[#102C57]/55 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-[var(--surface-navy,#102C57)]/55 backdrop-blur-sm">
           <div className="bg-white rounded-[2px] border-2 border-[#102C57] shadow-2xl w-full max-w-md overflow-hidden">
-            <div className="px-6 py-4 bg-[#102C57] text-white flex justify-between items-center border-b border-black">
+            <div className="px-6 py-4 bg-[var(--surface-navy,#102C57)] text-white flex justify-between items-center border-b border-black">
               <div>
                 <h3 className="text-base font-black uppercase tracking-[1px] text-white flex items-center gap-2">
                   <Calendar className="h-5 w-5 text-[#d4af37]" />
@@ -352,7 +352,7 @@ export default function RequisitionSequenceSettingsPanel({ payload, mutate, isLo
                 type="button"
                 onClick={handleCreateSequence}
                 disabled={submitting}
-                className="rounded-[2px] border border-[#102C57] bg-[#102C57] hover:bg-[#0c2345] px-4 py-2 text-xs font-black uppercase tracking-[1.28px] text-white transition cursor-pointer"
+                className="rounded-[2px] border border-[#102C57] bg-[var(--surface-navy,#102C57)] hover:bg-[var(--surface-navy,#0c2345)] px-4 py-2 text-xs font-black uppercase tracking-[1.28px] text-white transition cursor-pointer"
               >
                 ยืนยันการเพิ่ม
               </button>

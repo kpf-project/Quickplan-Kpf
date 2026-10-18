@@ -88,7 +88,7 @@ export async function loadScopedRequisitionDraftRow(supabaseAdmin, {
   allowLegacyFallback = false,
 }) {
   const scopeKey = buildRequisitionDraftScopeKey(masterPlanNo, dateFrom, dateTo, scope);
-  const selectColumns = "scope_key, master_plan_no, date_from, date_to, draft_payload, updated_at, updated_by";
+  const selectColumns = "scope_key, master_plan_no, date_from, date_to, draft_payload, source_revision, updated_at, updated_by";
   const scopedResult = await supabaseAdmin
     .from("production_requisition_preview_drafts")
     .select(selectColumns)

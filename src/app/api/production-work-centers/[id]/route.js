@@ -1,5 +1,5 @@
 import { getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import {
   mapWorkCenterRow,
   normalizeWorkCenterInput,
@@ -71,10 +71,7 @@ async function loadWorkCenter(supabaseAdmin, id) {
 
 export async function GET(request, { params }) {
   try {
-    await requirePermissionKeys(request, [
-      "production-line-settings-view",
-      "production-line-settings-manage",
-    ]);
+    await requireTaskPermission(request, "production-settings-work-centers-view");
     const { id } = await params;
 
     const supabaseAdmin = getSupabaseAdmin();
@@ -139,9 +136,7 @@ export async function GET(request, { params }) {
 
 export async function PUT(request, { params }) {
   try {
-    const { userId } = await requirePermissionKeys(request, [
-      "production-line-settings-manage",
-    ]);
+    const { userId } = await requireTaskPermission(request, "production-settings-work-centers-edit");
     const { id } = await params;
     const body = await readJson(request);
     const input = normalizeWorkCenterInput(body);
@@ -185,6 +180,7 @@ export async function PUT(request, { params }) {
         description: input.description,
         sort_order: input.sortOrder,
         is_active: input.isActive,
+        requires_planning: input.requiresPlanning,
         consolidate_requisition_preview_by_date: input.consolidateRequisitionPreviewByDate,
         updated_by: userId,
       })
@@ -199,6 +195,7 @@ export async function PUT(request, { params }) {
         description,
         sort_order,
         is_active,
+        requires_planning,
         consolidate_requisition_preview_by_date,
         created_at,
         updated_at,
@@ -219,9 +216,7 @@ export async function PUT(request, { params }) {
 
 export async function DELETE(request, { params }) {
   try {
-    const { userId } = await requirePermissionKeys(request, [
-      "production-line-settings-manage",
-    ]);
+    const { userId } = await requireTaskPermission(request, "production-settings-work-centers-delete");
     const { id } = await params;
 
     const supabaseAdmin = getSupabaseAdmin();

@@ -2950,7 +2950,7 @@ export default function WeightScalePageClient({
         )}
       />
 
-      <section className="border-b border-[#1f3047] bg-[#102C57] text-white">
+      <section className="border-b border-[#1f3047] bg-[var(--surface-navy,#102C57)] text-white">
         <div className="mx-auto max-w-[84rem] px-4 py-3 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-6">
@@ -2993,7 +2993,7 @@ export default function WeightScalePageClient({
                   <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-5">
                     <div className="flex flex-col">
                       <span className="text-[10px] font-black uppercase tracking-widest text-black">รหัสผลิตภัณฑ์</span>
-                      <span className="mt-1 bg-[#102C57] text-[#d4af37] px-3 py-1 text-sm font-black tracking-wider self-start">
+                      <span className="mt-1 bg-[var(--surface-navy,#102C57)] text-[#d4af37] px-3 py-1 text-sm font-black tracking-wider self-start">
                         {selectedProduct ? selectedProduct.code : "ยังไม่เลือก"}
                       </span>
                     </div>
@@ -3048,7 +3048,7 @@ export default function WeightScalePageClient({
                 <button
                   type="button"
                   onClick={openProductPicker}
-                  className="flex items-center justify-center gap-2 h-11 border-2 border-[#102C57] text-[10px] font-black uppercase tracking-wider text-[#102C57] transition hover:bg-[#102C57] hover:text-white"
+                  className="flex items-center justify-center gap-2 h-11 border-2 border-[#102C57] text-[10px] font-black uppercase tracking-wider text-[#102C57] transition hover:bg-[var(--surface-navy,#102C57)] hover:text-white"
                 >
                   <Plus size={16} />
                   เปลี่ยนผลิตภัณฑ์
@@ -3064,7 +3064,7 @@ export default function WeightScalePageClient({
                   className={`flex items-center justify-center gap-2 h-11 border-2 text-[10px] font-black uppercase tracking-wider transition ${
                     inputMode === WEIGHT_SCALE_INPUT_MODES.IP && isStreaming
                       ? "border-rose-200 text-rose-600 hover:bg-rose-50"
-                      : "border-[#102C57] text-[#102C57] hover:bg-[#102C57] hover:text-white"
+                      : "border-[#102C57] text-[#102C57] hover:bg-[var(--surface-navy,#102C57)] hover:text-white"
                   }`}
                 >
                   {inputMode === WEIGHT_SCALE_INPUT_MODES.SERIAL ? <Cable size={16} /> : (isStreaming ? <X size={16} /> : <Radar size={16} />)}
@@ -3076,7 +3076,7 @@ export default function WeightScalePageClient({
             </div>
 
             {/* 2. MASTER WEIGHT DISPLAY (Hero Bottom) - Fully Responsive */}
-            <div className="relative bg-[#102C57] px-4 sm:px-10 py-8 text-center lg:py-12">
+            <div className="relative bg-[var(--surface-navy,#102C57)] px-4 sm:px-10 py-8 text-center lg:py-12">
               <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#d4af37_1px,transparent_1px)] [background-size:20px_20px]" />
               
               <div className="relative flex flex-col items-center justify-center">
@@ -3225,7 +3225,7 @@ export default function WeightScalePageClient({
       {isSettingsOpen ? (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/45 px-3 py-3 sm:py-5">
           <div className={`w-full border border-[#d7dde5] bg-white ${settingsViewMode === "product" ? "max-h-[88vh] max-w-[88vw] overflow-hidden xl:max-w-[1360px]" : "max-w-xl"}`}>
-            <div className="flex items-center justify-between border-b border-[#d7dde5] bg-[#102C57] px-6 py-4 text-white">
+            <div className="flex items-center justify-between border-b border-[#d7dde5] bg-[var(--surface-navy,#102C57)] px-6 py-4 text-white">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#d4af37]">
                   {settingsViewMode === "product"
@@ -3260,14 +3260,14 @@ export default function WeightScalePageClient({
                       <button
                         type="button"
                         onClick={() => changeInputMode(WEIGHT_SCALE_INPUT_MODES.IP)}
-                        className={`h-11 border text-xs font-black uppercase tracking-[0.08em] transition ${inputMode === WEIGHT_SCALE_INPUT_MODES.IP ? "border-[#102C57] bg-[#102C57] text-white" : "border-[#d7dde5] bg-white text-[#102C57]"}`}
+                        className={`h-11 border text-xs font-black uppercase tracking-[0.08em] transition ${inputMode === WEIGHT_SCALE_INPUT_MODES.IP ? "border-[#102C57] bg-[var(--surface-navy,#102C57)] text-white" : "border-[#d7dde5] bg-white text-[#102C57]"}`}
                       >
                         IP Network (เดิม)
                       </button>
                       <button
                         type="button"
                         onClick={() => changeInputMode(WEIGHT_SCALE_INPUT_MODES.SERIAL)}
-                        className={`h-11 border text-xs font-black uppercase tracking-[0.08em] transition ${inputMode === WEIGHT_SCALE_INPUT_MODES.SERIAL ? "border-[#102C57] bg-[#102C57] text-white" : "border-[#d7dde5] bg-white text-[#102C57]"}`}
+                        className={`h-11 border text-xs font-black uppercase tracking-[0.08em] transition ${inputMode === WEIGHT_SCALE_INPUT_MODES.SERIAL ? "border-[#102C57] bg-[var(--surface-navy,#102C57)] text-white" : "border-[#d7dde5] bg-white text-[#102C57]"}`}
                       >
                         RS232 → USB
                       </button>
@@ -3337,7 +3337,7 @@ export default function WeightScalePageClient({
                             </label>
                           ))}
                         </div>
-                        <div className="bg-[#102C57] px-4 py-4 text-center text-white">
+                        <div className="bg-[var(--surface-navy,#102C57)] px-4 py-4 text-center text-white">
                           <p className="text-xs text-white/60">น้ำหนักทดสอบ Realtime</p>
                           <p className="mt-1 text-4xl font-black">{Number(serialInput.reading?.weightKg || 0).toFixed(3)} <span className="text-base">kg</span></p>
                           <p className="mt-2 text-xs text-white/70">พอร์ต {serialInput.portOpen ? "เปิด" : "ปิด"} · {serialInput.isReadingFresh ? "LIVE" : "รอข้อมูล"}</p>
@@ -3370,7 +3370,7 @@ export default function WeightScalePageClient({
                         onClick={() => handlePrintModeChange("agent")}
                         className={`h-11 text-xs font-black uppercase tracking-[0.08em] border transition ${
                           printMode === "agent"
-                            ? "bg-[#102C57] text-white border-[#102C57]"
+                            ? "bg-[var(--surface-navy,#102C57)] text-white border-[#102C57]"
                             : "bg-white text-[#102C57] border-[#d7dde5] hover:border-[#102C57]"
                         }`}
                       >
@@ -3381,7 +3381,7 @@ export default function WeightScalePageClient({
                         onClick={() => handlePrintModeChange("webusb")}
                         className={`h-11 text-xs font-black uppercase tracking-[0.08em] border transition ${
                           printMode === "webusb"
-                            ? "bg-[#102C57] text-white border-[#102C57]"
+                            ? "bg-[var(--surface-navy,#102C57)] text-white border-[#102C57]"
                             : "bg-white text-[#102C57] border-[#d7dde5] hover:border-[#102C57]"
                         }`}
                       >
@@ -3425,7 +3425,7 @@ export default function WeightScalePageClient({
                             type="button"
                             onClick={handlePairUsbDevice}
                             disabled={isConnectingUsb}
-                            className="flex-1 inline-flex h-10 items-center justify-center gap-2 border border-[#102C57] bg-[#102C57] text-white px-4 text-xs font-bold transition hover:bg-[#0d3a71] disabled:opacity-60"
+                            className="flex-1 inline-flex h-10 items-center justify-center gap-2 border border-[#102C57] bg-[var(--surface-navy,#102C57)] text-white px-4 text-xs font-bold transition hover:bg-[#0d3a71] disabled:opacity-60"
                           >
                             {isConnectingUsb ? (
                               <Loader2 size={14} className="animate-spin" />
@@ -3546,7 +3546,7 @@ export default function WeightScalePageClient({
                               || isLoadingPrinters
                               || !selectedPrinterName
                             }
-                            className="inline-flex h-10 items-center justify-center gap-2 border border-[#102C57] bg-[#102C57] px-4 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#0d3a71] disabled:cursor-not-allowed disabled:opacity-60"
+                            className="inline-flex h-10 items-center justify-center gap-2 border border-[#102C57] bg-[var(--surface-navy,#102C57)] px-4 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#0d3a71] disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             {isTestingPrinter ? (
                               <Loader2 size={14} className="animate-spin" />
@@ -3565,7 +3565,7 @@ export default function WeightScalePageClient({
               ) : (
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,13fr)_minmax(0,7fr)]">
                   <section className="overflow-hidden border border-[#102C57] bg-white">
-                    <div className="border-b border-[#102C57] bg-[#102C57] px-4 py-3 text-white">
+                    <div className="border-b border-[#102C57] bg-[var(--surface-navy,#102C57)] px-4 py-3 text-white">
                       <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#d4af37]">
                         ภาพรวมสินค้า
                       </p>
@@ -3607,7 +3607,7 @@ export default function WeightScalePageClient({
                                 key={product.code}
                                 type="button"
                                 onClick={() => selectProduct(product.code)}
-                                className={`grid w-full grid-cols-[1.1fr_3fr_1.4fr_1.3fr_1.2fr_1.2fr] border-b px-3 py-2 text-left transition ${isSelected ? "border-[#102C57] bg-[#102C57] text-white" : "border-[#e4e7eb] bg-white text-[#102C57] hover:bg-[#f5f5f5]"}`}
+                                className={`grid w-full grid-cols-[1.1fr_3fr_1.4fr_1.3fr_1.2fr_1.2fr] border-b px-3 py-2 text-left transition ${isSelected ? "border-[#102C57] bg-[var(--surface-navy,#102C57)] text-white" : "border-[#e4e7eb] bg-white text-[#102C57] hover:bg-[#f5f5f5]"}`}
                               >
                                 <span className="whitespace-nowrap pr-2 text-[13px] font-black uppercase tracking-[0.08em]">
                                   {product.code}
@@ -3731,7 +3731,7 @@ export default function WeightScalePageClient({
                             isCreatingLot
                             || !selectedProductCode
                           }
-                          className="inline-flex h-12 items-center justify-center gap-2 border border-[#102C57] bg-[#102C57] px-4 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#0d2448] disabled:cursor-not-allowed disabled:opacity-60"
+                          className="inline-flex h-12 items-center justify-center gap-2 border border-[#102C57] bg-[var(--surface-navy,#102C57)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#0d2448] disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {isCreatingLot ? (
                             <Loader2 size={16} className="animate-spin" />
@@ -3860,7 +3860,7 @@ export default function WeightScalePageClient({
                 type="button"
                 onClick={saveProfile}
                 disabled={settingsViewMode === "product" ? isSavingProductConfig : isSaving}
-                className="inline-flex h-11 items-center justify-center gap-2 border border-[#102C57] bg-[#102C57] px-5 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#0d2448] disabled:opacity-60"
+                className="inline-flex h-11 items-center justify-center gap-2 border border-[#102C57] bg-[var(--surface-navy,#102C57)] px-5 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#0d2448] disabled:opacity-60"
               >
                 {(settingsViewMode === "product" ? isSavingProductConfig : isSaving) ? (
                   <Loader2 size={16} className="animate-spin" />
@@ -3877,7 +3877,7 @@ export default function WeightScalePageClient({
       {false && isProductPickerOpen ? (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/45 px-4">
           <div className="w-full max-w-5xl border border-[#d7dde5] bg-white">
-            <div className="flex items-center justify-between border-b border-[#d7dde5] bg-[#102C57] px-6 py-4 text-white">
+            <div className="flex items-center justify-between border-b border-[#d7dde5] bg-[var(--surface-navy,#102C57)] px-6 py-4 text-white">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#d4af37]">
                   {hasLotOptions ? "เลือกล็อต" : "เลือกสินค้า"}
@@ -4009,7 +4009,7 @@ export default function WeightScalePageClient({
                           || isLoadingPrinters
                           || !selectedPrinterName
                         }
-                        className="inline-flex h-10 items-center justify-center gap-2 border border-[#102C57] bg-[#102C57] px-4 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#0d3a71] disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex h-10 items-center justify-center gap-2 border border-[#102C57] bg-[var(--surface-navy,#102C57)] px-4 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#0d3a71] disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {isTestingPrinter ? (
                           <Loader2 size={14} className="animate-spin" />
@@ -4026,7 +4026,7 @@ export default function WeightScalePageClient({
               ) : (
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,13fr)_minmax(0,7fr)]">
                   <section className="overflow-hidden border border-[#102C57] bg-white">
-                    <div className="border-b border-[#102C57] bg-[#102C57] px-4 py-3 text-white">
+                    <div className="border-b border-[#102C57] bg-[var(--surface-navy,#102C57)] px-4 py-3 text-white">
                       <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#d4af37]">
                         ภาพรวมสินค้า
                       </p>
@@ -4068,7 +4068,7 @@ export default function WeightScalePageClient({
                                 key={product.code}
                                 type="button"
                                 onClick={() => selectProduct(product.code)}
-                                className={`grid w-full grid-cols-[1.1fr_3fr_1.4fr_1.3fr_1.2fr_1.2fr] border-b px-3 py-2 text-left transition ${isSelected ? "border-[#102C57] bg-[#102C57] text-white" : "border-[#e4e7eb] bg-white text-[#102C57] hover:bg-[#f5f5f5]"}`}
+                                className={`grid w-full grid-cols-[1.1fr_3fr_1.4fr_1.3fr_1.2fr_1.2fr] border-b px-3 py-2 text-left transition ${isSelected ? "border-[#102C57] bg-[var(--surface-navy,#102C57)] text-white" : "border-[#e4e7eb] bg-white text-[#102C57] hover:bg-[#f5f5f5]"}`}
                               >
                                 <span className="whitespace-nowrap pr-2 text-[13px] font-black uppercase tracking-[0.08em]">
                                   {product.code}
@@ -4192,7 +4192,7 @@ export default function WeightScalePageClient({
                             isCreatingLot
                             || !selectedProductCode
                           }
-                          className="inline-flex h-12 items-center justify-center gap-2 border border-[#102C57] bg-[#102C57] px-4 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#0d2448] disabled:cursor-not-allowed disabled:opacity-60"
+                          className="inline-flex h-12 items-center justify-center gap-2 border border-[#102C57] bg-[var(--surface-navy,#102C57)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#0d2448] disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {isCreatingLot ? (
                             <Loader2 size={16} className="animate-spin" />
@@ -4321,7 +4321,7 @@ export default function WeightScalePageClient({
                 type="button"
                 onClick={saveProfile}
                 disabled={settingsViewMode === "product" ? isSavingProductConfig : isSaving}
-                className="inline-flex h-11 items-center justify-center gap-2 border border-[#102C57] bg-[#102C57] px-5 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#0d2448] disabled:opacity-60"
+                className="inline-flex h-11 items-center justify-center gap-2 border border-[#102C57] bg-[var(--surface-navy,#102C57)] px-5 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#0d2448] disabled:opacity-60"
               >
                 {(settingsViewMode === "product" ? isSavingProductConfig : isSaving) ? (
                   <Loader2 size={16} className="animate-spin" />
@@ -4447,7 +4447,7 @@ export default function WeightScalePageClient({
                   </div>
                 ) : (
                   <table className="w-full border-collapse text-sm">
-                    <thead className="sticky top-0 z-10 bg-[#102C57] text-white">
+                    <thead className="sticky top-0 z-10 bg-[var(--surface-navy,#102C57)] text-white">
                       <tr className="text-left text-[11px] font-black uppercase tracking-[0.16em]">
                         <th className="w-[8%] border-r border-white/10 px-4 py-3 text-center text-[#f3d67a]">{"\u0e25\u0e33\u0e14\u0e31\u0e1a"}</th>
                         <th className="w-[16%] border-r border-white/10 px-4 py-3 text-[#f3d67a]">{"\u0e23\u0e2b\u0e31\u0e2a"}</th>
@@ -4505,7 +4505,7 @@ export default function WeightScalePageClient({
               </div>
 
               <aside className="border border-[#d7dde5] bg-[#fbfcfd]">
-                <div className="border-b border-[#d7dde5] bg-[#102C57] px-5 py-4 text-white">
+                <div className="border-b border-[#d7dde5] bg-[var(--surface-navy,#102C57)] px-5 py-4 text-white">
                   <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#d4af37]">
                     ตั้งค่าก่อนเริ่มชั่ง
                   </p>

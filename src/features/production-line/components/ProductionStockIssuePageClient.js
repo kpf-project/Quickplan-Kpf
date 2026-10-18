@@ -15,7 +15,6 @@ import {
   Filter,
   ListChecks,
   Loader2,
-  Package,
   ScanSearch,
   Search,
   Square,
@@ -52,6 +51,7 @@ function StockIssueIcon({ size = 24, className = "" }) {
   );
 }
 
+import ProductionJamUsageDialog from "@/features/production-line/components/ProductionJamUsageDialog";
 import WeightScalePrimaryHeader from "@/features/production-line/components/WeightScalePrimaryHeader";
 import { createBarcodeScanQueue } from "@/features/production-line/lib/barcodeScanQueue";
 import {
@@ -119,6 +119,11 @@ function normalizeIssueRows(rows) {
     barcode: String(row?.barcode || "").trim() || "-",
     productCode: String(row?.productCode || "").trim().toUpperCase() || "-",
     productName: String(row?.productName || "").trim() || "-",
+    targetProductCode: String(row?.targetProductCode || "").trim().toUpperCase(),
+    targetProductName: String(row?.targetProductName || "").trim(),
+    targetProductCategoryCode: String(row?.targetProductCategoryCode || "").trim().toUpperCase(),
+    destinationRoomCode: String(row?.destinationRoomCode || "").trim().toUpperCase(),
+    destinationRoomName: String(row?.destinationRoomName || "").trim(),
     lotNo: String(row?.lotNo || "").trim() || "-",
     quantity: Number(row?.quantity || 0),
     weightKg: Number(row?.weightKg || 0),
@@ -165,6 +170,7 @@ function getStatusTone(state) {
 export default function ProductionStockIssuePageClient({
   scope,
   issueTypes,
+  destinationRooms = [],
   initialRecentIssues,
   todayIssueDate,
   initialSummary,
@@ -179,6 +185,8 @@ export default function ProductionStockIssuePageClient({
     scanQueueRef.current = createBarcodeScanQueue();
   }
   const [issueType, setIssueType] = useState(issueTypes[0]?.value || "KPF");
+  const [destinationRoomCode, setDestinationRoomCode] = useState("");
+  const [isJamUsageOpen, setIsJamUsageOpen] = useState(false);
   const [issueDate, setIssueDate] = useState(todayIssueDate || "");
   const [isIssueTypeMenuOpen, setIsIssueTypeMenuOpen] = useState(false);
   const [barcode, setBarcode] = useState("");
@@ -225,6 +233,26 @@ export default function ProductionStockIssuePageClient({
     const startIndex = (currentPage - 1) * itemsPerPage;
     return rows.slice(startIndex, startIndex + itemsPerPage);
   }, [rows, currentPage]);
+
+  const productSummaries = useMemo(() => {
+    const map = new Map();
+    for (const row of rows) {
+      const code = row.productCode || "-";
+      const name = row.productName || code;
+      const current = map.get(code) || {
+        productCode: code,
+        productName: name,
+        count: 0,
+        totalQuantity: 0,
+        totalWeightKg: 0,
+      };
+      current.count += 1;
+      current.totalQuantity += Number(row.quantity || 0);
+      current.totalWeightKg = Number((current.totalWeightKg + Number(row.weightKg || 0)).toFixed(3));
+      map.set(code, current);
+    }
+    return Array.from(map.values()).sort((a, b) => a.productCode.localeCompare(b.productCode));
+  }, [rows]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -287,6 +315,9 @@ export default function ProductionStockIssuePageClient({
   const productOptions = useMemo(() => (
     Array.isArray(scope?.products) ? scope.products : []
   ), [scope?.products]);
+  const selectedDestinationRoom = destinationRooms.find(
+    (room) => room.value === destinationRoomCode
+  ) || null;
   const selectedPickerRows = useMemo(
     () => Array.from(selectedPickerItems.values()),
     [selectedPickerItems]
@@ -465,6 +496,10 @@ export default function ProductionStockIssuePageClient({
       });
       return;
     }
+    if (issueType === "KPF" && !destinationRoomCode) {
+      setToast({ tone: "error", message: "กรุณาเลือกห้องปลายทางก่อนเบิก KPF" });
+      return;
+    }
 
     setStatus({
       state: "processing",
@@ -478,9 +513,10 @@ export default function ProductionStockIssuePageClient({
           barcodes,
           issueType,
           issueDate,
+          destinationRoomCode: issueType === "KPF" ? destinationRoomCode : null,
         });
         const successCount = Number(payload?.batch?.successCount || 0);
-        const message = `เบิกสำเร็จครบ ${successCount} รายการ`;
+        const message = `เบิกสำเร็จ ${successCount} รายการ`;
 
         applyMutationResult(payload, message, payload?.issue || selectedPickerRows[0]);
         closeIssuePicker();
@@ -503,6 +539,15 @@ export default function ProductionStockIssuePageClient({
   const submitIssue = useCallback(
     (nextBarcode) => {
       const normalizedBarcode = String(nextBarcode || "").trim();
+      if (issueType === "KPF" && !destinationRoomCode) {
+        setStatus({
+          state: "error",
+          message: "กรุณาเลือกห้องปลายทางก่อนสแกน",
+          readAt: new Date().toISOString(),
+        });
+        setToast({ tone: "error", message: "กรุณาเลือกห้องปลายทางก่อนสแกน" });
+        return;
+      }
       if (!normalizedBarcode) {
         setStatus({
           state: "error",
@@ -515,6 +560,7 @@ export default function ProductionStockIssuePageClient({
 
       const queuedIssueType = issueType;
       const queuedIssueDate = issueDate;
+      const queuedDestinationRoomCode = issueType === "KPF" ? destinationRoomCode : null;
       const queued = scanQueueRef.current.enqueue(normalizedBarcode, async (queuedBarcode) => {
         setStatus({
           state: "processing",
@@ -527,6 +573,7 @@ export default function ProductionStockIssuePageClient({
             barcode: queuedBarcode,
             issueType: queuedIssueType,
             issueDate: queuedIssueDate,
+            destinationRoomCode: queuedDestinationRoomCode,
           });
 
           applyMutationResult(
@@ -561,7 +608,7 @@ export default function ProductionStockIssuePageClient({
         });
       }
     },
-    [applyMutationResult, focusBarcodeInput, issueType, issueTypes, issueDate]
+    [applyMutationResult, destinationRoomCode, focusBarcodeInput, issueType, issueTypes, issueDate]
   );
 
   const handleSubmitIssue = useCallback(() => {
@@ -736,6 +783,8 @@ export default function ProductionStockIssuePageClient({
     });
   };
 
+  const openJamUsage = () => setIsJamUsageOpen(true);
+
   return (
     <div className="min-h-screen min-w-0 overflow-hidden bg-[#f4f6f8] text-[#262626]">
       <WeightScalePrimaryHeader
@@ -744,7 +793,7 @@ export default function ProductionStockIssuePageClient({
         title="เบิกสต็อกผลิตภัณฑ์"
       />
 
-      <section className="border-b border-[#1f3047] bg-[#102C57] text-white">
+      <section className="border-b border-[#1f3047] bg-[var(--surface-navy,#102C57)] text-white">
         <div className="mx-auto max-w-[84rem] px-4 pb-4 sm:px-6 lg:px-8">
           <div className="flex flex-col items-start gap-3 border-t border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
             <div
@@ -769,7 +818,7 @@ export default function ProductionStockIssuePageClient({
               <div className="min-w-0 border-b border-[#e2e8f0] p-3 sm:p-8 lg:col-span-8 lg:border-b-0 lg:border-r lg:p-10">
                 {!lastScannedItem ? (
                   <div className="flex h-full min-w-0 flex-col items-center justify-center py-4 text-center sm:py-8">
-                    <div className="flex w-full min-w-0 flex-col items-center gap-5 border-2 border-[#d4af37]/40 bg-[#102C57] px-3 py-5 shadow-[0_12px_40px_rgba(16,44,87,0.45)] sm:px-8 sm:py-8">
+                    <div className="flex w-full min-w-0 flex-col items-center gap-5 border-2 border-[#d4af37]/40 bg-[var(--surface-navy,#102C57)] px-3 py-5 shadow-[0_12px_40px_rgba(16,44,87,0.45)] sm:px-8 sm:py-8">
                       <div className="w-full min-w-0 max-w-3xl">
                         <div className="relative flex h-16 min-w-0 items-center border-b-4 border-[#d4af37] bg-white/5 px-3 transition focus-within:bg-white/10 sm:h-24 sm:px-6 md:h-28">
                           <ScanSearch size={32} className="h-6 w-6 shrink-0 text-[#d4af37] sm:h-8 sm:w-8" />
@@ -849,8 +898,14 @@ export default function ProductionStockIssuePageClient({
                       </div>
                     </div>
 
+                    {lastScannedItem.destinationRoomName ? (
+                      <div className="border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-black text-emerald-800">
+                        ห้องปลายทาง: {lastScannedItem.destinationRoomName}
+                      </div>
+                    ) : null}
+
                     <div className="pt-6 border-t border-[#e2e8f0]">
-                      <div className="relative flex h-16 min-w-0 items-center border-b-4 border-[#d4af37] bg-[#102C57] px-3 transition focus-within:bg-[#173b72] sm:h-24 sm:px-6 md:h-28">
+                      <div className="relative flex h-16 min-w-0 items-center border-b-4 border-[#d4af37] bg-[var(--surface-navy,#102C57)] px-3 transition focus-within:bg-[var(--surface-navy,#173b72)] sm:h-24 sm:px-6 md:h-28">
                         <ScanSearch size={32} className="h-6 w-6 shrink-0 text-[#d4af37] sm:h-8 sm:w-8" />
                         <input
                           ref={barcodeInputRef}
@@ -929,7 +984,7 @@ export default function ProductionStockIssuePageClient({
                               }}
                               className={`flex w-full items-center gap-3 px-4 py-3 text-left transition ${
                                 isActive
-                                  ? "bg-[#102C57] text-white"
+                                  ? "bg-[var(--surface-navy,#102C57)] text-white"
                                   : "bg-white text-[#102C57] hover:bg-[#f8fafc]"
                               }`}
                             >
@@ -962,6 +1017,43 @@ export default function ProductionStockIssuePageClient({
                     ) : null}
                   </div>
 
+                <button
+                  type="button"
+                  onClick={openJamUsage}
+                  className="flex h-14 w-full items-center justify-center gap-2 border-2 border-[#d4af37] bg-[#fff8e1] text-sm font-black text-[#102C57] transition hover:bg-[#f7e5a6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#102C57] focus-visible:ring-offset-2"
+                >
+                  <Boxes size={19} />
+                  เบิกแยม / บันทึกใช้จริง
+                </button>
+
+                {issueType === "KPF" ? (
+                  <div className="flex flex-col gap-1">
+                    <span className="mb-1 block text-[10px] font-black uppercase tracking-widest text-[#a0aec0]">
+                      ห้องปลายทาง
+                    </span>
+                    <select
+                      value={destinationRoomCode}
+                      onChange={(event) => {
+                        setDestinationRoomCode(event.target.value);
+                        window.setTimeout(() => focusBarcodeInput(true), 0);
+                      }}
+                      className="h-14 w-full border-2 border-[#102C57] bg-white px-4 text-sm font-black text-[#102C57] outline-none transition focus:border-[#d4af37] focus-visible:ring-2 focus-visible:ring-[#d4af37] focus-visible:ring-offset-2"
+                    >
+                      <option value="">— เลือกห้องปลายทาง —</option>
+                      {destinationRooms.map((room) => (
+                        <option key={room.value} value={room.value}>{room.label}</option>
+                      ))}
+                    </select>
+                    {selectedDestinationRoom ? (
+                      <span className="text-xs font-semibold text-emerald-700">
+                        {selectedDestinationRoom.label} จะค้างไว้จนกว่าจะเปลี่ยนห้อง
+                      </span>
+                    ) : (
+                      <span className="text-xs font-semibold text-rose-600">ต้องเลือกก่อนสแกนป้าย</span>
+                    )}
+                  </div>
+                ) : null}
+
                   <div className="flex flex-col gap-1">
                     <span className="mb-1 block text-[10px] font-black uppercase tracking-widest text-[#a0aec0]">เลือกวันที่ทำรายการเบิก</span>
                     <input
@@ -984,7 +1076,7 @@ export default function ProductionStockIssuePageClient({
                 <button
                   type="button"
                   onClick={openIssuePicker}
-                  className="flex h-14 w-full items-center justify-center gap-2 border-2 border-[#102C57] bg-[#102C57] text-[10px] font-black uppercase tracking-wider text-white transition hover:bg-[#173b72] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37] focus-visible:ring-offset-2"
+                  className="flex h-14 w-full items-center justify-center gap-2 border-2 border-[#102C57] bg-[var(--surface-navy,#102C57)] text-[10px] font-black uppercase tracking-wider text-white transition hover:bg-[var(--surface-navy,#173b72)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37] focus-visible:ring-offset-2"
                 >
                   <ListChecks size={16} />
                   เลือกรายการเบิก
@@ -1053,19 +1145,53 @@ export default function ProductionStockIssuePageClient({
               </div>
             </div>
 
+            {productSummaries.length > 0 && (
+              <div className="border-b border-[#e2e8f0] bg-[#f8fafc] px-4 py-3 sm:px-8">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-[#7d8795] mr-1 hidden min-[480px]:inline-block">
+                    สรุปแยกตามสินค้า:
+                  </span>
+                  {productSummaries.map((item) => (
+                    <div
+                      key={item.productCode}
+                      className="inline-flex items-center gap-2 rounded-full border border-[#cbd5e1] bg-white px-3 py-1 text-xs shadow-xs transition hover:border-[#102C57]"
+                    >
+                      <span className="font-mono font-black text-[#102C57]">
+                        {item.productCode}
+                      </span>
+                      {item.productName && item.productName !== item.productCode && (
+                        <span className="max-w-[120px] truncate text-[11px] font-medium text-[#64748b] sm:max-w-[180px]">
+                          {item.productName}
+                        </span>
+                      )}
+                      <span className="h-3 w-px bg-[#e2e8f0]" />
+                      <span className="font-black text-[#102C57]">
+                        {item.count} <span className="text-[10px] font-bold text-[#64748b]">ใบ</span>
+                      </span>
+                      <span className="text-[#cbd5e1]">·</span>
+                      <span className="font-mono font-bold text-[#102C57]">
+                        {formatWeight(item.totalWeightKg)} <span className="text-[10px] font-normal text-[#64748b]">Kg</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div
               className="min-w-0 max-h-[550px] overflow-x-auto overflow-y-auto overscroll-x-contain [touch-action:pan-x_pan-y] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#d4af37]"
               role="region"
               aria-label="ตารางรายการเบิกล่าสุด เลื่อนในแนวนอนเพื่อดูทุกคอลัมน์"
               tabIndex={0}
             >
-              <table className="min-w-[72rem] w-full border-collapse border border-[#d7dde5]">
+              <table className="min-w-[84rem] w-full border-collapse border border-[#d7dde5]">
                 <thead className="sticky top-0 bg-[#f8fafc] z-10 shadow-[0_1px_0_rgba(0,0,0,0.1)]">
                   <tr className="text-sm font-black uppercase tracking-wider text-black">
                     <th className="border border-[#d7dde5] bg-[#f8fafc] px-4 py-2 text-center w-16">#</th>
                     <th className="border border-[#d7dde5] bg-[#f8fafc] px-6 py-2 text-center">ประเภท</th>
                     <th className="border border-[#d7dde5] bg-[#f8fafc] px-6 py-2 text-center">บาร์โค้ด</th>
                     <th className="border border-[#d7dde5] bg-[#f8fafc] px-6 py-2 text-center">สินค้า</th>
+                    <th className="border border-[#d7dde5] bg-[#f8fafc] px-6 py-2 text-center">สินค้าปลายทาง</th>
                     <th className="border border-[#d7dde5] bg-[#f8fafc] px-6 py-2 text-center">ล็อต</th>
                     <th className="border border-[#d7dde5] bg-[#f8fafc] px-4 py-2 text-center w-24">จำนวน</th>
                     <th className="border border-[#d7dde5] bg-[#f8fafc] px-6 py-2 text-center">น้ำหนัก</th>
@@ -1076,7 +1202,7 @@ export default function ProductionStockIssuePageClient({
                 <tbody className="text-sm font-bold text-black">
                   {paginatedRows.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="border border-[#d7dde5] px-8 py-16 text-center uppercase tracking-widest text-[#a0aec0]">ยังไม่มีรายการเบิกในวันนี้</td>
+                      <td colSpan={10} className="border border-[#d7dde5] px-8 py-16 text-center uppercase tracking-widest text-[#a0aec0]">ยังไม่มีรายการเบิกในวันนี้</td>
                     </tr>
                   ) : (
                     paginatedRows.map((row, index) => {
@@ -1096,6 +1222,11 @@ export default function ProductionStockIssuePageClient({
                           </td>
                           <td className="border border-[#d7dde5] px-6 py-2 text-center whitespace-nowrap">
                             {row.productCode}-{row.productName}
+                          </td>
+                          <td className="border border-[#d7dde5] px-6 py-2 text-center">
+                            {row.destinationRoomName
+                              ? row.destinationRoomName
+                              : "ไม่ระบุ"}
                           </td>
                           <td className="border border-[#d7dde5] px-6 py-2 text-center">{row.lotNo}</td>
                           <td className="border border-[#d7dde5] px-4 py-2 text-center">{formatQuantity(row.quantity)}</td>
@@ -1154,10 +1285,18 @@ export default function ProductionStockIssuePageClient({
         </div>
       </div>
 
+      {isJamUsageOpen ? (
+        <ProductionJamUsageDialog
+          initialDate={issueDate}
+          onClose={() => setIsJamUsageOpen(false)}
+          onSaved={() => setToast({ tone: "success", message: "บันทึกยอดแยมแยกตามผลผลิตเรียบร้อย" })}
+        />
+      ) : null}
+
       {isPickerOpen ? (
-        <div className="fixed inset-0 z-[210] flex items-stretch p-0 sm:items-center sm:p-4 justify-center bg-[#102C57]/80 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[210] flex items-stretch p-0 sm:items-center sm:p-4 justify-center bg-[var(--surface-navy,#102C57)]/80 backdrop-blur-sm">
           <div className="flex max-h-[100dvh] min-w-0 w-full max-w-6xl flex-col overflow-hidden border-y-2 border-[#d4af37] bg-white shadow-[0_24px_70px_rgba(8,17,29,0.35)] sm:max-h-[92vh] sm:border-2">
-            <div className="flex flex-col gap-4 border-b border-[#d7dde5] bg-[#102C57] px-4 py-4 text-white sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-4 border-b border-[#d7dde5] bg-[var(--surface-navy,#102C57)] px-4 py-4 text-white sm:px-6 lg:flex-row lg:items-center lg:justify-between">
               <div className="min-w-0">
                 <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.24em] text-[#d4af37]">
                   <StockIssueIcon size={14} /> เบิกผลิตภัณฑ์แบบกลุ่ม
@@ -1206,7 +1345,7 @@ export default function ProductionStockIssuePageClient({
                 <button
                   type="button"
                   onClick={handleSearchPicker}
-                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center bg-[#102C57] text-white transition hover:bg-[#173b72] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37] focus-visible:ring-offset-2"
+                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center bg-[var(--surface-navy,#102C57)] text-white transition hover:bg-[var(--surface-navy,#173b72)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37] focus-visible:ring-offset-2"
                   aria-label="ค้นหารายการเบิก"
                 >
                   {isPickerLoading ? <Loader2 size={17} className="animate-spin" /> : <Search size={17} />}
@@ -1280,7 +1419,7 @@ export default function ProductionStockIssuePageClient({
                 <button
                   type="button"
                   onClick={handleSearchPicker}
-                  className="hidden h-11 w-full items-center justify-center gap-2 bg-[#102C57] px-5 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#173b72] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37] focus-visible:ring-offset-2 lg:mt-auto lg:inline-flex lg:w-auto"
+                  className="hidden h-11 w-full items-center justify-center gap-2 bg-[var(--surface-navy,#102C57)] px-5 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:bg-[var(--surface-navy,#173b72)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37] focus-visible:ring-offset-2 lg:mt-auto lg:inline-flex lg:w-auto"
                 >
                   {isPickerLoading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
                   ค้นหา
@@ -1502,9 +1641,9 @@ export default function ProductionStockIssuePageClient({
       ) : null}
 
       {isCameraOpen ? (
-        <div className="fixed inset-0 z-[220] flex items-stretch justify-center bg-[#102C57]/80 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+        <div className="fixed inset-0 z-[220] flex items-stretch justify-center bg-[var(--surface-navy,#102C57)]/80 p-0 backdrop-blur-sm sm:items-center sm:p-4">
           <div className="relative max-h-[100dvh] min-w-0 w-full max-w-3xl overflow-y-auto border-y-2 border-[#d4af37] bg-white shadow-[0_24px_70px_rgba(8,17,29,0.35)] sm:max-h-[92vh] sm:border-2">
-            <div className="flex flex-col items-stretch gap-3 border-b border-[#d7dde5] bg-[#102C57] px-4 py-4 text-white min-[420px]:flex-row min-[420px]:items-start min-[420px]:justify-between sm:px-5">
+            <div className="flex flex-col items-stretch gap-3 border-b border-[#d7dde5] bg-[var(--surface-navy,#102C57)] px-4 py-4 text-white min-[420px]:flex-row min-[420px]:items-start min-[420px]:justify-between sm:px-5">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.2em] text-[#d4af37]">
                   Mobile Scanner
@@ -1538,7 +1677,7 @@ export default function ProductionStockIssuePageClient({
             </div>
 
             <div className="bg-[#f8fafc] p-3 sm:p-5">
-              <div className="overflow-hidden border-2 border-[#d4af37] bg-[#102C57]">
+              <div className="overflow-hidden border-2 border-[#d4af37] bg-[var(--surface-navy,#102C57)]">
                 <div
                   id={scannerRegionIdRef.current}
                   className="mx-auto aspect-[4/3] max-h-[calc(100dvh-12rem)] w-full max-w-[34rem] overflow-hidden bg-black"

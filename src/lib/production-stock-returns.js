@@ -177,7 +177,7 @@ export async function loadReturnableIssuedItems(
       let query = supabaseAdmin
         .from("production_stock_issue_report_lines_v")
         .select(
-          "issue_item_id,issue_document_id,source_receipt_id,barcode,product_code,product_name_snapshot,lot_no,weight_kg,item_status,document_status,issued_at"
+          "issue_item_id,issue_document_id,source_receipt_id,barcode,product_code,product_name_snapshot,lot_no,weight_kg,item_status,document_status,issued_at,target_product_code,target_product_name_snapshot,target_product_category_code"
         )
         .eq("item_status", "confirmed")
         .eq("document_status", "confirmed")
@@ -292,6 +292,9 @@ export async function findIssuedItemByBarcode(
     barcode: normalizeText(data.barcode),
     productCode: normalizeUpperText(data.product_code),
     productName: normalizeText(data.product_name_snapshot),
+    targetProductCode: normalizeUpperText(data.target_product_code),
+    targetProductName: normalizeText(data.target_product_name_snapshot),
+    targetProductCategoryCode: normalizeUpperText(data.target_product_category_code),
     lotNo: normalizeText(data.lot_no),
     categoryCode: normalizeText(data.category_code),
     uomName: normalizeText(data.uom_name),
@@ -326,6 +329,7 @@ export async function createStockReturn(
     : "source_receipt";
   const actorUserId = normalizeText(input?.actorUserId) || null;
   const remark = normalizeText(input?.remark) || "ชั่งคืนผลิตภัณฑ์";
+  const returnDate = normalizeOptionalIsoDate(input?.returnDate);
 
   if (!sourceBarcode) {
     throw new ApiError(400, "กรุณาระบุบาร์โค้ดที่ต้องการคืน");
@@ -351,5 +355,30 @@ export async function createStockReturn(
     );
   }
 
-  return rpcResult.data || null;
+  const returnData = rpcResult.data;
+
+  // Align business date if a backdated/custom date is specified
+  if (returnDate && returnData?.id) {
+    const returnBangkokTimestamp = `${returnDate}T12:00:00+07:00`;
+
+    if (returnData.movementNo) {
+      await supabaseAdmin
+        .from("production_stock_movements")
+        .update({
+          movement_date: returnDate,
+        })
+        .eq("movement_no", returnData.movementNo);
+    }
+
+    await supabaseAdmin
+      .from("production_weight_receipts")
+      .update({
+        weighed_at: returnBangkokTimestamp,
+      })
+      .eq("id", returnData.id);
+
+    returnData.returnDate = returnDate;
+  }
+
+  return returnData || null;
 }

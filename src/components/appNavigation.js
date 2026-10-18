@@ -19,6 +19,25 @@ import {
   Warehouse,
 } from "lucide-react";
 
+const PAGE_TASK_KEYS = {
+  "/hr/consolidated": ["hr-consolidated-view"],
+  "/admin/employees": ["hr-employees-view", "hr-departments-view"],
+  "/admin/products": ["data-products-view", "data-products-cost-view"],
+  "/admin/products/trade-codes": ["data-trade-codes-view"],
+  "/admin/sku-min-max": ["data-sku-min-max-view"],
+  "/admin/suppliers": ["data-suppliers-view"],
+  "/raw-materials": ["raw-materials-summary-view", "raw-materials-lot-view", "raw-materials-movement-view"],
+  "/raw-material-receipts": ["raw-materials-receipts-view", "raw-materials-production-receipts-view"],
+  "/raw-material-requisitions/requisition": ["raw-materials-requisitions-view", "raw-materials-returns-view"],
+  "/raw-material-requisitions/return": ["raw-materials-requisitions-view", "raw-materials-returns-view"],
+  "/production-line/fg-wip": ["production-fg-wip-view", "production-fg-wip-write", "production-fg-wip-opening-write", "production-fg-wip-waste-write", "production-fg-wip-waste-cancel"],
+  "/production-line/weight-scale": ["production-scale-receipt-view", "production-scale-receipt-write", "production-scale-receipt-cancel", "production-scale-receipt-report", "production-stock-return-view", "production-stock-return-write", "production-stock-waste-view", "production-stock-waste-write"],
+  "/production-line/weight-scale-live": ["production-scale-receipt-view", "production-scale-receipt-write", "production-scale-receipt-cancel", "central-scale-view", "central-scale-receive"],
+  "/production-line/stock": ["production-stock-opening-write"],
+  "/production-line/attendance/piece-rate-scan": ["production-piece-rate-stock-view", "production-piece-rate-stock-issue-write", "production-piece-rate-stock-return-write", "production-piece-rate-stock-issue-cancel", "production-piece-rate-weigh-cancel"],
+  "/production-line/settings": ["production-settings-material-owners-view", "production-settings-material-owners-write", "production-settings-material-owners-delete", "production-settings-piece-rate-view", "production-settings-piece-rate-rate-edit", "production-settings-snack-wage-view", "production-settings-snack-wage-rate-edit", "production-settings-bom-view"],
+};
+
 export const buildNavItems = (requisitionHref) => [
   {
     key: "hr",
@@ -44,6 +63,12 @@ export const buildNavItems = (requisitionHref) => [
     label: "ไลน์ผลิต",
     icon: Boxes,
     children: [
+      {
+        href: "/production-line/reports",
+        label: "ศูนย์รายงานไลน์ผลิต",
+        icon: BarChart2,
+        permissionsAny: ["production-line-attendance-view", "production-line-attendance-manage", "production-line-attendance-report-view", "production-line-attendance-report-manage", "production-line-planning-view", "production-line-planning-manage"],
+      },
       {
         href: "/production-line/attendance",
         label: "บันทึกงานไลน์ผลิต",
@@ -74,6 +99,12 @@ export const buildNavItems = (requisitionHref) => [
           "production-line-attendance-view",
           "production-line-attendance-manage",
         ],
+      },
+      {
+        href: "/production-line/attendance/packing-output",
+        label: "บันทึกผลผลิตบรรจุ",
+        icon: PackageCheck,
+        permissionsAny: ["production-packing-output-view", "production-packing-output-write"],
       },
       {
         href: "/production-line/weight-scale",
@@ -110,6 +141,18 @@ export const buildNavItems = (requisitionHref) => [
         label: "วางแผนการผลิต",
         icon: Calendar,
         permissionsAny: ["production-line-planning-view", "production-line-planning-manage"],
+      },
+      {
+        href: "/production-line/costing",
+        label: "ต้นทุนการผลิต",
+        icon: BarChart2,
+        permissionsAny: [
+          "production-cost-view",
+          "production-cost-write",
+          "production-line-attendance-view",
+          "production-line-attendance-manage",
+          "production-line-attendance-report-view",
+        ],
       },
       {
         href: "/production-line/settings",
@@ -153,6 +196,12 @@ export const buildNavItems = (requisitionHref) => [
         label: "รับเข้าวัตถุดิบ",
         icon: PackageOpen,
         permissionsAny: ["raw-materials-lot"],
+      },
+      {
+        href: "/raw-materials/cost",
+        label: "ต้นทุนวัตถุดิบตาม LOT",
+        icon: BarChart2,
+        permissionsAny: ["raw-materials-cost-view"],
       },
       {
         href: requisitionHref,
@@ -238,7 +287,10 @@ export const buildNavItems = (requisitionHref) => [
     permissionsAny: ["admin-settings"],
     adminOnly: true,
   },
-];
+].map((item) => item.children ? {
+  ...item,
+  children: item.children.map((child) => ({ ...child, permissionsAny: [...(child.permissionsAny || []), ...(PAGE_TASK_KEYS[child.href] || [])] })),
+} : { ...item, permissionsAny: [...(item.permissionsAny || []), ...(PAGE_TASK_KEYS[item.href] || [])] });
 
 export const GROUP_PERMISSION_KEYS = {
   hr: ["admin-consolidated", "admin-employees"],
@@ -282,10 +334,102 @@ export const GROUP_PERMISSION_KEYS = {
   ],
 };
 
+for (const group of buildNavItems("/raw-material-requisitions/requisition")) {
+  if (group.children && GROUP_PERMISSION_KEYS[group.key]) {
+    GROUP_PERMISSION_KEYS[group.key] = [...new Set([...GROUP_PERMISSION_KEYS[group.key], ...group.children.flatMap((child) => child.permissionsAny || [])])];
+  }
+}
+
+export const KNOWN_ROUTE_TITLES = Object.freeze({
+  "/production-line/reports": "ศูนย์รายงานไลน์ผลิต",
+  "/hr/consolidated": "รายงานสแกนนิ้ว",
+  "/admin/employees": "ทะเบียนพนักงาน",
+  "/admin/products": "ข้อมูลสินค้า",
+  "/admin/products/trade-codes": "รหัสซื้อขาย",
+  "/admin/sku-min-max": "Min-Max วัตถุดิบ",
+  "/admin/performance": "Performance",
+  "/admin/suppliers": "ซัพพลายเออร์",
+  "/admin/department-lookup-27": "แผนก Lookup 27",
+  "/admin/schedule-config": "ตั้งค่าตารางเวลา",
+  "/admin/settings": "ตั้งค่าระบบ",
+  "/admin/raw-material-requisitions": "ใบเบิกวัตถุดิบ (Admin)",
+  "/admin/raw-material-requisitions/requisition": "ใบเบิกวัตถุดิบ",
+  "/admin/raw-material-requisitions/returns": "ใบรับคืนวัตถุดิบ",
+  "/raw-materials": "สต็อกคลังวัตถุดิบ",
+  "/raw-material-receipts": "รับเข้าวัตถุดิบ",
+  "/raw-material-requisitions": "ใบเบิกวัตถุดิบ",
+  "/raw-material-requisitions/requisition": "ใบเบิกวัตถุดิบ",
+  "/raw-material-requisitions/returns": "ใบรับคืนวัตถุดิบ",
+  "/raw-material-requisitions/export": "export ใบเบิก",
+  "/stock-inventory": "สต็อกวัตถุดิบ",
+  "/production-line/attendance": "บันทึกงานไลน์ผลิต",
+  "/production-line/attendance/piece-rate-scan": "บันทึกเนื้อขนมป้ายแยม",
+  "/production-line/attendance/packing-output": "บันทึกผลผลิตไม่คิดค่าแรง",
+  "/production-line/attendance/scan": "สแกนเข้างาน",
+  "/production-line/attendance/report": "รายงานการเข้างาน",
+  "/production-line/attendance/report/piece-rate": "รายงานค่าแรงรายชิ้น",
+  "/production-line/attendance/report/piece-rate-summary": "รายงานสรุปค่าแรงรายชิ้น",
+  "/production-line/attendance/report/input-output": "รายงานสรุปยอดผลิตและของเสีย",
+  "/production-line/attendance/report/scan-events": "รายงานประวัติการสแกน",
+  "/production-line/attendance/piece-rate-stock-inbound": "รายงานรับเข้าเนื้อขนม",
+  "/production-line/attendance/piece-rate-stock-inbound-fg": "รายงานรับเข้า FG",
+  "/production-line/attendance/piece-rate-stock-issues": "รายงานเบิกเนื้อขนม",
+  "/production-line/attendance/piece-rate-stock-movement": "รายงานความเคลื่อนไหวเนื้อขนม",
+  "/production-line/attendance/piece-rate-stock-balance": "รายงานสต็อกคงเหลือเนื้อขนม",
+  "/production-line/attendance/piece-rate-stock-prison": "รายงานเบิกเรือนจำเนื้อขนม",
+  "/production-line/fg-wip": "บันทึกผลผลิตและ WIP",
+  "/production-line/weight-scale": "ชั่งน้ำหนักผลิตภัณฑ์",
+  "/production-line/weight-scale-live": "ชั่งน้ำหนักจากเครื่องชั่ง",
+  "/production-line/weight-scale/report": "รายงานชั่งน้ำหนัก",
+  "/production-line/weight-scale/report-summary": "รายงานสรุปภาพรวมชั่งน้ำหนัก",
+  "/production-line/weight-scale/cancel": "ยกเลิกการชั่งน้ำหนัก",
+  "/production-line/weight-scale/return": "รับคืนสินค้าชั่งน้ำหนัก",
+  "/production-line/weight-scale/waste": "บันทึกของเสียชั่งน้ำหนัก",
+  "/production-line/stock": "นำเข้าสต็อกตั้งต้น",
+  "/production-line/stock/opening-balance": "นำเข้าสต็อกตั้งต้น",
+  "/production-line/stock/balance": "รายงานสต็อกคงเหลือ",
+  "/production-line/stock/balance/lot": "รายงานสต็อกคงเหลือ LOT",
+  "/production-line/stock/balance/summary": "รายงานสรุปสต็อกคงเหลือ",
+  "/production-line/stock/issues": "เบิกจ่ายสต็อก",
+  "/production-line/stock/issues/report": "รายงานเบิกสินค้า",
+  "/production-line/stock/issues/report-summary": "รายงานสรุปเบิกสินค้า",
+  "/production-line/stock/issues/cancel": "ยกเลิกใบเบิกสินค้า",
+  "/production-line/stock/prison/issues": "เบิกสินค้าเรือนจำ",
+  "/production-line/stock/prison/issues/report": "รายงานเบิกสินค้าเรือนจำ",
+  "/production-line/stock/prison/issues/report-summary": "รายงานสรุปเบิกสินค้าเรือนจำ",
+  "/production-line/stock/prison/issues/cancel": "ยกเลิกเบิกเรือนจำ",
+  "/production-line/stock/prison/balance/lot": "สต็อกเรือนจำ LOT",
+  "/production-line/stock/prison/balance/summary": "สรุปสต็อกเรือนจำ",
+  "/production-line/stock/prison/report": "รายงานเรือนจำ",
+  "/production-line/stock/prison/report-summary": "รายงานสรุปเรือนจำ",
+  "/production-line/bom": "BOM ไลน์การผลิต",
+  "/production-line/bom/approval": "อนุมัติสูตรการผลิต (BOM)",
+  "/production-line/planning": "วางแผนการผลิต",
+  "/production-line/planning/schedule": "วางแผนการผลิต",
+  "/production-line/planning/schedule-report": "รายงานตารางแผนการผลิต",
+  "/production-line/planning/claims": "รายการจองวัตถุดิบ",
+  "/production-line/planning/material-verification": "ตรวจสอบวัตถุดิบ",
+  "/production-line/planning/material-verify": "ตรวจสอบวัตถุดิบ",
+  "/production-line/planning/capacity-planner": "วางแผนกำลังการผลิต",
+  "/production-line/planning/notifications": "แจ้งเตือนการผลิต",
+  "/production-line/planning/trace": "ตรวจสอบย้อนกลับ (Traceability)",
+  "/production-line/planning/report": "รายงานการวางแผนผลิต",
+  "/production-line/planning/requisition-preview": "พรีวิวใบเบิกวัตถุดิบ",
+  "/production-line/settings": "ตั้งค่า",
+  "/weight-scale": "ชั่งน้ำหนักผลิตภัณฑ์",
+  "/weight-scale/report": "รายงานชั่งน้ำหนัก",
+  "/weight-scale/report-summary": "รายงานสรุปภาพรวมชั่งน้ำหนัก",
+});
+
 export function resolveNavigationTitle(pathname, requisitionHref = "/raw-material-requisitions/requisition") {
   const normalized = typeof pathname === "string" && pathname.length > 1 && pathname.endsWith("/")
     ? pathname.slice(0, -1)
     : pathname;
+
+  if (KNOWN_ROUTE_TITLES[normalized]) {
+    return KNOWN_ROUTE_TITLES[normalized];
+  }
+
   const navItems = buildNavItems(requisitionHref);
   const flatItems = navItems.flatMap((item) => item.children || [item]);
   const exactMatch = flatItems.find((item) => item.href === normalized);

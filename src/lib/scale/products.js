@@ -98,10 +98,27 @@ async function loadWeightScaleContext(supabaseAdmin, departmentId, products) {
 }
 
 async function loadMatchedProductRowsUncached(supabaseAdmin, departmentId) {
+  const subcategoryResult = await supabaseAdmin
+    .from("production_department_product_subcategories")
+    .select("id")
+    .eq("department_id", departmentId)
+    .eq("name", "เปลือก")
+    .maybeSingle();
+
+  if (subcategoryResult.error) {
+    throw new Error("Failed to load department subcategory 'เปลือก'");
+  }
+
+  const shellSubcategoryId = subcategoryResult.data?.id;
+  if (!shellSubcategoryId) {
+    return [];
+  }
+
   const departmentProductsResult = await supabaseAdmin
     .from("production_department_products")
-    .select("sku_code,is_owner")
-    .eq("department_id", departmentId);
+    .select("sku_code,is_owner,subcategory_id")
+    .eq("department_id", departmentId)
+    .eq("subcategory_id", shellSubcategoryId);
 
   if (departmentProductsResult.error) {
     throw new Error("Failed to load department products");
@@ -163,7 +180,7 @@ async function loadMatchedProductRowsUncached(supabaseAdmin, departmentId) {
 
 const loadMatchedProductRowsCached = unstable_cache(
   async (departmentId) => loadMatchedProductRowsUncached(getSupabaseAdmin(), departmentId),
-  ["scale-products-master-rows-v1"],
+  ["scale-products-master-rows-v2-shell-only"],
   { revalidate: 60 }
 );
 

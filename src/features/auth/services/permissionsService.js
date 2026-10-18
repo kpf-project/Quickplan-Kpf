@@ -39,7 +39,7 @@ export async function handlePermissions(request) {
     copyCookies(tempResponse, response);
     return response;
   }
-  if (session?.permissions) {
+  if (session?.permissions && process.env.ROLE_TASK_PERMISSIONS_ENABLED !== "true") {
     const response = NextResponse.json({
       permissions: session.permissions ?? [],
       is_admin: Boolean(session.isAdmin),
@@ -48,10 +48,11 @@ export async function handlePermissions(request) {
     return response;
   }
 
-  const permissionData = await getUserPermissions(userId);
+  const permissionData = await getUserPermissions(userId, { fresh: true });
   const response = NextResponse.json({
     permissions: permissionData.permissions,
     is_admin: permissionData.isAdmin,
+    task_permissions_enabled: process.env.ROLE_TASK_PERMISSIONS_ENABLED === "true",
   });
 
   const rememberDevice = Boolean(session?.rememberDevice);

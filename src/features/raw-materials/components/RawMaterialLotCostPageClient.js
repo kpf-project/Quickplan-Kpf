@@ -163,7 +163,7 @@ export default function RawMaterialLotCostPageClient() {
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[930px] table-fixed border-collapse text-[11px]">
-                <thead className="sticky top-0 z-10 bg-[#102C57] text-white">
+                <thead className="sticky top-0 z-10 bg-[var(--surface-navy,#102C57)] text-white">
                   <tr>
                     <th className="w-[112px] px-2 py-2 text-left">รหัสสินค้า</th>
                     <th className="w-[215px] px-2 py-2 text-left">สินค้า</th>

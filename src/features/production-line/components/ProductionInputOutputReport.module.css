@@ -189,11 +189,13 @@
 }
 
 .reportRoot :global(.input-output-print-table-header th) {
-  background: #f8fafc;
+  background: #f8f9fa;
+  color: #1a1c1e;
+  border-bottom: 2px solid #1a1c1e;
 }
 
 .reportRoot :global(.input-output-print-date-row td) {
-  background: #102c57;
+  background: var(--surface-navy, #102c57);
   color: #ffffff;
   padding: 6px 8px;
   font-weight: 900;
@@ -211,11 +213,13 @@
 @media print {
   @page {
     size: A4 landscape;
-    margin: 3mm;
+    margin: 8mm;
   }
 
   .reportRoot {
     background: #fff !important;
+    font-family: var(--font-noto-sans-looped), sans-serif !important;
+    font-synthesis: none;
   }
 
   .reportRoot :global(.input-output-screen-only) {
@@ -233,10 +237,11 @@
   }
 
   .reportRoot :global(.input-output-sheet) {
-    width: 297mm !important;
-    min-height: 210mm !important;
+    box-sizing: border-box !important;
+    width: 281mm !important;
+    min-height: 194mm !important;
     margin: 0 !important;
-    padding: 8mm !important;
+    padding: 0 !important;
     box-shadow: none !important;
     break-after: page;
     page-break-after: always;
@@ -268,6 +273,8 @@
     padding: 0 !important;
     overflow: visible !important;
     background: #ffffff !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
   }
 
   .compactPrint :global(.input-output-compact-print-table) {
@@ -301,7 +308,7 @@
 
   .compactPrint :global(.input-output-compact-print-table th),
   .compactPrint :global(.input-output-compact-print-table td) {
-    border: 0.5px solid #cbd5e1 !important;
+    border: 0.5pt solid #cbd5e1 !important;
     padding: 0.8mm 0.6mm !important;
     vertical-align: middle !important;
     overflow-wrap: anywhere;
@@ -325,7 +332,9 @@
   }
 
   .compactPrint :global(.input-output-compact-print-table .input-output-print-table-header th) {
-    background: #f8fafc !important;
+    background: #f8f9fa !important;
+    color: #1a1c1e !important;
+    border-bottom: 2px solid #1a1c1e !important;
     overflow: hidden !important;
     overflow-wrap: normal !important;
   }
@@ -383,7 +392,7 @@
   }
 
   .compactPrint :global(.input-output-compact-print-table .input-output-print-date-row td) {
-    background: #102c57 !important;
+    background: var(--surface-navy, #102c57) !important;
     color: #ffffff !important;
     font-weight: 900 !important;
     padding: 1mm 1.4mm !important;
@@ -406,8 +415,13 @@
   }
 
   .compactPrint :global(.input-output-compact-print-table tbody.input-output-print-day-group) {
-    break-inside: avoid !important;
-    page-break-inside: avoid !important;
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  .compactPrint :global(.input-output-compact-print-table .input-output-print-date-row) {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
   }
 
   .compactPrint :global(.input-output-compact-print-table tbody tr.input-output-print-data-row) {

@@ -366,7 +366,7 @@ export default function ScannerPage() {
 
       {showModeModal && (
         <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-[#102C57] border border-[#f4c025]/50 rounded-2xl p-8 max-w-sm w-full shadow-2xl transform scale-100 flex flex-col items-center gap-6">
+          <div className="bg-[var(--surface-navy,#102C57)] border border-[#f4c025]/50 rounded-2xl p-8 max-w-sm w-full shadow-2xl transform scale-100 flex flex-col items-center gap-6">
             <div className="w-16 h-16 rounded-full bg-[#f4c025]/20 flex items-center justify-center shadow-[0_0_15px_rgba(244,192,37,0.2)]">
               <AlertCircle size={32} className="text-[#f4c025]" />
             </div>
@@ -394,7 +394,7 @@ export default function ScannerPage() {
 
       {confirmDialog && (
         <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-[#102C57] border border-[#f4c025]/50 rounded-2xl p-8 max-w-sm w-full shadow-2xl transform scale-100 flex flex-col items-center gap-6">
+          <div className="bg-[var(--surface-navy,#102C57)] border border-[#f4c025]/50 rounded-2xl p-8 max-w-sm w-full shadow-2xl transform scale-100 flex flex-col items-center gap-6">
             <div className="w-16 h-16 rounded-full bg-[#f4c025]/20 flex items-center justify-center shadow-[0_0_15px_rgba(244,192,37,0.2)]">
               <AlertCircle size={32} className="text-[#f4c025]" />
             </div>
@@ -447,7 +447,7 @@ export default function ScannerPage() {
               <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-50 text-center p-4 animate-in fade-in duration-300">
                 <CheckCircle2 size={64} className="text-[#f4c025] mb-4 drop-shadow-[0_0_10px_rgba(244,192,37,0.5)]" />
                 <h3 className="text-white text-2xl font-bold mb-2">บันทึกสำเร็จ!</h3>
-                <div className="bg-[#102C57] px-6 py-2 rounded-lg border border-[#f4c025]/30 mb-4">
+                <div className="bg-[var(--surface-navy,#102C57)] px-6 py-2 rounded-lg border border-[#f4c025]/30 mb-4">
                   <span className="text-xl font-bold text-[#f4c025]">{scanMode === "IN" ? "เข้างาน" : "ออกงาน"}</span>
                 </div>
                 <div className="text-white/80 text-sm space-y-1 mb-6">

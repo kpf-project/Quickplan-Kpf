@@ -117,7 +117,7 @@ export function RequisitionHistoryConsoleClient({
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-16">
       
       {/* 1. Header Banner */}
-      <header className="bg-[#102C57] text-white py-6 px-4 sm:px-6 lg:px-8 border-b-4 border-[#d4af37] shadow-lg">
+      <header className="bg-[var(--surface-navy,#102C57)] text-white py-6 px-4 sm:px-6 lg:px-8 border-b-4 border-[#d4af37] shadow-lg">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-[#d4af37]/10 rounded border border-[#d4af37]/30">
@@ -214,7 +214,7 @@ export function RequisitionHistoryConsoleClient({
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[900px]">
               <thead>
-                <tr className="bg-[#102C57] text-[#f2d68a] text-[11px] font-black uppercase tracking-widest border-b border-[#d4af37]/40">
+                <tr className="bg-[var(--surface-navy,#102C57)] text-[#f2d68a] text-[11px] font-black uppercase tracking-widest border-b border-[#d4af37]/40">
                   <th className="py-3 px-4 w-44">เลขที่เอกสาร</th>
                   <th className="py-3 px-4 w-32">วันที่ออก</th>
                   <th className="py-3 px-4">รายละเอียดกลุ่มใบเบิก</th>
@@ -336,7 +336,7 @@ export function RequisitionHistoryConsoleClient({
                             <button
                               type="button"
                               onClick={() => handleOpenDetails(group)}
-                              className="p-1.5 bg-slate-100 hover:bg-[#102C57]/10 hover:text-[#102C57] text-slate-600 rounded-[2px] transition-all"
+                              className="p-1.5 bg-slate-100 hover:bg-[var(--surface-navy,#102C57)]/10 hover:text-[#102C57] text-slate-600 rounded-[2px] transition-all"
                               title="ดูรายละเอียดสินค้า"
                             >
                               <Eye className="h-3.5 w-3.5" />
@@ -372,7 +372,7 @@ export function RequisitionHistoryConsoleClient({
             <div className="w-screen max-w-2xl bg-white shadow-2xl border-l-4 border-[#d4af37] flex flex-col">
               
               {/* Drawer Header */}
-              <div className="bg-[#102C57] text-white py-5 px-6 border-b border-[#d4af37]/30 flex items-center justify-between">
+              <div className="bg-[var(--surface-navy,#102C57)] text-white py-5 px-6 border-b border-[#d4af37]/30 flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-black text-[#f2d68a] uppercase tracking-wider">
                     รายละเอียดใบเบิกวัตถุดิบ
@@ -479,7 +479,7 @@ export function RequisitionHistoryConsoleClient({
                 <button
                   type="button"
                   onClick={() => handleDownloadExcel(selectedGroup.id, selectedGroup.document_no)}
-                  className="inline-flex items-center gap-1.5 bg-[#102C57] hover:bg-[#1a3d6b] text-white text-xs font-bold px-5 py-2.5 rounded-[2px] shadow-md transition-all"
+                  className="inline-flex items-center gap-1.5 bg-[var(--surface-navy,#102C57)] hover:bg-[#1a3d6b] text-white text-xs font-bold px-5 py-2.5 rounded-[2px] shadow-md transition-all"
                 >
                   <Download className="h-4 w-4 text-[#f2d68a]" />
                   ดาวน์โหลด Excel ใบเดิม

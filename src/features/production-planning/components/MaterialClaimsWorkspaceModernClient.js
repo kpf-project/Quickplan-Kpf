@@ -201,7 +201,7 @@ function GroupingDrawer({ drawerState, lookup27Departments, onClose, onSaved }) 
     <>
       <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px]" onClick={onClose} />
       <div className="fixed right-0 top-0 z-50 flex h-full w-full max-w-md flex-col bg-white shadow-2xl">
-        <div className="flex items-center justify-between bg-[#102C57] px-5 py-4">
+        <div className="flex items-center justify-between bg-[var(--surface-navy,#102C57)] px-5 py-4">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-wide text-white/65">สร้างใบเบิก</p>
             <h3 className="mt-0.5 text-sm font-bold text-white">{formatShortThaiDate(date)} - {deptName}</h3>
@@ -234,7 +234,7 @@ function GroupingDrawer({ drawerState, lookup27Departments, onClose, onSaved }) 
             {groupedRows.map((row) => {
               const isChecked = row.sourceRowKeys.every((key) => ticked.has(key));
               return (
-                <label key={row.key} className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${isChecked ? "border-[#102C57]/30 bg-[#102C57]/5" : "border-slate-100 bg-white hover:bg-slate-50"}`}>
+                <label key={row.key} className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${isChecked ? "border-[#102C57]/30 bg-[var(--surface-navy,#102C57)]/5" : "border-slate-100 bg-white hover:bg-slate-50"}`}>
                   <input type="checkbox" checked={isChecked} onChange={() => toggleRow(row.sourceRowKeys)} className="h-4 w-4 rounded border-slate-300 accent-[#102C57]" />
                   <div className="min-w-0 flex-1">
                     <div className="whitespace-nowrap text-sm font-semibold text-slate-800">{row.materialName}</div>
@@ -256,7 +256,7 @@ function GroupingDrawer({ drawerState, lookup27Departments, onClose, onSaved }) 
             <span className="text-[11px] text-slate-500">เลือกแล้ว <strong>{groupedRows.filter((row) => row.sourceRowKeys.every((key) => ticked.has(key))).length}</strong> / {groupedRows.length}</span>
             <div className="flex items-center gap-2">
               <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-50">ยกเลิก</button>
-              <button type="button" onClick={handleSave} disabled={saving || ticked.size === 0} className="rounded-lg bg-[#102C57] px-4 py-2 text-sm font-semibold text-white hover:bg-[#102C57]/90 disabled:cursor-not-allowed disabled:opacity-50">{saving ? "กำลังบันทึก..." : "บันทึกใบเบิก"}</button>
+              <button type="button" onClick={handleSave} disabled={saving || ticked.size === 0} className="rounded-lg bg-[var(--surface-navy,#102C57)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--surface-navy,#102C57)]/90 disabled:cursor-not-allowed disabled:opacity-50">{saving ? "กำลังบันทึก..." : "บันทึกใบเบิก"}</button>
             </div>
           </div>
         </div>
@@ -358,7 +358,7 @@ function ExportBar({ groups, masterPlanNo, onMutateGroups }) {
           <div className="flex flex-col items-center"><span className="text-lg font-bold leading-tight tabular-nums text-slate-400">{exportedGroups.length}</span><span className="text-slate-400">Exported แล้ว</span></div>
         </div>
 
-        <button type="button" onClick={handleExport} disabled={exporting || readyGroups.length === 0} className="inline-flex items-center gap-2 rounded-xl bg-[#102C57] px-5 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-[#1a3d6b] disabled:cursor-not-allowed disabled:opacity-50">
+        <button type="button" onClick={handleExport} disabled={exporting || readyGroups.length === 0} className="inline-flex items-center gap-2 rounded-xl bg-[var(--surface-navy,#102C57)] px-5 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-[#1a3d6b] disabled:cursor-not-allowed disabled:opacity-50">
           {exporting ? "กำลัง export..." : `Export Excel (${readyGroups.length} ใบเบิก)`}
         </button>
       </div>
@@ -416,7 +416,7 @@ function ClaimsMatrixTable({
 
   return (
     <div className="overflow-hidden border border-slate-400 bg-white shadow-none">
-      <div className="border-b border-slate-400 bg-[#102C57] px-4 py-3">
+      <div className="border-b border-slate-400 bg-[var(--surface-navy,#102C57)] px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-bold tracking-[0.08em] text-white">{title}</h3>
@@ -462,7 +462,7 @@ function ClaimsMatrixTable({
                         <button
                           type="button"
                           onClick={() => onSelectAll(dayClaimableRows)}
-                          className="border border-[#102C57] bg-white px-2 py-0.5 text-[9px] font-bold tracking-[0.04em] text-[#102C57] transition-colors hover:bg-[#102C57] hover:text-white"
+                          className="border border-[#102C57] bg-white px-2 py-0.5 text-[9px] font-bold tracking-[0.04em] text-[#102C57] transition-colors hover:bg-[var(--surface-navy,#102C57)] hover:text-white"
                         >
                           เคลมทั้งหมด
                         </button>
@@ -478,7 +478,7 @@ function ClaimsMatrixTable({
                             deptName: title,
                             ungroupedRows: dayUngroupedRows,
                           })}
-                          className="border border-dashed border-[#102C57]/40 px-2 py-0.5 text-[9px] font-bold tracking-[0.04em] text-[#102C57] transition-colors hover:bg-[#102C57] hover:text-white"
+                          className="border border-dashed border-[#102C57]/40 px-2 py-0.5 text-[9px] font-bold tracking-[0.04em] text-[#102C57] transition-colors hover:bg-[var(--surface-navy,#102C57)] hover:text-white"
                         >
                           ใบเบิก {dayUngroupedRows.length}
                         </button>
@@ -762,7 +762,7 @@ export default function MaterialClaimsWorkspaceModernClient({
         {centralSections.length ? (
           <>
             <div className="flex flex-wrap items-center gap-2">
-              {centralSections.map((section) => <button key={section.id} type="button" onClick={() => setActiveCentralSectionId(section.id)} className={`border px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.08em] transition-colors ${section.id === activeCentralSectionId ? "border-[#102C57] bg-[#102C57] text-white" : "border-slate-300 bg-white text-[#102C57] hover:bg-[#EEF3F8]"}`}>{section.label}</button>)}
+              {centralSections.map((section) => <button key={section.id} type="button" onClick={() => setActiveCentralSectionId(section.id)} className={`border px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.08em] transition-colors ${section.id === activeCentralSectionId ? "border-[#102C57] bg-[var(--surface-navy,#102C57)] text-white" : "border-slate-300 bg-white text-[#102C57] hover:bg-[#EEF3F8]"}`}>{section.label}</button>)}
             </div>
             {activeCentralView ? <ClaimsMatrixTable title={`วัตถุดิบที่ ${activeCentralView.label} รับผิดชอบ`} subtitle="ติ๊กเพื่อเคลมรายการที่ต้องใช้ และกดปุ่มใบเบิกในช่องที่เคลมแล้วเพื่อรวมกลุ่มออกเอกสาร" dates={activeCentralView.dates || []} materials={activeCentralView.materials || []} wipByDate={activeCentralView.wipByDate || {}} keyGroupMap={keyGroupMap} selectedRowKeys={selectedRowKeys} onToggleCellSelection={handleToggleCellSelection} onOpenDrawer={handleDrawerOpen} showBulkSelect onSelectAll={handleSelectAllRows} /> : null}
           </>
@@ -777,7 +777,7 @@ export default function MaterialClaimsWorkspaceModernClient({
         {qaTabs.length ? (
           <>
             <div className="flex flex-wrap items-center gap-2">
-              {qaTabs.map((tab) => <button key={tab.id} type="button" onClick={() => setActiveQaTabId(tab.id)} className={`border px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.08em] transition-colors ${tab.id === activeQaTabId ? "border-[#102C57] bg-[#102C57] text-white" : "border-slate-300 bg-white text-[#102C57] hover:bg-[#EEF3F8]"}`}>{tab.label}</button>)}
+              {qaTabs.map((tab) => <button key={tab.id} type="button" onClick={() => setActiveQaTabId(tab.id)} className={`border px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.08em] transition-colors ${tab.id === activeQaTabId ? "border-[#102C57] bg-[var(--surface-navy,#102C57)] text-white" : "border-slate-300 bg-white text-[#102C57] hover:bg-[#EEF3F8]"}`}>{tab.label}</button>)}
             </div>
             {activeQaView ? <ClaimsMatrixTable title={`วัตถุดิบของ ${activeQaView.label}`} subtitle="ใช้มุมมองนี้เพื่อตรวจว่าวัตถุดิบของ QA แผนกนั้นถูกเคลมครบหรือยัง" dates={activeQaView.dates || []} materials={activeQaView.materials || []} wipByDate={activeQaView.wipByDate || {}} keyGroupMap={keyGroupMap} selectedRowKeys={selectedRowKeys} onToggleCellSelection={handleToggleCellSelection} onOpenDrawer={handleDrawerOpen} /> : null}
           </>
@@ -785,7 +785,7 @@ export default function MaterialClaimsWorkspaceModernClient({
       </section>
 
       {selectedRowKeys.size > 0 ? (
-        <div className="sticky bottom-16 z-30 mx-auto flex max-w-sm items-center justify-between gap-4 rounded-2xl border border-[#102C57]/20 bg-[#102C57] px-5 py-3 shadow-xl">
+        <div className="sticky bottom-16 z-30 mx-auto flex max-w-sm items-center justify-between gap-4 rounded-2xl border border-[#102C57]/20 bg-[var(--surface-navy,#102C57)] px-5 py-3 shadow-xl">
           <span className="text-sm font-semibold text-white">เลือกแล้ว <span className="font-extrabold">{selectedRowKeys.size}</span> รายการ</span>
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => setSelectedRowKeys(new Set())} className="rounded-lg border border-white/30 px-3 py-1.5 text-xs font-semibold text-white/85 hover:bg-white/10">ล้าง</button>

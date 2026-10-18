@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
+import PlanningCatalogDialog from "@/features/production-planning/components/PlanningCatalogDialog";
+import styles from "./BomEditorPageClient.module.css";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -57,36 +59,9 @@ export default function MultiProductImportPreviewModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 text-[#102C57] sm:p-6">
-      <button
-        type="button"
-        className="absolute inset-0 bg-black/45 backdrop-blur-sm"
-        onClick={onClose}
-        aria-label="ปิดหน้าต่างพรีวิว"
-      />
+    <PlanningCatalogDialog title="พรีวิวไฟล์นำเข้า BOM" description={fileName || "ไฟล์ Excel"} onClose={onClose} busy={isSubmitting}>
 
-      <div className="relative flex max-h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-[2px] bg-white shadow-2xl">
-        <header className="flex items-center justify-between gap-3 bg-[#102C57] px-5 py-3 text-white">
-          <div className="flex items-center gap-3">
-            <div className="border border-white/15 bg-white/10 p-2">
-              <FileSpreadsheet className="h-5 w-5 text-[#d4af37]" />
-            </div>
-            <div>
-              <p className="text-sm font-bold">พรีวิวไฟล์นำเข้า BOM</p>
-              <p className="text-xs text-white/70">{fileName || "ไฟล์ Excel"}</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 text-white/70 transition-colors hover:bg-white/10 hover:text-white"
-            aria-label="ปิด"
-          >
-            <X size={18} />
-          </button>
-        </header>
-
-        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-5 lg:grid-cols-[250px_minmax(0,1fr)]">
+        <div className={`${styles.importBody} grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[230px_minmax(0,1fr)]`}>
           <aside className="space-y-4">
             <section className="border border-gray-200 bg-gray-50 p-4">
               <p className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-600">
@@ -179,7 +154,7 @@ export default function MultiProductImportPreviewModal({
 
                 <div className="overflow-x-auto">
                   <table className="min-w-[1100px] w-full text-xs">
-                    <thead className="bg-[#102C57] text-white">
+                    <thead className="bg-[var(--surface-navy,#102C57)] text-white">
                       <tr>
                         <th className="px-3 py-2 text-left">แถว</th>
                         <th className="px-3 py-2 text-left text-[#d4af37]">รหัสที่ใช้จริง</th>
@@ -273,8 +248,7 @@ export default function MultiProductImportPreviewModal({
             </button>
           </div>
         </footer>
-      </div>
-    </div>
+    </PlanningCatalogDialog>
   );
 }
 

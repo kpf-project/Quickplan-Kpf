@@ -168,7 +168,7 @@ export default function SnackWageSettingsPanel({ canManage = false }) {
           type="button"
           onClick={handleSave}
           disabled={!canManage || saving || loading}
-          className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-[#102C57] px-4 text-xs font-bold text-white disabled:opacity-50"
+          className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-[var(--surface-navy,#102C57)] px-4 text-xs font-bold text-white disabled:opacity-50"
         >
           <CheckSquare size={14} />
           {saving ? "กำลังบันทึก..." : "บันทึกการตั้งค่า"}

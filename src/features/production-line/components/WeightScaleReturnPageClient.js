@@ -942,7 +942,7 @@ export default function WeightScaleReturnPageClient({
         )}
       />
 
-      <section className="border-b border-[#1f3047] bg-[#102C57] text-white">
+      <section className="border-b border-[#1f3047] bg-[var(--surface-navy,#102C57)] text-white">
         <div className="mx-auto max-w-[84rem] px-4 pb-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between border-t border-white/10 pt-4">
             <div
@@ -980,7 +980,7 @@ export default function WeightScaleReturnPageClient({
                     <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
                       <div className="flex flex-col">
                         <span className="text-[10px] font-black uppercase tracking-widest text-[#a0aec0]">บาร์โค้ดที่อ้างอิง</span>
-                        <span className="mt-1 bg-[#102C57] text-[#d4af37] px-3 py-1 text-sm font-black tracking-wider self-start">
+                        <span className="mt-1 bg-[var(--surface-navy,#102C57)] text-[#d4af37] px-3 py-1 text-sm font-black tracking-wider self-start">
                           {sourceItem.barcode}
                         </span>
                       </div>
@@ -1019,6 +1019,14 @@ export default function WeightScaleReturnPageClient({
                         <p className="mt-1 text-lg sm:text-xl font-bold text-emerald-700">{formatWeightDisplay(sourceItem.remainingWeightKg)} Kg</p>
                       </div>
                     </div>
+                    <div className="border-t border-[#e2e8f0] pt-4 text-center">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-black">สินค้าปลายทางเดิม</p>
+                      <p className="mt-1 font-bold text-[#102C57]">
+                        {sourceItem.targetProductCode
+                          ? `${sourceItem.targetProductCode} - ${sourceItem.targetProductName}`
+                          : "ไม่ระบุ (รายการเดิม)"}
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1051,7 +1059,7 @@ export default function WeightScaleReturnPageClient({
                     (Number.isFinite(Number(liveReading?.weightKg)) &&
                       Number(liveReading?.weightKg) > AUTO_SAVE_RESET_THRESHOLD_KG)
                   }
-                  className="flex items-center justify-center gap-2 h-14 border-2 border-[#102C57] text-[10px] font-black uppercase tracking-wider text-[#102C57] transition hover:bg-[#102C57] hover:text-white"
+                  className="flex items-center justify-center gap-2 h-14 border-2 border-[#102C57] text-[10px] font-black uppercase tracking-wider text-[#102C57] transition hover:bg-[var(--surface-navy,#102C57)] hover:text-white"
                 >
                   <RefreshCw size={16} />
                   ล้างข้อมูลเพื่อสแกนใหม่
@@ -1063,7 +1071,7 @@ export default function WeightScaleReturnPageClient({
                     className={`flex items-center justify-center gap-2 h-14 border-2 text-[10px] font-black uppercase tracking-wider transition ${
                       isStreaming 
                         ? "border-rose-200 text-rose-600 hover:bg-rose-50" 
-                        : "border-[#102C57] text-[#102C57] hover:bg-[#102C57] hover:text-white"
+                        : "border-[#102C57] text-[#102C57] hover:bg-[var(--surface-navy,#102C57)] hover:text-white"
                     }`}
                   >
                     {isStreaming ? <X size={16} /> : <Radar size={16} />}
@@ -1085,7 +1093,7 @@ export default function WeightScaleReturnPageClient({
               </div>
             </div>
 
-            <div className="relative bg-[#102C57] px-4 sm:px-10 py-8 text-center lg:py-12">
+            <div className="relative bg-[var(--surface-navy,#102C57)] px-4 sm:px-10 py-8 text-center lg:py-12">
               <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#d4af37_1px,transparent_1px)] [background-size:20px_20px]" />
               
               <div className="relative flex flex-col items-center justify-center">
@@ -1240,7 +1248,7 @@ export default function WeightScaleReturnPageClient({
                 type="button"
                 onClick={() => void handleReprintLatestLabel()}
                 disabled={!latestReturnLabel || isReprintingLatestLabel}
-                className="inline-flex h-10 items-center gap-2 border border-[#102C57] px-4 text-xs font-black text-[#102C57] transition hover:bg-[#102C57] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex h-10 items-center gap-2 border border-[#102C57] px-4 text-xs font-black text-[#102C57] transition hover:bg-[var(--surface-navy,#102C57)] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {isReprintingLatestLabel ? <Loader2 size={15} className="animate-spin" /> : <Printer size={15} />}
                 พิมพ์ฉลากล่าสุดซ้ำ
@@ -1296,7 +1304,7 @@ export default function WeightScaleReturnPageClient({
       {isReturnPickerOpen ? (
         <div className="fixed inset-0 z-[190] flex items-center justify-center bg-black/60 px-3 py-4 backdrop-blur-sm sm:px-6">
           <div className="flex max-h-[92vh] w-full max-w-[86rem] flex-col overflow-hidden border-2 border-[#d4af37] bg-white shadow-2xl">
-            <div className="flex items-start justify-between gap-4 bg-[#102C57] px-5 py-4 text-white sm:px-7">
+            <div className="flex items-start justify-between gap-4 bg-[var(--surface-navy,#102C57)] px-5 py-4 text-white sm:px-7">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#d4af37]">
                   Stock Return Picker
@@ -1397,7 +1405,7 @@ export default function WeightScaleReturnPageClient({
                   type="button"
                   onClick={handleReturnPickerSearch}
                   disabled={isReturnPickerLoading}
-                  className="mt-auto inline-flex h-11 items-center justify-center gap-2 bg-[#102C57] px-5 text-xs font-black text-white transition hover:bg-[#173b72] disabled:opacity-50"
+                  className="mt-auto inline-flex h-11 items-center justify-center gap-2 bg-[var(--surface-navy,#102C57)] px-5 text-xs font-black text-white transition hover:bg-[var(--surface-navy,#173b72)] disabled:opacity-50"
                 >
                   {isReturnPickerLoading ? (
                     <Loader2 size={16} className="animate-spin" />
@@ -1537,7 +1545,7 @@ export default function WeightScaleReturnPageClient({
       {isSettingsOpen ? (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm px-4 py-6">
           <div className="w-full max-w-xl border-2 border-[#d4af37] bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-[#d7dde5] bg-[#102C57] px-6 py-4 text-white">
+            <div className="flex items-center justify-between border-b border-[#d7dde5] bg-[var(--surface-navy,#102C57)] px-6 py-4 text-white">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#d4af37]">Connection Settings</p>
                 <h2 className="mt-2 text-2xl font-light uppercase tracking-[0.04em]">ตั้งค่าเครื่องชั่ง</h2>
@@ -1572,7 +1580,7 @@ export default function WeightScaleReturnPageClient({
                       setPrintMode("agent");
                       window.localStorage.setItem(PRINT_MODE_STORAGE_KEY, "agent");
                     }}
-                    className={`h-11 border text-xs font-black ${printMode === "agent" ? "border-[#d4af37] bg-[#102C57] text-[#f3d67a]" : "border-[#d7dde5] text-[#4f6076]"}`}
+                    className={`h-11 border text-xs font-black ${printMode === "agent" ? "border-[#d4af37] bg-[var(--surface-navy,#102C57)] text-[#f3d67a]" : "border-[#d7dde5] text-[#4f6076]"}`}
                   >
                     LOCAL AGENT
                   </button>
@@ -1582,7 +1590,7 @@ export default function WeightScaleReturnPageClient({
                       setPrintMode("webusb");
                       window.localStorage.setItem(PRINT_MODE_STORAGE_KEY, "webusb");
                     }}
-                    className={`h-11 border text-xs font-black ${printMode === "webusb" ? "border-[#d4af37] bg-[#102C57] text-[#f3d67a]" : "border-[#d7dde5] text-[#4f6076]"}`}
+                    className={`h-11 border text-xs font-black ${printMode === "webusb" ? "border-[#d4af37] bg-[var(--surface-navy,#102C57)] text-[#f3d67a]" : "border-[#d7dde5] text-[#4f6076]"}`}
                   >
                     WEBUSB
                   </button>
@@ -1622,7 +1630,7 @@ export default function WeightScaleReturnPageClient({
                           });
                         }}
                         disabled={!selectedPrinterName}
-                        className="inline-flex h-11 items-center justify-center gap-2 bg-[#102C57] text-xs font-black text-[#f3d67a] disabled:opacity-40"
+                        className="inline-flex h-11 items-center justify-center gap-2 bg-[var(--surface-navy,#102C57)] text-xs font-black text-[#f3d67a] disabled:opacity-40"
                       >
                         <Save size={15} />
                         บันทึกเครื่องพิมพ์
@@ -1659,7 +1667,7 @@ export default function WeightScaleReturnPageClient({
                 <button
                   type="button"
                   onClick={() => setIsSettingsOpen(false)}
-                  className="w-full h-12 bg-[#102C57] text-[#f3d67a] font-black uppercase tracking-widest hover:bg-[#1a3a6e] transition-colors"
+                  className="w-full h-12 bg-[var(--surface-navy,#102C57)] text-[#f3d67a] font-black uppercase tracking-widest hover:bg-[#1a3a6e] transition-colors"
                 >
                   ตกลง
                 </button>

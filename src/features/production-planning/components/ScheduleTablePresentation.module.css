@@ -1,0 +1,6 @@
+.table tbody td > button:not(:disabled), .table tbody td > div > select:not(:disabled), .table tbody td > select:not(:disabled) { background: transparent; border-color: transparent; border-radius: 0; box-shadow: none; cursor: pointer; }
+.table tbody td select { appearance: none; background-image: none; }
+.table tbody td > button:not(:disabled):hover, .table tbody td select:not(:disabled):hover { color: #0866d6; text-decoration: underline; text-underline-offset: 3px; background: transparent; }
+.table tbody td > button:focus-visible, .table tbody td select:focus-visible { color: #0866d6; text-decoration: underline; outline: 2px solid #0866d6; outline-offset: -2px; }
+.table tbody td[tabindex="0"]:hover, .table tbody td[tabindex="0"]:focus-visible { color: #0866d6; text-decoration: underline; text-underline-offset: 3px; }
+@media print { .table tbody td select { appearance: none; border: 0; background: transparent; } }

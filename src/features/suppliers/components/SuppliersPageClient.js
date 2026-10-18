@@ -98,7 +98,7 @@ function SuppliersPageContent() {
             {/* Desktop Table View */}
             <div className="hidden lg:block table-scroll">
               <table className="w-full border-collapse text-left text-sm table-bordered">
-                <thead className="bg-[#102C57] text-white sticky top-0 z-20 shadow-md">
+                <thead className="bg-[var(--surface-navy,#102C57)] text-white sticky top-0 z-20 shadow-md">
                   <tr>
                     <th className="px-4 py-3 font-semibold border-b border-[#0f172a] whitespace-nowrap">วันที่</th>
                     <th className="px-4 py-3 font-semibold border-b border-[#0f172a] whitespace-nowrap">สถานะ</th>
@@ -258,7 +258,7 @@ function SuppliersPageContent() {
 
 export default function SuppliersPage() {
   return (
-    <PermissionGate permissionsAny={["admin-suppliers"]}>
+    <PermissionGate permissionsAny={["admin-suppliers", "data-suppliers-view"]}>
       <SuppliersPageContent />
     </PermissionGate>
   );

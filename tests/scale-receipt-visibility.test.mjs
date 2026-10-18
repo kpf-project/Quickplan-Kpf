@@ -40,9 +40,9 @@ test("both scale pages filter cancelled receipts and check before reprint", () =
 
 test("issue report print and Excel retain status groups and exclude voided grand totals", () => {
   const source = fs.readFileSync(new URL("../src/features/production-line/components/ProductionStockIssueSummaryReportPageClient.js", import.meta.url), "utf8");
-  assert.equal(source.match(/const key = `\$\{row.productCode\}\|\$\{row.issueStatus\}`/g)?.length, 2);
+  assert.equal(source.match(/const key = `\$\{row\.productCode\}\|(?:(?:\$\{row\.destinationRoomCode\}\|)?)\$\{row\.issueStatus\}`/g)?.length, 2);
   assert.match(source, /filteredRows\.filter\(\(row\) => row.issueStatus !== "voided"\)/);
-  assert.match(source, /สรุปรวม \{data.productCode\} \(\{data.statusLabel\}\)/);
+  assert.match(source, /สรุปรวม \{data\.productCode\} \(\{data\.statusLabel\}\)/);
   assert.match(source, /productDisplay: `สรุปรวม \$\{productCode\} \(\$\{statusLabel\}\)`/);
   assert.match(source, /สรุปรวมเฉพาะเบิกสำเร็จ/);
 });
@@ -58,7 +58,9 @@ test("detailed weight receipt page defaults to all records and keeps explicit ty
   assert.match(page, /\["all", "production", "return"\]/);
   assert.match(client, /handleRecordTypeChange\("all"\)/);
   assert.match(client, /รายการชั่งคืนนอกช่วงวันที่จะไม่รวมในรายงานนี้/);
-  assert.match(client, /filters\.recordType === "production" &&/);
+  assert.doesNotMatch(client, /Preview ERP|Export ERP/);
+  const center = fs.readFileSync(new URL("../src/features/production-line/report-center/ProductionReportWorkspace.js", import.meta.url), "utf8");
+  assert.match(center, /initialReport\.reportId === "scale-inbound" && <ReceiptErpExport/);
   assert.match(client, /handleFieldChange\("lotNo"/);
   assert.match(service, /receipt\?\.lotNo[\s\S]*=== normalizedLotNo/);
 });

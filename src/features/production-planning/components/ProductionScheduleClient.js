@@ -2,10 +2,13 @@
 
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Printer, Settings2, AlertCircle, Save, Warehouse } from "lucide-react";
+import { ChevronLeft, ChevronRight, Printer, Settings2, AlertCircle, Save, Sparkles, Warehouse } from "lucide-react";
 import GenericScheduleTable from "./GenericScheduleTable";
+import styles from "./ProductionSchedulePresentation.module.css";
 import PlanningHeader from "./PlanningHeader";
 import MaterialVerifyModal from "./MaterialVerifyModal";
+import ScheduleVisionImportModal from "./ScheduleVisionImportModal";
+import { useUnsavedChanges } from "@/lib/tabState";
 import {
   useScheduleTemplate,
   useScheduleTemplates,
@@ -17,14 +20,16 @@ import {
   upsertPlan,
   updatePlan,
   saveRow,
+  saveRows,
   deleteRowApi,
 } from "@/features/production-planning/hooks/useSchedulePlan";
 import useSWR, { mutate as globalMutate } from "swr";
-import { fetcher } from "@/lib/clientFetch";
+import { fetchJson, fetcher } from "@/lib/clientFetch";
 
 // Constants
 
 const SKU_CATALOG_URL = "/api/production-planning/schedule/sku-catalog?includeMasterPlanWip=1";
+const VISION_ALIAS_URL = "/api/production-planning/schedule/vision-import/aliases";
 
 // Week helpers
 
@@ -262,11 +267,14 @@ export default function ProductionScheduleClient({
   const [saving, setSaving]           = useState(false);
   const [publishing, setPublishing]   = useState(false);
   const [dirty, setDirty]             = useState(false);
+  useUnsavedChanges(dirty, "คุณมีข้อมูลตารางวางแผนผลิตที่ยังไม่ได้บันทึก ต้องการออกจากหน้านี้หรือไม่?");
   const [activeDeptId, setActiveDeptId] = useState(deptProp ?? null);
   const [isVerifyModalOpen, setIsVerifyModalOpen] = useState(false);
+  const [isVisionImportOpen, setIsVisionImportOpen] = useState(false);
   const [isSubmittingVerify, setIsSubmittingVerify] = useState(false);
   const [localMasterPlanNo, setLocalMasterPlanNo] = useState(null);
   const newRowSeqRef = useRef(0);
+  const pendingVisionAliasesRef = useRef([]);
 
   const rangeDays = useMemo(() => buildRangeDays(dateFrom, dateTo), [dateFrom, dateTo]);
   const planStartDate = dateFrom;
@@ -491,26 +499,62 @@ export default function ProductionScheduleClient({
     setDirty(true);
   }, [isReadOnly, sections, sectionShiftMap, planId, addRow]);
 
+  const handleVisionImportConfirm = useCallback(({ rows: importedRows, aliases, dateRange }) => {
+    if (isReadOnly) return;
+    // Maintain the user's active date range. Never shrink.
+    // Only expand if imported rows fall strictly outside the current range.
+    if (dateRange?.dateFrom && dateRange.dateFrom < dateFrom) {
+      setDateFrom(dateRange.dateFrom);
+    }
+    if (dateRange?.dateTo && dateRange.dateTo > dateTo) {
+      setDateTo(dateRange.dateTo);
+    }
+    (importedRows ?? []).forEach((row) => {
+      addRow({
+        id: `new-vision-${Date.now()}-${++newRowSeqRef.current}`,
+        _isNew: true,
+        _visionImport: true,
+        plan_id: planId ?? null,
+        section_def_id: row.sectionDefId,
+        day_key: row.dayKey,
+        display_order: 999,
+        row_data: row.rowData,
+        sub_plan_id: null,
+      });
+    });
+    pendingVisionAliasesRef.current.push(...(aliases ?? []));
+    setDirty(true);
+  }, [addRow, isReadOnly, planId, dateFrom, dateTo, setDateFrom, setDateTo]);
+
   const handleDateFromChange = useCallback((value) => {
+    if (dirty && typeof window !== "undefined" && !window.confirm("คุณมีข้อมูลที่ยังไม่ได้บันทึก หากเปลี่ยนช่วงวันที่ ข้อมูลที่แก้ไขอาจสูญหาย ต้องการเปลี่ยนหรือไม่?")) {
+      return;
+    }
     const normalized = normalizeDateOnly(value) || todayDateOnly();
     setDateFrom(normalized);
     setDateTo((current) => {
       const normalizedCurrent = normalizeDateOnly(current) || normalized;
       return normalizedCurrent < normalized ? normalized : normalizedCurrent;
     });
-  }, []);
+  }, [dirty]);
 
   const handleDateToChange = useCallback((value) => {
+    if (dirty && typeof window !== "undefined" && !window.confirm("คุณมีข้อมูลที่ยังไม่ได้บันทึก หากเปลี่ยนช่วงวันที่ ข้อมูลที่แก้ไขอาจสูญหาย ต้องการเปลี่ยนหรือไม่?")) {
+      return;
+    }
     const normalized = normalizeDateOnly(value) || dateFrom;
     setDateTo(normalized < dateFrom ? dateFrom : normalized);
-  }, [dateFrom]);
+  }, [dirty, dateFrom]);
 
   const handleShiftRange = useCallback((direction) => {
+    if (dirty && typeof window !== "undefined" && !window.confirm("คุณมีข้อมูลที่ยังไม่ได้บันทึก หากเปลี่ยนช่วงวันที่ ข้อมูลที่แก้ไขอาจสูญหาย ต้องการเปลี่ยนหรือไม่?")) {
+      return;
+    }
     const spanDays = Math.max(1, rangeDays.length || 1);
     const { nextDateFrom, nextDateTo } = shiftDateRange(dateFrom, dateTo, direction * spanDays);
     setDateFrom(nextDateFrom);
     setDateTo(nextDateTo);
-  }, [dateFrom, dateTo, rangeDays.length]);
+  }, [dirty, dateFrom, dateTo, rangeDays.length]);
 
   const persistPlan = useCallback(async () => {
     let activePlanId = planId;
@@ -539,7 +583,37 @@ export default function ProductionScheduleClient({
       await updatePlan(activePlanId, { weekStartDate: planStartDate, periodEnd: dateTo, notes: footerNotes });
     }
 
-    await Promise.all(rows.map((row) => saveRow(activePlanId, row)));
+    if (pendingVisionAliasesRef.current.length) {
+      const aliasMap = new Map();
+      pendingVisionAliasesRef.current.forEach((a) => {
+        const key = `${a.sectionDefId}::${a.productColumnKey}::${String(a.sourceBrand || "").trim()}::${String(a.sourceProduct || "").trim()}::${String(a.sourceSize || "").trim()}`;
+        aliasMap.set(key, a);
+      });
+      const uniquePendingAliases = Array.from(aliasMap.values());
+
+      const aliasResult = await fetchJson(VISION_ALIAS_URL, {
+        method: "POST",
+        body: JSON.stringify({
+          deptId: activeDeptId,
+          templateId: resolvedTemplateId,
+          aliases: uniquePendingAliases,
+        }),
+      });
+      if (!aliasResult.ok) {
+        throw new Error(aliasResult.error?.message || "บันทึกคำจับคู่สินค้าไม่สำเร็จ");
+      }
+      pendingVisionAliasesRef.current = [];
+    }
+    const newRows = rows.filter((row) => row._isNew);
+    const existingRows = rows.filter((row) => !row._isNew);
+    const rowResults = await Promise.all([
+      saveRows(activePlanId, newRows),
+      ...existingRows.map((row) => saveRow(activePlanId, row)),
+    ]);
+    const failedRowSave = rowResults.find((result) => !result.ok);
+    if (failedRowSave) {
+      throw new Error(failedRowSave.error?.message || "บันทึกแผนการผลิตไม่สำเร็จ");
+    }
     await mutatePlan();
     return { planId: activePlanId, masterPlanNo: resolvedMasterPlanNo };
   }, [
@@ -654,57 +728,57 @@ export default function ProductionScheduleClient({
         </div>
       )}
 
-      {/* Planning header */}
+      {/* Planning Sub-Header (Clean, fixed 42px) */}
+      {!embedded ? <PlanningHeader activeTab="master" /> : null}
+
+      {/* Schedule Page Toolbar & Actions Bar */}
       {!embedded ? (
-        <PlanningHeader
-          activeTab="master"
-          title={isReportMode ? "รายงานแผนหลัก" : "แผนหลัก"}
-          description={isReportMode
-            ? "อ่านแผนหลักที่เผยแพร่แล้ว พร้อมดูช่วงวันที่ แผนก และรายการผลิตแบบเอกสาร"
-            : "จัดทำตารางแผนหลัก เลือกช่วงวันที่ บันทึก และเผยแพร่เพื่อส่งต่อให้ทีมงานแผนก"}
-          maxWidth="max-w-[1760px]"
-          meta={(
-            <>
-              <span>
+        <div className={`${styles.toolbar} border-b border-slate-200 bg-white px-4 py-2.5 shadow-sm print:hidden`}>
+          <div className="mx-auto max-w-[1760px] flex flex-wrap items-center justify-between gap-3">
+            {/* Left: Info / Dates status */}
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="font-bold text-[#102C57]">
                 {activeDeptName ? `แผนก ${activeDeptName} · ` : ""}ช่วงวันที่ {rangeDisplayLabel}
                 {effectiveMasterPlanNo ? ` · แผนหลัก ${effectiveMasterPlanNo}` : ""}
               </span>
-              <span className={`font-semibold ${isPublished ? "text-emerald-200" : "text-amber-200"}`}>
+              <span className={`px-2 py-0.5 rounded-[2px] font-bold text-[11px] ${isPublished ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
                 สถานะ: {isPublished ? "published" : "draft"}{dirty ? " · ยังไม่บันทึก" : ""}
               </span>
-            </>
-          )}
-          toolbar={(
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center justify-end gap-2">
+            </div>
+
+            {/* Right: Date controls & Action buttons */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1">
                 <button
-                  className="rounded-md border border-white/15 bg-white/10 p-2 text-white/70 transition hover:bg-white/15 hover:text-white"
+                  type="button"
+                  className="rounded-[2px] border border-slate-300 bg-slate-50 p-1.5 text-slate-700 transition hover:bg-slate-100"
                   onClick={() => handleShiftRange(-1)}
                   title="เลื่อนช่วงวันที่ย้อนกลับ"
                 >
                   <ChevronLeft size={14} />
                 </button>
-                <label className="flex items-center gap-2 rounded-md border border-white/10 bg-black/20 px-2 py-1 text-xs text-white/65">
-                  <span>จาก</span>
+                <label className="flex items-center gap-1.5 rounded-[2px] border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700">
+                  <span className="text-slate-500 text-[11px]">จาก</span>
                   <input
                     type="date"
                     value={dateFrom}
                     onChange={(event) => handleDateFromChange(event.target.value)}
-                    className="rounded-md border border-white/10 bg-white px-2 py-1 text-xs font-semibold text-slate-800 outline-none focus:border-[#d4af37]"
+                    className="border-0 bg-transparent text-xs font-semibold text-slate-900 outline-none"
                   />
                 </label>
-                <label className="flex items-center gap-2 rounded-md border border-white/10 bg-black/20 px-2 py-1 text-xs text-white/65">
-                  <span>ถึง</span>
+                <label className="flex items-center gap-1.5 rounded-[2px] border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700">
+                  <span className="text-slate-500 text-[11px]">ถึง</span>
                   <input
                     type="date"
                     value={dateTo}
                     min={dateFrom}
                     onChange={(event) => handleDateToChange(event.target.value)}
-                    className="rounded-md border border-white/10 bg-white px-2 py-1 text-xs font-semibold text-slate-800 outline-none focus:border-[#d4af37]"
+                    className="border-0 bg-transparent text-xs font-semibold text-slate-900 outline-none"
                   />
                 </label>
                 <button
-                  className="rounded-md border border-white/15 bg-white/10 p-2 text-white/70 transition hover:bg-white/15 hover:text-white"
+                  type="button"
+                  className="rounded-[2px] border border-slate-300 bg-slate-50 p-1.5 text-slate-700 transition hover:bg-slate-100"
                   onClick={() => handleShiftRange(1)}
                   title="เลื่อนช่วงวันที่ถัดไป"
                 >
@@ -712,44 +786,45 @@ export default function ProductionScheduleClient({
                 </button>
               </div>
 
-              <div className="flex flex-wrap justify-end gap-2 text-xs">
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
                 <button
-                  className="inline-flex items-center gap-1 rounded-md border border-white/15 bg-white/10 px-3 py-1.5 font-semibold text-white/80 transition hover:bg-white/15"
+                  type="button"
+                  className="inline-flex items-center gap-1 rounded-[2px] border border-slate-300 bg-white px-2.5 py-1.5 font-semibold text-slate-700 transition hover:bg-slate-50"
                   onClick={() => window.print()}
                 >
                   <Printer size={12} /> พิมพ์
                 </button>
                 {!isReportMode ? (
                   <>
+                    <button
+                      type="button"
+                      disabled={isReadOnly || isMockup || saving || publishing}
+                      onClick={() => setIsVisionImportOpen(true)}
+                      className="inline-flex items-center gap-1 rounded-[2px] border border-[#d4af37] bg-[#d4af37]/15 px-2.5 py-1.5 font-bold text-[#b38f22] transition hover:bg-[#d4af37]/25 disabled:opacity-40"
+                    >
+                      <Sparkles size={12} /> นำเข้าจากรูป/PDF
+                    </button>
                     <a
                       href="/admin/schedule-config"
-                      className="inline-flex items-center gap-1 rounded-md border border-white/15 bg-white/10 px-3 py-1.5 font-semibold text-white/80 transition hover:bg-white/15"
+                      className="inline-flex items-center gap-1 rounded-[2px] border border-slate-300 bg-white px-2.5 py-1.5 font-semibold text-slate-700 transition hover:bg-slate-50"
                     >
                       <Settings2 size={12} /> ตั้งค่า
                     </a>
                     {planStatus === "published" ? (
-                      <button
-                        type="button"
-                        disabled
-                        className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-3 py-1.5 font-bold text-emerald-800 cursor-not-allowed opacity-80"
-                      >
+                      <span className="inline-flex items-center gap-1 rounded-[2px] bg-emerald-100 px-3 py-1.5 font-bold text-emerald-800">
                         เผยแพร่แผนหลักแล้ว
-                      </button>
+                      </span>
                     ) : planStatus === "pending_verify" ? (
-                      <button
-                        type="button"
-                        disabled
-                        className="inline-flex items-center gap-1 rounded-md bg-slate-200 px-3 py-1.5 font-bold text-slate-500 cursor-not-allowed opacity-80"
-                      >
+                      <span className="inline-flex items-center gap-1 rounded-[2px] bg-slate-200 px-3 py-1.5 font-bold text-slate-600">
                         รอการตรวจสอบวัตถุดิบ...
-                      </button>
+                      </span>
                     ) : (
                       <>
                         <button
                           type="button"
                           disabled={saving || publishing || isSubmittingVerify}
                           onClick={handleRequestVerifyClick}
-                          className="inline-flex items-center gap-1 rounded-md bg-[#d4af37] px-3 py-1.5 font-bold text-[#102C57] transition hover:bg-[#e0bd45] disabled:opacity-40"
+                          className="inline-flex items-center gap-1 rounded-[2px] bg-[#d4af37] px-3 py-1.5 font-bold text-[#102C57] transition hover:bg-[#e0bd45] disabled:opacity-40"
                         >
                           <Warehouse size={12} /> {isSubmittingVerify ? "กำลังส่งตรวจ..." : "บันทึกและส่งตรวจวัตถุดิบ"}
                         </button>
@@ -757,7 +832,7 @@ export default function ProductionScheduleClient({
                           type="button"
                           disabled={publishing || isPublished}
                           onClick={handlePublish}
-                          className="inline-flex items-center gap-1 rounded-md border border-emerald-200/30 bg-emerald-400/15 px-3 py-1.5 font-semibold text-emerald-100 transition hover:bg-emerald-400/25 disabled:opacity-40"
+                          className="inline-flex items-center gap-1 rounded-[2px] border border-emerald-600 bg-emerald-50 px-3 py-1.5 font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-40"
                         >
                           {publishing ? "กำลังเผยแพร่..." : "เผยแพร่แผน (Bypass)"}
                         </button>
@@ -767,7 +842,7 @@ export default function ProductionScheduleClient({
                       type="button"
                       disabled={saving || publishing || isSubmittingVerify || (!dirty && !isMockup)}
                       onClick={handleSave}
-                      className="inline-flex items-center gap-1 rounded-md border border-white/15 bg-white/10 px-3 py-1.5 font-semibold text-white/80 transition hover:bg-white/15 disabled:opacity-40"
+                      className="inline-flex items-center gap-1 rounded-[2px] bg-[var(--surface-navy,#102C57)] px-3 py-1.5 font-bold text-white transition hover:bg-[#1a3c75] disabled:opacity-40"
                     >
                       <Save size={12} /> {saving ? "กำลังบันทึก..." : "บันทึกร่าง"}
                     </button>
@@ -775,13 +850,13 @@ export default function ProductionScheduleClient({
                 ) : null}
               </div>
             </div>
-          )}
-        />
+          </div>
+        </div>
       ) : null}
 
       {/* A4 canvas */}
-      <div className={embedded ? "py-3 px-2" : "py-6 px-4"}>
-        <div className={embedded ? "max-w-none mx-auto" : "max-w-[1760px] mx-auto"}>
+      <div className={embedded ? "py-3" : "py-6"}>
+        <div className={embedded ? "max-w-none mx-auto" : styles.canvas}>
 
           {/* Dept switcher */}
           {templateAssignedDepts.length > 1 && !embedded && (
@@ -794,11 +869,8 @@ export default function ProductionScheduleClient({
                     key={dept.id}
                     type="button"
                     onClick={() => setActiveDeptId(dept.id)}
-                    className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors ${
-                      isActiveDept
-                        ? "border-[#102C57] bg-[#102C57] text-white"
-                        : "border-slate-200 bg-white text-slate-950 font-bold hover:border-[#102C57] hover:bg-slate-50"
-                    }`}
+                    className={styles.departmentTab}
+                    aria-pressed={isActiveDept}
                   >
                     {dept.name}
                   </button>
@@ -849,12 +921,15 @@ export default function ProductionScheduleClient({
             </div>
           )}
 
+          {/* Section navigation outside the document */}
+          {!isLoading && (!isPublished || isReportMode || embedded) && sections.length > 0 && <div className={styles.sectionNav}><SectionTabs sections={sections} activeIdx={activeSectionIdx} onChange={setActiveSectionIdx} /></div>}
+
           {/* Document card */}
           {!isLoading && (!isPublished || isReportMode || embedded) && (
-            <div className="bg-white rounded border border-slate-200 shadow-sm overflow-hidden">
+            <div className={styles.paper}>
 
               {/* Document header */}
-              <div className="px-6 py-4 border-b border-[#0a1f45] bg-[#0f2a5a]">
+              <div className={styles.paperHeader}>
                 <div className="flex items-start justify-between">
                   <div>
                     <p className="text-[10px] font-semibold text-blue-100/80 uppercase tracking-widest mb-0.5">
@@ -869,6 +944,7 @@ export default function ProductionScheduleClient({
                   </div>
                   <div className="text-right text-xs text-blue-100/80 space-y-0.5">
                     <p>แผนก: {activeDeptName || "ไม่ระบุ"}</p>
+                    <p>{rangeDisplayLabel}</p>
                   </div>
                 </div>
               </div>
@@ -900,15 +976,6 @@ export default function ProductionScheduleClient({
                 </div>
               )}
 
-              {/* Section tabs */}
-              {sections.length > 0 && (
-                <SectionTabs
-                  sections={sections}
-                  activeIdx={activeSectionIdx}
-                  onChange={setActiveSectionIdx}
-                />
-              )}
-
               {/* No sections */}
               {sections.length === 0 && (
                 <div className="py-20 text-center text-slate-955 font-bold text-sm">
@@ -920,7 +987,7 @@ export default function ProductionScheduleClient({
 
               {/* Active section table */}
               {activeSection && (
-                <div className="px-4 py-4">
+                <div className={styles.tableViewport}>
                   <GenericScheduleTable
                      section={activeSection}
                      rows={rowsBySection.get(activeSection.id) ?? []}
@@ -954,6 +1021,15 @@ export default function ProductionScheduleClient({
         breakdown={verifySummaryData?.breakdown || []}
         onSubmit={handleVerifySubmit}
         isSubmitting={isSubmittingVerify}
+      />
+      <ScheduleVisionImportModal
+        isOpen={isVisionImportOpen}
+        onClose={() => setIsVisionImportOpen(false)}
+        deptId={activeDeptId}
+        templateId={resolvedTemplateId}
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        onConfirm={handleVisionImportConfirm}
       />
     </div>
   );

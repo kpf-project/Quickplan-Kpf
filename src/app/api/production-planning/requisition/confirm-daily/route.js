@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
+import { ApiError, getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
 import { requirePermissionKeys } from "@/lib/permissionGuard";
 import { normalizeMasterPlanNo } from "@/lib/planNo";
 import { normalizeDateOnly } from "@/lib/materialClaims";
 import { loadMainPlanRowsForClaimDemand, loadSubplanRowsForClaimDemand } from "@/lib/materialClaimPool";
+import { isRequisitionDraftStale, loadPlanningSourceRevision } from "@/lib/planningRelease";
 import { loadMaterialOwnerMap, resolveAssignedDepartment } from "@/lib/materialVerify";
 import { reserveDocumentNumbers } from "@/lib/requisitionGroups";
 import { allocateLotNumbersForExportRows } from "@/lib/requisitionLotExport";
@@ -50,6 +51,10 @@ function roundQty(value) {
   return Number(toNumber(value).toFixed(3));
 }
 
+function reservationLotKey(parentSkuCode, lotNo, warehouseCode) {
+  return [normalizeSku(parentSkuCode), String(lotNo || "").trim(), normalizeSku(warehouseCode)].join("|");
+}
+
 function extractSnapshotRoot(planRow) {
   return Array.isArray(planRow?.bom_snapshot) ? planRow.bom_snapshot[0] : null;
 }
@@ -84,11 +89,16 @@ function buildConfirmedDocumentKey({
   dateTo,
   parentSku,
   workstreamCode,
+  consolidateRequisitionPreviewByDate,
 }) {
   const materialGroup = dispatchSplitMode === "split_by_material_type"
     ? `|${dispatchMaterialGroup || "RAW"}`
     : "";
-  const discriminator = resolveRequisitionDocumentDiscriminator({ parentSku, workstreamCode });
+  const discriminator = resolveRequisitionDocumentDiscriminator({
+    parentSku,
+    workstreamCode,
+    consolidateRequisitionPreviewByDate,
+  });
   const prefix = [
     grain,
     String(ownerDepartmentId || "").trim(),
@@ -103,6 +113,12 @@ function buildConfirmedDocumentKey({
 
 function isFgDirectRow(row) {
   return String(row?.demand_source || "").trim().toLowerCase() === "fg_direct";
+}
+
+function hasAssignedRoom(doc) {
+  const roomId = String(doc?.roomId || "").trim().toUpperCase();
+  const roomLabel = String(doc?.roomLabel || "").trim();
+  return Boolean(roomId && roomId !== "UNASSIGNED_ROOM" && !roomLabel.includes("ยังไม่กำหนดห้อง"));
 }
 
 export async function POST(request) {
@@ -134,6 +150,25 @@ export async function POST(request) {
     const excludedDocumentKeys = Array.isArray(body?.excludedDocumentKeys)
       ? body.excludedDocumentKeys.map((key) => String(key).trim()).filter(Boolean)
       : [];
+    const lotAllocationOverrides = Object.fromEntries(
+      Object.entries(body?.lotAllocationOverrides && typeof body.lotAllocationOverrides === "object"
+        ? body.lotAllocationOverrides
+        : {})
+        .slice(0, 5000)
+        .map(([key, allocations]) => [
+          String(key || "").trim(),
+          (Array.isArray(allocations) ? allocations : []).slice(0, 100).map((item) => ({
+            lotNo: String(item?.lotNo || "").trim(),
+            qty: roundQty(item?.qty),
+          })).filter((item) => item.qty > 0),
+        ])
+        .filter(([key, allocations]) => key && allocations.length)
+    );
+    const lotReservationKeys = Array.from(new Set(
+      (Array.isArray(body?.lotReservationKeys) ? body.lotReservationKeys : [])
+        .map((key) => String(key || "").trim())
+        .filter(Boolean)
+    ));
 
     if (!inputMasterPlanNo || !masterPlanNo) {
       return NextResponse.json({ error: "masterPlanNo is required and must be valid" }, { status: 400 });
@@ -171,14 +206,16 @@ export async function POST(request) {
     const deptMapByCode = new Map(deptRows.map((r) => [String(r.code).trim().toUpperCase(), r]));
 
     // 2. Fetch main & subplan rows for the date range
+    const sourceRevision = await loadPlanningSourceRevision(supabaseAdmin, masterPlanNo);
     const [mainRows, subRows] = await Promise.all([
       loadMainPlanRowsForClaimDemand(supabaseAdmin, {
+        releasedOnly: true,
         masterPlanNo,
         dateFrom: dateFromInput,
         dateTo: dateToInput,
         includeWipMaterials: true,
       }),
-      loadSubplanRowsForClaimDemand(supabaseAdmin, { masterPlanNo, dateFrom: dateFromInput, dateTo: dateToInput }),
+      loadSubplanRowsForClaimDemand(supabaseAdmin, { masterPlanNo, dateFrom: dateFromInput, dateTo: dateToInput, releasedOnly: true }),
     ]);
 
     const rows = [...(Array.isArray(mainRows) ? mainRows : []), ...(Array.isArray(subRows) ? subRows : [])];
@@ -186,9 +223,8 @@ export async function POST(request) {
       return NextResponse.json({ error: "ไม่มีข้อมูลความต้องการผลิตในวันที่เลือก" }, { status: 400 });
     }
 
-    const [ownerByMaterialKey, requiredWipSkuSet, parentCategoryBySku] = await Promise.all([
+    const [ownerByMaterialKey, parentCategoryBySku] = await Promise.all([
       loadMaterialOwnerMap(supabaseAdmin),
-      loadRequiredRequisitionWipSkuSet(supabaseAdmin, collectSnapshotWipSkuCodes(rows)),
       loadRequisitionParentCategoryMap(supabaseAdmin, rows),
     ]);
 
@@ -214,21 +250,27 @@ export async function POST(request) {
       rows.map((row) => row?.owner_department_id)
     );
 
-    const workCenterIds = Array.from(
-      new Set((routingRows || []).map((row) => String(row?.work_center_id || "").trim()).filter(Boolean))
-    );
+    const workCenterIds = Array.from(new Set([
+      ...(routingRows || []).map((row) => String(row?.work_center_id || "").trim()),
+      ...rows
+        .filter((row) => String(row?.plan_kind || "").trim().toLowerCase() === "sub")
+        .map((row) => resolveSectionMeta(row).sectionId),
+    ].filter(Boolean)));
     let workCenterById = new Map();
     if (workCenterIds.length) {
       const workCenters = await fetchSupabaseRowsByChunks(
         workCenterIds,
         (chunk) => supabaseAdmin
           .from("production_work_centers")
-          .select("id,code,name")
+          .select("id,code,name,consolidate_requisition_preview_by_date")
           .in("id", chunk)
       );
       workCenterById = new Map((workCenters || []).map((wc) => [String(wc.id), wc]));
     }
 
+    const requiredWipSkuSet = await loadRequiredRequisitionWipSkuSet(
+      supabaseAdmin, collectSnapshotWipSkuCodes(rows)
+    );
     const routingByKey = buildRequisitionRoutingMap(routingRows);
 
     const { data: shiftRows } = await supabaseAdmin
@@ -245,6 +287,9 @@ export async function POST(request) {
       scope: accessScope,
       allowLegacyFallback: accessScope.canManageGlobal,
     });
+    if (isRequisitionDraftStale(draftRow, sourceRevision)) {
+      throw new ApiError(409, "แผนที่ยืนยัน/เผยแพร่เปลี่ยนแล้ว กรุณาตรวจสอบแบบร่างใบเบิกก่อน Export");
+    }
     const draftPayload = draftRow?.draft_payload || {};
 
     const items = [];
@@ -345,6 +390,8 @@ export async function POST(request) {
           roomId: workCenterId || "UNASSIGNED_ROOM",
           roomLabel,
           roomCode: String(workCenter?.code || "").trim().toUpperCase() || null,
+          consolidateRequisitionPreviewByDate:
+            workCenter?.consolidate_requisition_preview_by_date === true,
           workstreamCode: resolvedSectionId || "DEFAULT",
           workstreamName: resolvedSectionName,
           dispatchSplitMode: String(routing?.dispatch_split_mode || "").trim().toLowerCase() === "split_by_material_type"
@@ -379,8 +426,8 @@ export async function POST(request) {
         if (!dailyDocMap.has(finalKey)) {
           dailyDocMap.set(finalKey, {
             documentKey: finalKey,
-            parentSku: item.parentSku,
-            parentSkuName: item.parentSkuName,
+            parentSku: item.consolidateRequisitionPreviewByDate ? null : item.parentSku,
+            parentSkuName: item.consolidateRequisitionPreviewByDate ? null : item.parentSkuName,
             ownerDepartmentId: item.ownerDepartmentId,
             ownerDepartmentCode: item.ownerDepartmentCode,
             ownerDepartmentName: item.ownerDepartmentName,
@@ -394,8 +441,14 @@ export async function POST(request) {
             roomId: item.roomId,
             roomLabel: item.roomLabel,
             roomCode: item.roomCode,
-            workstreamCode: item.workstreamCode,
-            workstreamName: item.workstreamName,
+            consolidateRequisitionPreviewByDate:
+              item.consolidateRequisitionPreviewByDate === true,
+            workstreamCode: item.consolidateRequisitionPreviewByDate
+              ? "CONSOLIDATED"
+              : item.workstreamCode,
+            workstreamName: item.consolidateRequisitionPreviewByDate
+              ? "รวมตามห้องผลิต"
+              : item.workstreamName,
             workDate: item.workDate,
             dispatchSplitMode: item.dispatchSplitMode,
             dispatchMaterialGroup: splitByType ? (item.dispatchMaterialGroup || "RAW") : null,
@@ -499,6 +552,7 @@ export async function POST(request) {
         if (
           selectedDepartmentIdsDaily.includes(String(doc.ownerDepartmentId).trim()) && 
           doc.lines.length > 0 &&
+          hasAssignedRoom(doc) &&
           !excludedDocumentKeys.includes(doc.documentKey)
         ) {
           documentsToConfirm.push({ ...doc, grain: "daily" });
@@ -518,8 +572,8 @@ export async function POST(request) {
         if (!consolidatedDocMap.has(finalKey)) {
           consolidatedDocMap.set(finalKey, {
             documentKey: finalKey,
-            parentSku: item.parentSku,
-            parentSkuName: item.parentSkuName,
+            parentSku: item.consolidateRequisitionPreviewByDate ? null : item.parentSku,
+            parentSkuName: item.consolidateRequisitionPreviewByDate ? null : item.parentSkuName,
             ownerDepartmentId: item.ownerDepartmentId,
             ownerDepartmentCode: item.ownerDepartmentCode,
             ownerDepartmentName: item.ownerDepartmentName,
@@ -533,8 +587,14 @@ export async function POST(request) {
             roomId: item.roomId,
             roomLabel: item.roomLabel,
             roomCode: item.roomCode,
-            workstreamCode: item.workstreamCode,
-            workstreamName: item.workstreamName,
+            consolidateRequisitionPreviewByDate:
+              item.consolidateRequisitionPreviewByDate === true,
+            workstreamCode: item.consolidateRequisitionPreviewByDate
+              ? "CONSOLIDATED"
+              : item.workstreamCode,
+            workstreamName: item.consolidateRequisitionPreviewByDate
+              ? "รวมตามห้องผลิต"
+              : item.workstreamName,
             workDate: item.workDate,
             dispatchSplitMode: item.dispatchSplitMode,
             dispatchMaterialGroup: splitByType ? (item.dispatchMaterialGroup || "RAW") : null,
@@ -636,6 +696,7 @@ export async function POST(request) {
         if (
           selectedDepartmentIdsConsolidated.includes(String(doc.ownerDepartmentId).trim()) && 
           doc.lines.length > 0 &&
+          hasAssignedRoom(doc) &&
           !excludedDocumentKeys.includes(doc.documentKey)
         ) {
           documentsToConfirm.push({ ...doc, grain: "weekly" });
@@ -677,12 +738,16 @@ export async function POST(request) {
         dateTo: dateToInput,
         parentSku: doc.parentSku,
         workstreamCode: doc.workstreamCode,
+        consolidateRequisitionPreviewByDate: doc.consolidateRequisitionPreviewByDate,
       });
       if (!matchedDocumentNoMap.has(key)) {
         uniqueKeysToReserve.add(key);
       }
     });
 
+    if (sourceRevision !== await loadPlanningSourceRevision(supabaseAdmin, masterPlanNo)) {
+      throw new ApiError(409, "แผนถูกยืนยัน/เผยแพร่ใหม่ระหว่าง Export กรุณาโหลดข้อมูลล่าสุดแล้วลองอีกครั้ง");
+    }
     const newReservedNos = uniqueKeysToReserve.size > 0
       ? await reserveDocumentNumbers(supabaseAdmin, uniqueKeysToReserve.size, now)
       : [];
@@ -705,6 +770,7 @@ export async function POST(request) {
         dateTo: dateToInput,
         parentSku: doc.parentSku,
         workstreamCode: doc.workstreamCode,
+        consolidateRequisitionPreviewByDate: doc.consolidateRequisitionPreviewByDate,
       });
       
       if (assignedDocNosMap.has(key)) {
@@ -786,6 +852,8 @@ export async function POST(request) {
         parentSkuName: doc.parentSkuName || null,
         workstreamCode: doc.workstreamCode || null,
         workstreamName: doc.workstreamName || null,
+        consolidateRequisitionPreviewByDate:
+          doc.consolidateRequisitionPreviewByDate === true,
         ownerDepartmentId: doc.ownerDepartmentId,
         ownerDepartmentCode: doc.ownerDepartmentCode,
         ownerDepartmentName: doc.ownerDepartmentName,
@@ -857,6 +925,7 @@ export async function POST(request) {
             doc.ownerDepartmentId || "UNASSIGNED",
             doc.parentSku || "UNASSIGNED_SKU",
             `daily_preview|${doc.roomId || "ALL"}|${doc.shiftCode || "ALL"}`,
+            groupId,
             batchInsert.data.id,
           ].join("|");
 
@@ -922,6 +991,7 @@ export async function POST(request) {
               materialSkuCode: line.materialSkuCode,
               materialGoodsCode: line.materialGoodsCode,
               itemType: line.itemType || null,
+              lotAllocationKey: `${doc.documentKey}::${normalizeSku(line.materialGoodsCode)}|${normalizeSku(line.unit)}`,
             },
           });
 
@@ -993,6 +1063,23 @@ export async function POST(request) {
       lineSeqMapByDocRef.set(documentNo, lineSeq);
     }
 
+    const { data: otherReservations, error: otherReservationsError } = await supabaseAdmin
+      .from("production_requisition_lot_reservations")
+      .select("reservation_key, parent_sku_code, lot_no, warehouse_code, reserved_base_qty")
+      .eq("master_plan_no", masterPlanNo);
+    if (otherReservationsError) throw otherReservationsError;
+    const otherReservedBaseQty = {};
+    (otherReservations || [])
+      .filter((row) => !lotReservationKeys.includes(String(row?.reservation_key || "").trim()))
+      .forEach((row) => {
+        const key = reservationLotKey(row?.parent_sku_code, row?.lot_no, row?.warehouse_code);
+        otherReservedBaseQty[key] = roundQty(toNumber(otherReservedBaseQty[key]) + toNumber(row?.reserved_base_qty));
+      });
+    const reservedBaseQtyByRequestKey = Object.fromEntries(allExportLinesRows.map((line, index) => [
+      String(line?.meta?.lotAllocationKey || index),
+      otherReservedBaseQty,
+    ]));
+
     const allocatedExport = await allocateLotNumbersForExportRows({
       exportRows,
       lineRows: allExportLinesRows,
@@ -1001,6 +1088,8 @@ export async function POST(request) {
       lotKey: "เลขล็อต",
       locationKey: "ตำแหน่งเก็บ",
       allowPartialStock: true,
+      allocationOverridesByKey: lotAllocationOverrides,
+      reservedBaseQtyByRequestKey,
     });
     exportRows = allocatedExport.exportRows;
     allExportLinesRows = allocatedExport.lineRows;
@@ -1043,21 +1132,25 @@ export async function POST(request) {
     const allExportUpserts = Array.from(allExportUpsertsMap.values());
 
     // 3. Batch DB insertions respecting foreign key constraints
-    const firstPhase = [];
-
     if (allGroupItemsRows.length > 0) {
-      firstPhase.push(
-        supabaseAdmin
-          .from("production_requisition_group_items")
-          .insert(allGroupItemsRows)
-          .then(({ error }) => {
-            if (error) throw error;
-          })
-      );
-    }
-
-    if (firstPhase.length > 0) {
-      await Promise.all(firstPhase);
+      const { error: groupItemsError } = await supabaseAdmin
+        .from("production_requisition_group_items")
+        .insert(allGroupItemsRows);
+      if (groupItemsError) {
+        const insertedGroupIds = (insertedGroups || []).map((group) => group.id).filter(Boolean);
+        if (insertedGroupIds.length > 0) {
+          await supabaseAdmin
+            .from("production_requisition_group_batches")
+            .delete()
+            .in("id", insertedGroupIds)
+            .eq("export_batch_id", batchInsert.data.id);
+        }
+        await supabaseAdmin
+          .from("production_requisition_export_batches")
+          .delete()
+          .eq("id", batchInsert.data.id);
+        throw groupItemsError;
+      }
     }
 
     const { error: versionedExportError } = await supabaseAdmin.rpc("save_requisition_export_version", {
@@ -1117,6 +1210,17 @@ export async function POST(request) {
           .insert(allExportLinesRows);
         if (linesInsertError) throw linesInsertError;
       }
+    }
+
+    if (lotReservationKeys.length > 0) {
+      await fetchSupabaseRowsByChunks(
+        lotReservationKeys,
+        (chunk) => supabaseAdmin
+          .from("production_requisition_lot_reservations")
+          .delete()
+          .eq("master_plan_no", masterPlanNo)
+          .in("reservation_key", chunk)
+      );
     }
 
     const excelModule = await import("exceljs");

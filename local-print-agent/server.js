@@ -561,6 +561,24 @@ async function handlePrintPieceRateLabel(request, response, config) {
   });
 }
 
+async function handlePrintCentralScaleLabel(request, response, config) {
+  const body = await collectJsonBody(request);
+  const printerName = String(body?.printerName || "").trim();
+  const printers = await listInstalledPrinters();
+  if (!printerName || !printers.some(printer => printer.name === printerName)
+    || !/^\d{14}$/.test(body?.barcodeValue || "")
+    || !body?.labelBitmap || body?.nativeBarcode?.type !== "128"
+    || !["x", "y", "height", "narrow", "wide"].every(key => Number.isInteger(body.nativeBarcode[key]))
+    || body.nativeBarcode.x < 0 || body.nativeBarcode.y < 0 || body.nativeBarcode.height <= 0
+    || body.nativeBarcode.narrow <= 0 || body.nativeBarcode.wide < body.nativeBarcode.narrow) {
+    sendJson(response, 400, { ok: false, error: "Central printer or native Code 128 barcode is invalid." });
+    return;
+  }
+  const rawContent = buildTsplLabel(body, config);
+  await sendRawToPrinter({ printerName, documentName: "KPF Central Scale Label", rawContent });
+  sendJson(response, 200, { ok: true, data: { printerName, barcodeValue: body.barcodeValue, spooledAt: new Date().toISOString() } });
+}
+
 function createServer() {
   return http.createServer(async (request, response) => {
     const config = loadConfig();
@@ -598,6 +616,11 @@ function createServer() {
 
       if (request.method === "POST" && request.url === "/print/weight-scale-label") {
         await handlePrintWeightScaleLabel(request, response, config);
+        return;
+      }
+
+      if (request.method === "POST" && request.url === "/central-scale/print") {
+        await handlePrintCentralScaleLabel(request, response, config);
         return;
       }
 

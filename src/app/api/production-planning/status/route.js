@@ -9,6 +9,7 @@ import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { applyStockDeduction, clearIssuedCache } from "@/lib/stockDeduction";
 import { fetchGatewayJson } from "@/lib/gatewayClient";
 import { explodeBomBatch } from "@/lib/bomExplosionRpc";
+import { isPlanningDateEditable } from "@/lib/planningAdjustment";
 import {
   buildMasterPlanNo,
   buildSubPlanNo,
@@ -793,13 +794,7 @@ function findUnauthorizedOwnerDepartments(records, editableDepartmentIdSet) {
 
 async function hasPlanningManageAccess(request, userId, isAdmin = false) {
   if (isAdmin) return true;
-  const session = getSessionFromRequest(request, userId);
-  if (session?.isAdmin) return true;
-  if (Array.isArray(session?.permissions)) {
-    // "Manage" means global edit scope. Publishing/approving exceptions is not global edit.
-    return session.permissions.includes("production-line-planning-manage");
-  }
-  const permissionResult = await getUserPermissions(userId);
+  const permissionResult = await getUserPermissions(userId, { fresh: true });
   return Boolean(
     permissionResult?.isAdmin
       || permissionResult?.permissions?.includes("production-line-planning-manage")
@@ -1170,6 +1165,7 @@ export async function POST(request) {
   ]);
   const supabase = createSupabaseServerClient(request, NextResponse.next());
   const body = await request.json().catch(() => ({}));
+  const editableFromDate = normalizeDateInput(body?.editableFromDate);
   const records = Array.isArray(body.records) ? body.records : [];
   if (!records.length) {
     return NextResponse.json({ ok: true }, { status: 200 });
@@ -1257,6 +1253,15 @@ export async function POST(request) {
       error: "masterPlanNo is required for every record",
       details: { recordIndexes: invalidPlanNoIndexes },
     }, { status: 400 });
+  }
+  if (
+    editableFromDate
+    && derivedRecords.some((record) => !isPlanningDateEditable(record.period_start, editableFromDate))
+  ) {
+    return NextResponse.json(
+      { error: "ไม่สามารถแก้ไขแผนของวันที่ผ่านมาแล้ว" },
+      { status: 400 }
+    );
   }
   if (!permission.isAdmin && !hasManageAccess) {
     const unauthorizedSkus = findUnauthorizedSkuCodes(
@@ -1404,7 +1409,7 @@ export async function POST(request) {
       Boolean(coveringMain?.plan_id) || (groupKey ? mainByGroup.has(groupKey) : false);
 
     // Resolve plan kind based on confirmed main presence.
-    let resolvedKind = existingKind;
+    let resolvedKind = existingKind || (record.plan_kind === "main" ? "main" : null);
     if (resolvedKind === "sub" && !isConfirmedPlanStatus(recordStatus) && !hasReadyMain) {
       resolvedKind = "main";
     }
@@ -1972,6 +1977,7 @@ export async function DELETE(request) {
   const supabase = createSupabaseServerClient(request, NextResponse.next());
   const supabaseAdmin = getSupabaseAdmin();
   const body = await request.json().catch(() => ({}));
+  const editableFromDate = normalizeDateInput(body?.editableFromDate);
   const planIds = Array.isArray(body.planIds) ? body.planIds : [];
   const requestedMasterPlanNo = normalizeMasterPlanNo(
     body?.masterPlanNo || body?.planNo
@@ -1985,7 +1991,7 @@ export async function DELETE(request) {
   }
   const planResult = await supabaseAdmin
     .from(TABLE_NAME)
-    .select("plan_id,sku_code,owner_department_id,master_plan_no,plan_group_id")
+    .select("plan_id,sku_code,owner_department_id,master_plan_no,plan_group_id,period_start")
     .in("plan_id", planIds);
   if (planResult.error) {
     return NextResponse.json({ error: planResult.error.message }, { status: 500 });
@@ -2017,6 +2023,15 @@ export async function DELETE(request) {
         planIds: planNoMismatch.map((row) => row.planId),
       },
     }, { status: 400 });
+  }
+  if (
+    editableFromDate
+    && planRows.some((row) => !isPlanningDateEditable(row?.period_start, editableFromDate))
+  ) {
+    return NextResponse.json(
+      { error: "ไม่สามารถแก้ไขแผนของวันที่ผ่านมาแล้ว" },
+      { status: 400 }
+    );
   }
   const hasManageAccess = await hasPlanningManageAccess(
     request,
@@ -2074,6 +2089,7 @@ export async function PATCH(request) {
   ]);
   const supabase = createSupabaseServerClient(request, NextResponse.next());
   const body = await request.json().catch(() => ({}));
+  const editableFromDate = normalizeDateInput(body?.editableFromDate);
   const planId = body.planId;
   const plannedQty = Number(body.plannedQty);
   const materialOverrides = Array.isArray(body.materialOverrides) ? body.materialOverrides : [];
@@ -2105,14 +2121,14 @@ export async function PATCH(request) {
     : await loadPlanningScopeByUser(supabaseAdmin, permission.userId);
   let { data: planRow, error: planError } = await supabaseAdmin
     .from(TABLE_NAME)
-    .select("plan_id,sku_code,sku_name,unit,status,confirmed_at,bom_snapshot,formula_code,formula_name,bom_version_id,owner_department_id,master_plan_no,plan_kind,schedule_section_def_id,schedule_section_name,line_dough_set_count")
+    .select("plan_id,sku_code,sku_name,unit,status,confirmed_at,bom_snapshot,formula_code,formula_name,bom_version_id,owner_department_id,master_plan_no,plan_kind,schedule_section_def_id,schedule_section_name,line_dough_set_count,period_start")
     .eq("plan_id", planId)
     .maybeSingle();
 
   if (planError && isMissingPlanMetadataColumns(planError)) {
     const fallbackPlan = await supabaseAdmin
       .from(TABLE_NAME)
-      .select("plan_id,sku_code,sku_name,unit,status,confirmed_at,bom_snapshot,owner_department_id,master_plan_no,line_dough_set_count")
+      .select("plan_id,sku_code,sku_name,unit,status,confirmed_at,bom_snapshot,owner_department_id,master_plan_no,line_dough_set_count,period_start")
       .eq("plan_id", planId)
       .maybeSingle();
     planRow = fallbackPlan.data;
@@ -2134,6 +2150,12 @@ export async function PATCH(request) {
         planMasterPlanNo: planMasterPlanNo || null,
       },
     }, { status: 400 });
+  }
+  if (editableFromDate && !isPlanningDateEditable(planRow?.period_start, editableFromDate)) {
+    return NextResponse.json(
+      { error: "ไม่สามารถแก้ไขแผนของวันที่ผ่านมาแล้ว" },
+      { status: 400 }
+    );
   }
   if (!isConfirmedPlanStatus(planRow.status) || !planRow.confirmed_at) {
     return NextResponse.json({ error: "Only confirmed plans can be edited" }, { status: 400 });

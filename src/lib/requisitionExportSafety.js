@@ -31,6 +31,7 @@ export function buildExistingDocumentNumberMap(groups, buildKey) {
   for (const row of groups || []) {
     if (!row.document_no) continue;
     const metadata = row.metadata || {};
+    if (metadata.externalHistoricalMapping === true) continue;
     const key = buildKey({
       grain: row.claim_grain,
       ownerDepartmentId: metadata.ownerDepartmentId,
@@ -43,6 +44,8 @@ export function buildExistingDocumentNumberMap(groups, buildKey) {
       dateTo: metadata.dateTo,
       parentSku: metadata.parentSku,
       workstreamCode: metadata.workstreamCode,
+      consolidateRequisitionPreviewByDate:
+        metadata.consolidateRequisitionPreviewByDate === true,
     });
     if (!result.has(key)) result.set(key, row.document_no);
   }

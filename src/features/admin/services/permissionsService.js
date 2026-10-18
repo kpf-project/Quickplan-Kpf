@@ -4,7 +4,6 @@ import {
   readJson,
   requireAdmin,
 } from "@/lib/adminApi";
-import { DEFAULT_PERMISSIONS } from "@/lib/permissionGroups";
 import { logAuditEvent } from "@/lib/auditLog";
 
 function normalizeString(value) {
@@ -24,52 +23,9 @@ export async function listPermissions(request) {
   if (error) {
     throw new ApiError(500, "Failed to load permissions", error.message);
   }
-  let permissions = data ?? [];
-  const existingKeys = new Set(permissions.map((permission) => permission.perm_key));
-  const existingPaths = new Set(permissions.map((permission) => permission.path));
-  const missingDefaults = DEFAULT_PERMISSIONS.filter(
-    (permission) =>
-      !existingKeys.has(permission.perm_key) &&
-      !existingPaths.has(permission.path)
-  );
-  const uniqueMissing = new Map();
-  missingDefaults.forEach((permission) => {
-    if (!uniqueMissing.has(permission.path)) {
-      uniqueMissing.set(permission.path, permission);
-    }
-  });
-  const safeMissingDefaults = Array.from(uniqueMissing.values());
+  const permissions = data ?? [];
 
-  if (safeMissingDefaults.length > 0) {
-    const { error: syncError } = await supabaseAdmin
-      .from("permissions")
-      .upsert(
-        safeMissingDefaults.map((permission) => ({
-          perm_key: permission.perm_key,
-          label: permission.label,
-          path: permission.path,
-          group_key: permission.group_key || null,
-        })),
-        { onConflict: "perm_key" }
-      );
-
-    if (syncError) {
-      throw new ApiError(500, "Failed to sync permissions", syncError.message);
-    }
-
-    const { data: refreshed, error: refreshError } = await supabaseAdmin
-      .from("permissions")
-      .select("id, perm_key, label, path, group_key, created_at, updated_at")
-      .order("label", { ascending: true });
-
-    if (refreshError) {
-      throw new ApiError(500, "Failed to reload permissions", refreshError.message);
-    }
-
-    permissions = refreshed ?? [];
-  }
-
-  return Response.json({ permissions });
+  return Response.json({ permissions, task_permissions_enabled: process.env.ROLE_TASK_PERMISSIONS_ENABLED === "true" });
 }
 
 export async function createPermission(request) {

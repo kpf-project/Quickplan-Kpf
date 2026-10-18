@@ -1,5 +1,5 @@
 import { getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import {
   findIssuedItemByBarcode,
   createStockReturn,
@@ -10,17 +10,6 @@ import { normalizeParam } from "@/lib/validation";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const PRODUCTION_STOCK_PERMISSION_KEYS = [
-  "production-line-attendance-view",
-  "production-line-attendance-manage",
-  "production-line-attendance-report-view",
-  "production-line-attendance-report-manage",
-  "production-line-settings-view",
-  "production-line-settings-manage",
-];
-const PRODUCTION_STOCK_MANAGE_PERMISSION_KEYS = [
-  "production-line-attendance-manage",
-];
 
 function normalizePositiveInteger(value, fallback, max = Number.MAX_SAFE_INTEGER) {
   const parsed = Number.parseInt(String(value ?? "").trim(), 10);
@@ -43,7 +32,7 @@ function normalizeProductCodes(value) {
 
 export async function GET(request) {
   try {
-    await requirePermissionKeys(request, PRODUCTION_STOCK_PERMISSION_KEYS);
+    await requireTaskPermission(request, "production-stock-return-view");
 
     const { searchParams } = new URL(request.url);
     const barcode = normalizeParam(searchParams.get("barcode"));
@@ -74,10 +63,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const permission = await requirePermissionKeys(
-      request,
-      PRODUCTION_STOCK_MANAGE_PERMISSION_KEYS
-    );
+    const permission = await requireTaskPermission(request, "production-stock-return-write");
     const body = await readJson(request);
 
     const result = await createStockReturn(
@@ -88,6 +74,7 @@ export async function POST(request) {
         tareSource: body?.tareSource,
         actorUserId: permission.userId,
         remark: body?.remark,
+        returnDate: body?.returnDate,
       },
       getSupabaseAdmin()
     );

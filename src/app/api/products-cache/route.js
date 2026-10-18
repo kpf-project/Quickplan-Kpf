@@ -1,4 +1,4 @@
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { getSupabaseAdmin, jsonError } from "@/lib/adminApi";
 import { normalizeCsvParam, normalizeParam, parsePaginationParams } from "@/lib/validation";
 import { fetchTradeCodesWithGatewayFallback } from "@/lib/erpTradeCodes";
@@ -7,10 +7,7 @@ const DEFAULT_ICCAT_CODES = ["03", "04", "04-1", "04-2"];
 
 export async function GET(request) {
   try {
-    await requirePermissionKeys(request, [
-      "production-line-settings-view",
-      "production-line-settings-manage",
-    ]);
+    await requireTaskPermission(request, "production-settings-products-cache-view");
     const { searchParams } = new URL(request.url);
     const { page, pageSize } = parsePaginationParams(searchParams, {
       page: 1,
@@ -41,7 +38,7 @@ export async function GET(request) {
         const dedupedRows = Array.from(
           new Map(
             rawRows
-              .map((row) => [String(row.goods_code || row.sku_code || "").trim().toUpperCase(), row])
+              .map((row) => [String(row.sku_code || row.goods_code || "").trim().toUpperCase(), row])
               .filter(([code]) => Boolean(code))
           ).values()
         );

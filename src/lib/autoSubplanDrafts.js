@@ -177,6 +177,7 @@ export async function persistSubplanDraftLines({
   planRange = null,
   actorUserId = null,
   nowIso = new Date().toISOString(),
+  replaceFromDate = null,
 }) {
   const normalizedMasterPlanNo = normalizeMasterPlanNo(masterPlanNo);
   const departmentId = normalizePlanningDepartmentId(department?.id || department?.departmentId);
@@ -194,6 +195,13 @@ export async function persistSubplanDraftLines({
   const normalizedLines = (Array.isArray(lines) ? lines : [])
     .map((row, index) => normalizeDraftLine(row, index, fallbackWorkDate, departmentId))
     .filter(Boolean);
+  const normalizedReplaceFromDate = normalizeDateOnly(replaceFromDate);
+  if (
+    normalizedReplaceFromDate
+    && normalizedLines.some((line) => line.workDate < normalizedReplaceFromDate)
+  ) {
+    throw new Error("ไม่สามารถแก้ไขแผนของวันที่ผ่านมาแล้ว");
+  }
 
   // 1. Fetch active shifts and build map
   const { data: shiftsData } = await supabaseAdmin
@@ -275,7 +283,7 @@ export async function persistSubplanDraftLines({
 
   const existingDraftResult = await supabaseAdmin
     .from("production_plan_status")
-    .select("plan_id")
+    .select("plan_id,period_start")
     .eq("master_plan_no", normalizedMasterPlanNo)
     .eq("plan_kind", "sub")
     .eq("owner_department_id", departmentId);
@@ -285,6 +293,15 @@ export async function persistSubplanDraftLines({
 
   const existingPlanIds = new Set(
     (existingDraftResult.data ?? [])
+      .map((row) => String(row?.plan_id || "").trim())
+      .filter(Boolean)
+  );
+  const editableExistingPlanIds = new Set(
+    (existingDraftResult.data ?? [])
+      .filter((row) => (
+        !normalizedReplaceFromDate
+        || normalizeDateOnly(row?.period_start) >= normalizedReplaceFromDate
+      ))
       .map((row) => String(row?.plan_id || "").trim())
       .filter(Boolean)
   );
@@ -360,7 +377,9 @@ export async function persistSubplanDraftLines({
   const keepPlanIds = new Set(
     upsertRows.map((row) => String(row.plan_id || "").trim()).filter(Boolean)
   );
-  const deletePlanIds = Array.from(existingPlanIds).filter((planId) => !keepPlanIds.has(planId));
+  const deletePlanIds = Array.from(
+    normalizedReplaceFromDate ? editableExistingPlanIds : existingPlanIds
+  ).filter((planId) => !keepPlanIds.has(planId));
 
   if (deletePlanIds.length) {
     const deleteResult = await supabaseAdmin

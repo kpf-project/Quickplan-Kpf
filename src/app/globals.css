@@ -1,9 +1,15 @@
 @import "tailwindcss";
 
 :root {
+  --surface-navy: #10345D;
   --background: #f5f1ea;
   --foreground: #0f2a2b;
   --accent: #e07a5f;
+}
+
+/* Printed documents retain their original navy via each surface's fallback. */
+@media print {
+  :root { --surface-navy: initial; }
 }
 
 @theme inline {
@@ -17,6 +23,35 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-noto-sans-looped), var(--font-geist-sans), "Segoe UI", system-ui, sans-serif;
+}
+
+/* Modern Enterprise Global Scrollbar: slim (6px), smooth pill thumb, clean track */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 9999px;
+  transition: background-color 0.2s ease;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .table-bordered {
@@ -53,7 +88,7 @@ body {
   position: sticky;
   top: 0;
   z-index: 10;
-  background: #102c57;
+  background: var(--surface-navy, #102c57);
   color: #fff;
   font-size: 0.75rem;
   letter-spacing: 0.1em;
@@ -88,22 +123,6 @@ body {
 
 #qa-subplan-workbench > div > div.border.border-slate-300.bg-white > div.overflow-x-auto:not(.wip-modern-matrix) > table > tbody > tr > td:last-child {
   width: 12.4%;
-}
-
-.bom-column-order > thead > tr,
-.bom-column-order > tbody > tr {
-  display: grid;
-  grid-template-columns: 40px 170px 370px 90px 90px 310px 130px 65px;
-  min-width: 1265px;
-}
-
-.bom-column-order > thead > tr > th,
-.bom-column-order > tbody > tr > td {
-  width: auto !important;
-}
-
-.bom-column-order > tbody > tr > td[colspan] {
-  grid-column: 1 / -1;
 }
 
 @layer utilities {
@@ -448,4 +467,86 @@ body {
   .weight-scale-report-print-body > section:last-child {
     margin-bottom: 0 !important;
   }
+
+  /* Universal Standard A4 Paged Media Rules (ISO 32000-2 & W3C Paged Media) */
+  .a4-print-container {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    overflow: visible !important;
+  }
+
+  .standard-a4-table,
+  .a4-standard-document-table {
+    width: 100% !important;
+    table-layout: fixed !important;
+    border-collapse: collapse !important;
+    color: #111827 !important;
+    background: #ffffff !important;
+  }
+
+  .standard-a4-table th,
+  .standard-a4-table td,
+  .a4-standard-document-table th,
+  .a4-standard-document-table td {
+    border: 0.5pt solid #cbd5e1 !important;
+    padding: 3.5pt 4.5pt !important;
+    vertical-align: middle !important;
+  }
+
+  .standard-a4-table thead,
+  .a4-standard-document-table thead {
+    display: table-header-group !important;
+  }
+
+  .standard-a4-table tfoot,
+  .a4-standard-document-table tfoot {
+    display: table-footer-group !important;
+  }
+
+  .standard-a4-table tbody tr,
+  .a4-standard-document-table tbody tr,
+  .keep-together,
+  .subtotal-row,
+  .grand-total-row,
+  .signature-block {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .page-break-before {
+    break-before: page !important;
+    page-break-before: always !important;
+  }
+
+  .page-break-after {
+    break-after: page !important;
+    page-break-after: always !important;
+  }
+}
+
+@media print {
+  .schedule-configured-table { width: 100% !important; min-width: 0 !important; }
+}
+
+/* One typeface for report-center screens, embedded reports and printed documents. */
+[data-report-center],
+[data-report-center] *,
+.production-report-embedded,
+.production-report-embedded *,
+[data-report-document],
+[data-report-document] * {
+  font-family: var(--font-noto-sans-looped), "Noto Sans Thai Looped", sans-serif !important;
+}
+
+/* Report content stays white on screen and paper, including hover and grouped rows. */
+body [data-report-center] table tbody tr,
+body [data-report-center] table tbody tr td,
+body:has(.production-report-embedded) .production-report-embedded table tbody tr,
+body:has(.production-report-embedded) .production-report-embedded table tbody tr td,
+[data-report-document] table tbody tr,
+[data-report-document] table tbody tr td {
+  background: #fff !important;
 }

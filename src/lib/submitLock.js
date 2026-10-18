@@ -9,6 +9,13 @@ export function createSubmitLock() {
       locked = true;
       return true;
     },
+    tryAcquire() {
+      if (locked) {
+        return false;
+      }
+      locked = true;
+      return true;
+    },
     release() {
       locked = false;
     },

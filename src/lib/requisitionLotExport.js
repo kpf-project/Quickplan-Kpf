@@ -29,12 +29,8 @@ function roundQty(value) {
   return Number(Number(value || 0).toFixed(6));
 }
 
-function chunkArray(items, size) {
-  const chunks = [];
-  for (let index = 0; index < items.length; index += size) {
-    chunks.push(items.slice(index, index + size));
-  }
-  return chunks;
+function reservationLotKey(parentSkuCode, lotNo, warehouseCode) {
+  return [normalizeCode(parentSkuCode), normalizeText(lotNo), normalizeCode(warehouseCode)].join("|");
 }
 
 function getTradePackSize(row) {
@@ -45,6 +41,7 @@ function getTradePackSize(row) {
 
 function addTradeRowsToMap(map, rows) {
   (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const exactRow = row;
     const rowCode = normalizeCode(row?.GOODS_CODE);
     const parentSkuCode = normalizeCode(row?.SKU_CODE);
     const packSize = getTradePackSize(row);
@@ -55,7 +52,7 @@ function addTradeRowsToMap(map, rows) {
       materialName: normalizeText(row.SKU_NAME) || normalizeText(row.GOODS_ALIAS) || rowCode,
       unitName: normalizeText(row.UTQ_NAME_2 || row.UTQ_NAME || row.UTQ_NAME_1),
       packSize,
-      categoryCode: normalizeCode(row.ICCAT_CODE),
+      categoryCode: normalizeCode(exactRow.ICCAT_CODE),
     });
   });
 }
@@ -65,76 +62,43 @@ async function fetchTradeCodeMetaMap(codes) {
   const map = new Map();
   if (!uniqueCodes.length) return map;
 
-  for (const chunk of chunkArray(uniqueCodes, 10)) {
-    const results = await Promise.all(chunk.map(async (code) => {
-      const params = new URLSearchParams({
-        search: code,
-        pageSize: "100",
-        noCache: "1",
-      });
-      const result = await fetchGatewayJson("/api/trade-codes", params, "production");
-      if (!result.ok) {
-        throw new ApiError(502, `ไม่สามารถตรวจสอบ Trade Code ${code} จาก ERP ได้`, {
-          tradeCode: code,
-          source: "gateway:/api/trade-codes",
-        });
-      }
+  const exactParams = new URLSearchParams({
+    goodsCodes: uniqueCodes.join(","),
+    pageSize: "500",
+    noCache: "1",
+  });
+  const exactResult = await fetchGatewayJson("/api/trade-codes", exactParams, "production");
+  if (!exactResult.ok) {
+    throw new ApiError(502, "ไม่สามารถตรวจสอบ Trade Code จาก ERP ได้", {
+      tradeCodes: uniqueCodes,
+      source: "gateway:/api/trade-codes",
+    });
+  }
+  addTradeRowsToMap(map, exactResult.data?.data);
 
-      const rows = Array.isArray(result.data?.data) ? result.data.data : [];
-      addTradeRowsToMap(map, rows);
-
-      const exactRow = rows.find((row) => normalizeCode(row?.GOODS_CODE) === code)
-        || null;
-      if (!exactRow) {
-        throw new ApiError(422, `ไม่พบ Trade Code ${code} หรือข้อมูลหน่วยไม่สมบูรณ์`, {
-          tradeCode: code,
-          source: "gateway:/api/trade-codes",
-        });
-      }
-
-      const parentSkuCode = normalizeCode(exactRow.SKU_CODE);
-      const packSize = getTradePackSize(exactRow);
-      if (!parentSkuCode || !Number.isFinite(packSize) || packSize <= 0) {
-        throw new ApiError(422, `Trade Code ${code} ไม่มี Parent SKU หรืออัตราแปลงที่ถูกต้อง`, {
-          tradeCode: code,
-          parentSkuCode,
-          packSize,
-        });
-      }
-
-      return [code, {
-        parentSkuCode,
-        tradeCode: normalizeCode(exactRow.GOODS_CODE || code),
-        materialName: normalizeText(exactRow.SKU_NAME) || normalizeText(exactRow.GOODS_ALIAS) || code,
-        unitName: normalizeText(exactRow.UTQ_NAME_2 || exactRow.UTQ_NAME || exactRow.UTQ_NAME_1),
-        packSize,
-        categoryCode: normalizeCode(exactRow.ICCAT_CODE),
-      }];
-    }));
-
-    results.forEach(([code, meta]) => map.set(code, meta));
+  const missingCode = uniqueCodes.find((code) => !map.has(code));
+  if (missingCode) {
+    throw new ApiError(422, `ไม่พบ Trade Code ${missingCode} หรือข้อมูลหน่วยไม่สมบูรณ์`, {
+      tradeCode: missingCode,
+      source: "gateway:/api/trade-codes",
+    });
   }
 
   const parentCodes = Array.from(new Set(uniqueCodes.map((code) => map.get(code)?.parentSkuCode).filter(Boolean)));
-  for (const chunk of chunkArray(parentCodes, 10)) {
-    const results = await Promise.all(chunk.map(async (parentCode) => {
-      const params = new URLSearchParams({
-        search: parentCode,
-        pageSize: "100",
-        noCache: "1",
+  if (parentCodes.length > 0) {
+    const parentParams = new URLSearchParams({
+      skuCodes: parentCodes.join(","),
+      pageSize: "500",
+      noCache: "1",
+    });
+    const parentResult = await fetchGatewayJson("/api/trade-codes", parentParams, "production");
+    if (!parentResult.ok) {
+      throw new ApiError(502, "ไม่สามารถโหลดหน่วยทั้งหมดของวัตถุดิบจาก ERP ได้", {
+        parentSkuCodes: parentCodes,
+        source: "gateway:/api/trade-codes",
       });
-      const result = await fetchGatewayJson("/api/trade-codes", params, "production");
-      if (!result.ok) {
-        throw new ApiError(502, `ไม่สามารถโหลดหน่วยทั้งหมดของ ${parentCode} จาก ERP ได้`, {
-          parentSkuCode: parentCode,
-          source: "gateway:/api/trade-codes",
-        });
-      }
-      return (Array.isArray(result.data?.data) ? result.data.data : []).filter((row) => (
-        normalizeCode(row?.SKU_CODE) === parentCode
-      ));
-    }));
-    results.forEach((rows) => addTradeRowsToMap(map, rows));
+    }
+    addTradeRowsToMap(map, parentResult.data?.data);
   }
 
   return map;
@@ -238,6 +202,10 @@ export async function allocateLotNumbersForExportRows({
   lotKey,
   locationKey,
   allowPartialStock = false,
+  reserveAcrossRows = true,
+  allocationOverridesByKey = {},
+  reservedBaseQtyByRequestKey = {},
+  reservationDetailsByRequestKey = {},
 }) {
   const rows = Array.isArray(exportRows) ? exportRows : [];
   const dbRows = Array.isArray(lineRows) ? lineRows : [];
@@ -265,6 +233,7 @@ export async function allocateLotNumbersForExportRows({
   const exportRowsByIndex = rows.map(() => []);
   const lineRowsByIndex = rows.map(() => []);
   const shortages = [];
+  const lotOptionsByRequestKey = {};
 
   const processingIndexes = rows
     .map((row, index) => ({
@@ -322,9 +291,29 @@ export async function allocateLotNumbersForExportRows({
     }
 
     const parentCode = tradeMeta.parentSkuCode;
-    if (!remainingLotsByParentCode.has(parentCode)) {
+    const requestKey = normalizeText(lineRow?.meta?.lotAllocationKey) || String(index);
+    if (!reserveAcrossRows || !remainingLotsByParentCode.has(parentCode)) {
       const sourceLots = lotsByParentCode.get(parentCode) || [];
-      remainingLotsByParentCode.set(parentCode, sourceLots.map((lot) => ({ ...lot })));
+      remainingLotsByParentCode.set(parentCode, sourceLots.map((lot) => ({
+        ...lot,
+        stockAvailableBaseQty: lot.availableBaseQty,
+        reservedByOtherBaseQty: Math.min(
+          lot.availableBaseQty,
+          Math.max(0, toNumber(reservedBaseQtyByRequestKey?.[requestKey]?.[
+            reservationLotKey(parentCode, lot.lotNo, lot.warehouseCode)
+          ], 0))
+        ),
+        availableBaseQty: Math.max(0, lot.availableBaseQty - Math.max(0, toNumber(
+          reservedBaseQtyByRequestKey?.[requestKey]?.[
+            reservationLotKey(parentCode, lot.lotNo, lot.warehouseCode)
+          ], 0
+        ))),
+        initialAvailableBaseQty: Math.max(0, lot.availableBaseQty - Math.max(0, toNumber(
+          reservedBaseQtyByRequestKey?.[requestKey]?.[
+            reservationLotKey(parentCode, lot.lotNo, lot.warehouseCode)
+          ], 0
+        ))),
+      })));
     }
 
     const lots = (remainingLotsByParentCode.get(parentCode) || []).filter((lot) => (
@@ -333,11 +322,88 @@ export async function allocateLotNumbersForExportRows({
     const sourcePriority = tradeMeta.packSize > 1
       ? ["pack", "base"]
       : ["base", "pack"];
-    const { allocations, unallocatedBaseQty } = allocatePreferredPhysicalBaseQty(
-      requiredBaseQty,
-      lots,
-      sourcePriority
-    );
+    lotOptionsByRequestKey[requestKey] = lots.map((lot) => ({
+      lotNo: lot.lotNo || "",
+      fifoDate: lot.fifoDate || null,
+      warehouseCode: lot.warehouseCode,
+      parentSkuCode: parentCode,
+      stockQty: roundQty(baseQtyToConventionalTradeQty(
+        lot.stockAvailableBaseQty ?? lot.initialAvailableBaseQty,
+        tradeMeta.packSize
+      )),
+      stockAvailableBaseQty: roundQty(lot.stockAvailableBaseQty ?? lot.initialAvailableBaseQty),
+      reservedByOtherQty: roundQty(baseQtyToConventionalTradeQty(
+        lot.reservedByOtherBaseQty || 0,
+        tradeMeta.packSize
+      )),
+      reservedByOtherDetails: (reservationDetailsByRequestKey?.[requestKey]?.[
+        reservationLotKey(parentCode, lot.lotNo, lot.warehouseCode)
+      ] || []).map((detail) => ({
+        ...detail,
+        qty: roundQty(baseQtyToConventionalTradeQty(detail.reservedBaseQty, tradeMeta.packSize)),
+      })),
+      availableQty: roundQty(baseQtyToConventionalTradeQty(lot.availableBaseQty, tradeMeta.packSize)),
+      reservedQty: roundQty(baseQtyToConventionalTradeQty(
+        Math.max(0, lot.initialAvailableBaseQty - lot.availableBaseQty),
+        tradeMeta.packSize
+      )),
+      availableBaseQty: roundQty(lot.availableBaseQty),
+    }));
+
+    const requestedOverrides = Array.isArray(allocationOverridesByKey?.[requestKey])
+      ? allocationOverridesByKey[requestKey]
+          .map((item) => ({
+            lotNo: normalizeText(item?.lotNo),
+            qty: roundQty(item?.qty),
+          }))
+          .filter((item) => item.qty > 0)
+      : [];
+
+    let allocationResult;
+    if (requestedOverrides.length > 0) {
+      const overrideTotal = roundQty(requestedOverrides.reduce((sum, item) => sum + item.qty, 0));
+      if (overrideTotal - requiredTradeQty > 0.001 || (!allowPartialStock && requiredTradeQty - overrideTotal > 0.001)) {
+        throw new ApiError(409, `ยอดจัดสรร LOT ของ ${materialCode} ไม่สอดคล้องกับจำนวนที่ต้องเบิก`, {
+          requestKey,
+          requiredQty: requiredTradeQty,
+          allocatedQty: overrideTotal,
+        });
+      }
+
+      const manualAllocations = [];
+      let manualShortageBaseQty = roundQty(
+        requiredBaseQty - conventionalPackQtyToBaseQty(overrideTotal, tradeMeta.packSize)
+      );
+      requestedOverrides.forEach((override) => {
+        const overrideBaseQty = conventionalPackQtyToBaseQty(override.qty, tradeMeta.packSize);
+        const lot = lots.find((candidate) => normalizeText(candidate?.lotNo) === override.lotNo);
+        if (!lot) {
+          if (allowPartialStock) {
+            manualShortageBaseQty = roundQty(manualShortageBaseQty + overrideBaseQty);
+            return;
+          }
+          throw new ApiError(409, `LOT ${override.lotNo || "ไม่ระบุ LOT"} ของ ${materialCode} ไม่มีสต็อกพร้อมใช้`, {
+            requestKey,
+            tradeCode: materialCode,
+            lotNo: override.lotNo || null,
+          });
+        }
+        const result = allocatePreferredPhysicalBaseQty(overrideBaseQty, [lot], sourcePriority);
+        manualAllocations.push(...result.allocations);
+        manualShortageBaseQty = roundQty(manualShortageBaseQty + result.unallocatedBaseQty);
+      });
+      if (manualShortageBaseQty > 0 && !allowPartialStock) {
+        throw new ApiError(409, `สต็อก LOT ที่เลือกของ ${materialCode} ไม่เพียงพอ`, {
+          requestKey,
+          tradeCode: materialCode,
+          shortageBaseQty: manualShortageBaseQty,
+        });
+      }
+      allocationResult = { allocations: manualAllocations, unallocatedBaseQty: manualShortageBaseQty };
+    } else {
+      allocationResult = allocatePreferredPhysicalBaseQty(requiredBaseQty, lots, sourcePriority);
+    }
+    const { allocations, unallocatedBaseQty } = allocationResult;
     if (unallocatedBaseQty > 0) {
       const allocatedBaseQty = roundQty(requiredBaseQty - unallocatedBaseQty);
       const shortage = {
@@ -400,6 +466,7 @@ export async function allocateLotNumbersForExportRows({
           lotNo: lot.lotNo || null,
           warehouseCode: requiredWarehouseCode,
           fifoDate: lot.fifoDate || null,
+          requestKey,
         }
       ));
     });
@@ -413,5 +480,6 @@ export async function allocateLotNumbersForExportRows({
     lineRows: renumberLineSeq(nextLineRows),
     shortages,
     isPartialStock: shortages.length > 0,
+    lotOptionsByRequestKey,
   };
 }

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import test from "node:test";
+import vm from "node:vm";
 import { buildFgPackingReportRows, calculateAverageWeightPerTin } from "../src/features/production-line/utils/buildFgPackingReportRows.js";
 
 const read = (path) => readFileSync(path, "utf8");
@@ -82,11 +83,21 @@ test("new feature has isolated navigation and authorization", () => {
 test("FG/WIP daily report can search a selected production date", () => {
   const report = read("src/app/production-line/fg-wip/FgWipReportTab.js");
   assert.match(report, /วันที่รายงาน/);
-  assert.match(report, /type="date"/);
-  assert.match(report, /onSubmit=\{handleSearch\}/);
+  assert.match(report, /dateMode="single"/);
+  assert.match(report, /onSearch=\{handleSearch\}/);
   assert.match(report, /productionDate=\$\{encodeURIComponent\(reportDate\)\}/);
   assert.match(report, /ประจำวันที่ \{formatDate\(reportDate\)\}/);
   assert.match(report, /ไม่มีข้อมูลบันทึกผลผลิตและ WIP วันที่ \{formatDate\(reportDate\)\}/);
+});
+
+test("daily report search accepts the shared filter button without a form event", () => {
+  const source = read("src/app/production-line/fg-wip/FgWipReportTab.js");
+  const start = source.indexOf("const handleSearch =");
+  const end = source.indexOf("\n  return (", start);
+  let selected;
+  const context = vm.createContext({ searchDate: "2026-10-14", reportDate: "2026-10-15", loading: false, setReportDate: value => { selected = value; }, loadData() {} });
+  vm.runInContext(source.slice(start, end) + "\nhandleSearch();", context);
+  assert.equal(selected, "2026-10-14");
 });
 
 test("packing report combines issue, return, waste, production and carry-over by canonical FG", () => {
@@ -372,17 +383,18 @@ test("waste save revalidates a selected FG by canonical product code before Trad
   );
 });
 
-test("WIP opening balance supports compact multi-select and multiple DDMMYY LOT rows", () => {
+test("WIP opening page uses the shared multi-unit central entry instead of the legacy tin entry", () => {
   const page = read("src/app/production-line/fg-wip/FgWipEndOfDayPageClient.js");
-  const opening = read("src/app/production-line/fg-wip/WipOpeningBalanceTab.js");
+  const opening = read("src/features/inventory/components/WipOpeningStockPanel.js");
 
   assert.match(page, /ตั้งต้นสต็อก WIP/);
-  assert.match(page, /<WipOpeningBalanceTab/);
-  assert.match(opening, /เลือก WIP หลายรายการ/);
-  assert.match(opening, /เพิ่ม LOT/);
-  assert.match(opening, /maxLength=\{6\}/);
-  assert.match(opening, /รูปแบบ DDMMYY/);
-  assert.match(opening, /บันทึกยอดตั้งต้น/);
+  assert.match(page, /<WipOpeningStockPanel/);
+  assert.doesNotMatch(page, /<WipOpeningBalanceTab/);
+  assert.match(opening, /ProductSelectionDialog/);
+  assert.match(opening, /WeightScaleHistoryTable/);
+  assert.match(opening, /WIP_OPENING_UNITS/);
+  assert.match(opening, /normalizeWipOpening/);
+  assert.doesNotMatch(opening, /\/api\/production-line\/fg-wip\/opening-balances/);
   assert.doesNotMatch(opening, /FG ปลายทาง/);
 });
 

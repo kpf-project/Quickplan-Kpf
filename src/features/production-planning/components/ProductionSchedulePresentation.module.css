@@ -1,0 +1,15 @@
+.departmentTab { padding: 9px 12px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #61728b; font-size: 13px; font-weight: 500; cursor: pointer; }
+.departmentTab:hover { color: #0866d6; }
+.departmentTab[aria-pressed="true"] { color: #10345d; border-bottom-color: #10345d; font-weight: 700; }
+.departmentTab:focus-visible { outline: 2px solid #0866d6; outline-offset: -2px; }
+.canvas { width: calc(100% - 32px); max-width: 1760px; margin-inline: auto; }
+.paper { background: white; border: 1px solid #dce5ef; border-radius: 4px; box-shadow: 0 2px 7px #10345d0a; overflow: hidden; }
+.tableViewport { margin: 16px; border: 1px solid #dce5ef; overflow: auto; scrollbar-gutter: stable; }
+.designerCanvas { background: #f1f5f9; padding-block: 16px; }
+.paperHeader { padding: 16px 20px; border-bottom: 1px solid #e2eaf3; color: #10345d; }
+.paperHeader h2 { font-size: 17px; font-weight: 700; color: #10345d; }
+.paperHeader p { color: #64748b; font-size: 12px; }
+.sectionNav { margin-bottom: 12px; overflow-x: auto; }
+.toolbar > div { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.toolbar > div > div:last-child { justify-content: space-between; }
+@media print { .sectionNav { display: none; }.paper { border: 0; box-shadow: none; } }

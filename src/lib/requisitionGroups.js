@@ -7,6 +7,7 @@ import {
   normalizeDepartmentId,
   resolveMaterialClaimCode,
 } from "@/lib/materialClaims";
+import { fetchSupabaseRowsByChunks } from "@/lib/supabaseRangeFetch";
 
 export const REQUISITION_GROUP_STATUS = Object.freeze({
   draft: "draft",
@@ -94,36 +95,36 @@ export async function listRequisitionGroupItems(supabaseAdmin, groupIds = []) {
   const ids = Array.from(new Set((groupIds || []).map((item) => String(item || "").trim()).filter(Boolean)));
   if (!ids.length) return [];
 
-  const result = await supabaseAdmin
-    .from("production_requisition_group_items")
-    .select("*")
-    .in("group_id", ids)
-    .order("created_at", { ascending: true });
+  const rows = await fetchSupabaseRowsByChunks(
+    ids,
+    (chunk) => supabaseAdmin
+      .from("production_requisition_group_items")
+      .select("*")
+      .in("group_id", chunk)
+      .order("created_at", { ascending: true })
+  );
 
-  if (result.error) {
-    throw new Error(result.error.message);
-  }
-  return Array.isArray(result.data) ? result.data : [];
+  return Array.isArray(rows) ? rows : [];
 }
 
 export async function loadActiveGroupItemsBySourceKeys(supabaseAdmin, sourceRowKeys = []) {
   const keys = Array.from(new Set((sourceRowKeys || []).map((item) => String(item || "").trim()).filter(Boolean)));
   if (!keys.length) return [];
 
-  const result = await supabaseAdmin
-    .from("production_requisition_group_items")
-    .select("id,group_id,source_row_key,production_requisition_group_batches!inner(id,status)")
-    .in("source_row_key", keys)
-    .in("production_requisition_group_batches.status", [
-      REQUISITION_GROUP_STATUS.draft,
-      REQUISITION_GROUP_STATUS.ready,
-      REQUISITION_GROUP_STATUS.exported,
-    ]);
+  const rows = await fetchSupabaseRowsByChunks(
+    keys,
+    (chunk) => supabaseAdmin
+      .from("production_requisition_group_items")
+      .select("id,group_id,source_row_key,production_requisition_group_batches!inner(id,status)")
+      .in("source_row_key", chunk)
+      .in("production_requisition_group_batches.status", [
+        REQUISITION_GROUP_STATUS.draft,
+        REQUISITION_GROUP_STATUS.ready,
+        REQUISITION_GROUP_STATUS.exported,
+      ])
+  );
 
-  if (result.error) {
-    throw new Error(result.error.message);
-  }
-  return Array.isArray(result.data) ? result.data : [];
+  return Array.isArray(rows) ? rows : [];
 }
 
 export function canMergeClaimRows(leftRow, rightRow, options = {}) {

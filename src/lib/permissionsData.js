@@ -57,10 +57,10 @@ async function getAllPermissionKeys(supabaseAdmin) {
   return cachedAllPermissions;
 }
 
-export async function getUserPermissions(userId) {
+export async function getUserPermissions(userId, { fresh = false } = {}) {
   const now = Date.now();
   const cached = userPermissionCache.get(userId);
-  if (cached && cached.expiresAt > now) {
+  if (!fresh && cached && cached.expiresAt > now) {
     return cached.data;
   }
 

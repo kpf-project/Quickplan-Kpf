@@ -323,7 +323,7 @@ export default function WeightScaleWastePageClient({
         )}
       />
 
-      <section className="border-b border-[#1f3047] bg-[#102C57] text-white">
+      <section className="border-b border-[#1f3047] bg-[var(--surface-navy,#102C57)] text-white">
         <div className="mx-auto max-w-[84rem] px-4 pb-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between border-t border-white/10 pt-4">
             <div className={`inline-flex items-center gap-2 border px-4 py-2 text-xs font-black uppercase tracking-[0.18em] ${getStatusTone(status.state)}`}>
@@ -357,7 +357,7 @@ export default function WeightScaleWastePageClient({
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
                       <div className="flex flex-col">
                         <span className="text-[10px] font-black uppercase tracking-widest text-[#a0aec0]">บาร์โค้ดที่อ้างอิง</span>
-                        <span className="mt-1 self-start bg-[#102C57] px-3 py-1 text-sm font-black tracking-wider text-[#d4af37]">
+                        <span className="mt-1 self-start bg-[var(--surface-navy,#102C57)] px-3 py-1 text-sm font-black tracking-wider text-[#d4af37]">
                           {sourceItem.barcode}
                         </span>
                       </div>
@@ -401,6 +401,14 @@ export default function WeightScaleWastePageClient({
                         <p className="mt-1 text-lg font-bold text-emerald-700 sm:text-xl">{formatWeightDisplay(sourceItem.remainingWeightKg)} Kg</p>
                       </div>
                     </div>
+                    <div className="border-t border-[#e2e8f0] pt-4 text-center">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-black">สินค้าปลายทางเดิม</p>
+                      <p className="mt-1 font-bold text-[#102C57]">
+                        {sourceItem.targetProductCode
+                          ? `${sourceItem.targetProductCode} - ${sourceItem.targetProductName}`
+                          : "ไม่ระบุ (รายการเดิม)"}
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>
@@ -413,7 +421,7 @@ export default function WeightScaleWastePageClient({
                     setBarcode("");
                     barcodeInputRef.current?.focus();
                   }}
-                  className="flex h-14 items-center justify-center gap-2 border-2 border-[#102C57] text-[10px] font-black uppercase tracking-wider text-[#102C57] transition hover:bg-[#102C57] hover:text-white"
+                  className="flex h-14 items-center justify-center gap-2 border-2 border-[#102C57] text-[10px] font-black uppercase tracking-wider text-[#102C57] transition hover:bg-[var(--surface-navy,#102C57)] hover:text-white"
                 >
                   <RefreshCw size={16} />
                   ล้างข้อมูลเพื่อสแกนใหม่
@@ -425,7 +433,7 @@ export default function WeightScaleWastePageClient({
                     className={`flex h-14 items-center justify-center gap-2 border-2 text-[10px] font-black uppercase tracking-wider transition ${
                       isStreaming
                         ? "border-rose-200 text-rose-600 hover:bg-rose-50"
-                        : "border-[#102C57] text-[#102C57] hover:bg-[#102C57] hover:text-white"
+                        : "border-[#102C57] text-[#102C57] hover:bg-[var(--surface-navy,#102C57)] hover:text-white"
                     }`}
                   >
                     {isStreaming ? <X size={16} /> : <Radar size={16} />}
@@ -447,7 +455,7 @@ export default function WeightScaleWastePageClient({
               </div>
             </div>
 
-            <div className="relative bg-[#102C57] px-4 py-8 text-center sm:px-10 lg:py-12">
+            <div className="relative bg-[var(--surface-navy,#102C57)] px-4 py-8 text-center sm:px-10 lg:py-12">
               <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#d4af37_1px,transparent_1px)] [background-size:20px_20px]" />
               <div className="relative flex flex-col items-center justify-center">
                 <div className="mb-4 flex items-center gap-3">
@@ -579,7 +587,7 @@ export default function WeightScaleWastePageClient({
       {isSettingsOpen ? (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 px-4 py-6 backdrop-blur-sm">
           <div className="w-full max-w-xl border-2 border-[#d4af37] bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-[#d7dde5] bg-[#102C57] px-6 py-4 text-white">
+            <div className="flex items-center justify-between border-b border-[#d7dde5] bg-[var(--surface-navy,#102C57)] px-6 py-4 text-white">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#d4af37]">Connection Settings</p>
                 <h2 className="mt-2 text-2xl font-light uppercase tracking-[0.04em]">ตั้งค่าเครื่องชั่ง</h2>
@@ -609,7 +617,7 @@ export default function WeightScaleWastePageClient({
                 <button
                   type="button"
                   onClick={() => setIsSettingsOpen(false)}
-                  className="h-12 w-full bg-[#102C57] font-black uppercase tracking-widest text-[#f3d67a] transition-colors hover:bg-[#1a3a6e]"
+                  className="h-12 w-full bg-[var(--surface-navy,#102C57)] font-black uppercase tracking-widest text-[#f3d67a] transition-colors hover:bg-[#1a3a6e]"
                 >
                   ตกลง
                 </button>

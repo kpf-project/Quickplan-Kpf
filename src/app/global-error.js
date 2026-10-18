@@ -62,7 +62,7 @@ export default function GlobalError({ error }) {
     return (
       <html lang="th">
         <body>
-          <main className="min-h-screen bg-[#102C57] px-6 py-10 text-white flex items-center justify-center">
+          <main className="min-h-screen bg-[var(--surface-navy,#102C57)] px-6 py-10 text-white flex items-center justify-center">
             <div className="mx-auto flex max-w-xl flex-col items-center justify-center rounded-[2rem] border border-[#d4af37]/35 bg-white/10 p-8 text-center shadow-[0_30px_80px_rgba(0,0,0,0.25)] backdrop-blur">
               <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-[#f4c025]">Offline Mode</p>
               <h1 className="mt-4 text-3xl font-bold">ยังไม่มีการเชื่อมต่ออินเทอร์เน็ต</h1>
@@ -97,7 +97,7 @@ export default function GlobalError({ error }) {
             <button
               type="button"
               onClick={() => window.location.reload()}
-              className="mt-5 rounded-md bg-[#102C57] px-4 py-2 text-sm font-bold text-white"
+              className="mt-5 rounded-md bg-[var(--surface-navy,#102C57)] px-4 py-2 text-sm font-bold text-white"
             >
               โหลดระบบอีกครั้ง
             </button>

@@ -1,23 +1,15 @@
 import { ApiError, jsonError } from "@/lib/adminApi";
 import { logAuditEvent } from "@/lib/auditLog";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { validateWeightScaleReportPrintLog } from "@/lib/weight-scale-report-print-log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const SCALE_RECEIPT_PERMISSION_KEYS = [
-  "production-line-attendance-view",
-  "production-line-attendance-manage",
-  "production-line-attendance-report-view",
-  "production-line-attendance-report-manage",
-  "production-line-settings-view",
-  "production-line-settings-manage",
-];
 
 export async function POST(request) {
   try {
-    const actor = await requirePermissionKeys(request, SCALE_RECEIPT_PERMISSION_KEYS);
+    const actor = await requireTaskPermission(request, "production-scale-receipt-report");
     let body;
     try {
       body = await request.json();

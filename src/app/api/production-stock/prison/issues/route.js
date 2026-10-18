@@ -1,5 +1,5 @@
 import { getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import {
   createProductionPrisonIssue,
   loadProductionPrisonIssuePageData,
@@ -9,18 +9,10 @@ import { ok, toJsonResponse } from "@/lib/result";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const PRODUCTION_STOCK_PERMISSION_KEYS = [
-  "production-line-attendance-view",
-  "production-line-attendance-manage",
-  "production-line-attendance-report-view",
-  "production-line-attendance-report-manage",
-  "production-line-settings-view",
-  "production-line-settings-manage",
-];
 
 export async function GET(request) {
   try {
-    await requirePermissionKeys(request, PRODUCTION_STOCK_PERMISSION_KEYS);
+    await requireTaskPermission(request, "production-prison-issue-view");
     const { searchParams } = new URL(request.url);
     const date = searchParams.get("date") || null;
     const payload = await loadProductionPrisonIssuePageData(getSupabaseAdmin(), date);
@@ -32,7 +24,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const permission = await requirePermissionKeys(request, PRODUCTION_STOCK_PERMISSION_KEYS);
+    const permission = await requireTaskPermission(request, "production-prison-issue-write");
     const body = await readJson(request);
 
     const issue = await createProductionPrisonIssue(

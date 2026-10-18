@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Barcode,
   CheckCircle2,
@@ -22,7 +23,7 @@ import { useUserProfile } from "@/lib/useUserProfile";
 import WasteWeighTab from "./WasteWeighTab";
 import FgWipReportTab from "./FgWipReportTab";
 import WipOtherIssueTab from "./WipOtherIssueTab";
-import WipOpeningBalanceTab from "./WipOpeningBalanceTab";
+import WipOpeningStockPanel from "@/features/inventory/components/WipOpeningStockPanel";
 import FgWipSuccessToast from "./FgWipSuccessToast";
 
 function bangkokDateKey() {
@@ -59,9 +60,18 @@ function QuantityControl({ label, value, onChange, unit }) {
   );
 }
 
-export default function FgWipEndOfDayPageClient() {
+export default function FgWipEndOfDayPageClient({ initialReportTab = null }) {
   const profile = useUserProfile();
-  const [activeTab, setActiveTab] = useState("receipt");
+  const searchParams = useSearchParams();
+  const isReportCenter = searchParams?.get("reportCenter") === "1";
+  const [activeTab, setActiveTab] = useState(initialReportTab ? "report" : searchParams?.get("tab") === "opening" ? "opening" : "receipt");
+  const [openingDirty, setOpeningDirty] = useState(false);
+  const openingActive = activeTab === "opening";
+  function switchTab(tab) {
+    if (tab === activeTab) return;
+    if (activeTab === "opening" && openingDirty && !window.confirm("มีรายการยอดตั้งต้นที่ยังไม่บันทึกหรือยังไม่ยืนยันผล ต้องการออกจากส่วนนี้?")) return;
+    setActiveTab(tab);
+  }
   const [productionDate, setProductionDate] = useState(bangkokDateKey);
   const [shiftName, setShiftName] = useState("");
   const [product, setProduct] = useState(null);
@@ -113,6 +123,7 @@ export default function FgWipEndOfDayPageClient() {
 
   // Pre-fetch all products and available WIP cans on date changes
   useEffect(() => {
+    if (openingActive) return;
     let cancelled = false;
     const preFetchAll = async () => {
       setLoadingProducts(true);
@@ -146,7 +157,7 @@ export default function FgWipEndOfDayPageClient() {
     };
     preFetchAll();
     return () => { cancelled = true; };
-  }, [productionDate]);
+  }, [productionDate, openingActive]);
 
 
   const totalInputTins = freshMixedTins + totalIssuedWipTins;
@@ -313,32 +324,36 @@ export default function FgWipEndOfDayPageClient() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f4f6f8] text-[#061f43]">
-      <header className="bg-[#061f43] text-white">
-        <div className="flex min-h-[60px] flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-0">
-          <div className="flex items-center gap-3 sm:gap-5"><span className="border-r border-white/60 pr-3 text-3xl font-black tracking-wide sm:pr-5 sm:text-4xl">KPF</span><h1 className="text-base font-semibold sm:text-xl">จัดการผลผลิตและ WIP</h1></div>
-          <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 text-xs text-white/80 sm:w-auto sm:gap-3 sm:pb-0 sm:text-sm">
-            <input type="date" value={productionDate} onChange={(event) => setProductionDate(event.target.value)} className="h-10 border border-white/30 bg-transparent px-3 text-white [color-scheme:dark]" />
-            
-            <span className="shrink-0 border-l border-white/30 pl-3">{profile.username || "ผู้ใช้งาน"}</span>
-          </div>
-        </div>
-      </header>
+    <div className={`min-h-screen bg-[#f4f6f8] text-[#061f43] ${isReportCenter ? "pt-1" : ""}`}>
+      {!isReportCenter && (
+        <>
+          <header className="bg-[var(--surface-navy,#061f43)] text-white">
+            <div className="flex min-h-[60px] flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-0">
+              <div className="flex items-center gap-3 sm:gap-5"><span className="border-r border-white/60 pr-3 text-3xl font-black tracking-wide sm:pr-5 sm:text-4xl">KPF</span><h1 className="text-base font-semibold sm:text-xl">จัดการผลผลิตและ WIP</h1></div>
+              <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 text-xs text-white/80 sm:w-auto sm:gap-3 sm:pb-0 sm:text-sm">
+                {activeTab !== "opening" && <input type="date" value={productionDate} onChange={(event) => setProductionDate(event.target.value)} className="h-10 border border-white/30 bg-transparent px-3 text-white [color-scheme:dark]" />}
 
-      <nav className="flex overflow-x-auto border-b border-[#061f43] bg-white print-hidden" aria-label="เมนูผลผลิตและ WIP">
-        <button type="button" onClick={() => setActiveTab("receipt")} className={`flex h-[56px] min-w-[210px] flex-1 items-center justify-center gap-2 border-r border-[#aebbc9] px-3 text-sm font-bold sm:gap-3 sm:text-lg ${activeTab === "receipt" ? "bg-[#d9a514] text-[#061f43]" : "text-[#061f43] hover:bg-[#edf2f7]"}`}><FileSearch size={22} />บันทึกผลผลิตและ WIP</button>
-        <button type="button" onClick={() => setActiveTab("opening")} className={`flex h-[56px] min-w-[190px] flex-1 items-center justify-center gap-2 border-r border-[#aebbc9] px-3 text-sm font-bold sm:text-lg ${activeTab === "opening" ? "bg-[#d9a514] text-[#061f43]" : "text-[#061f43] hover:bg-[#edf2f7]"}`}><Database size={21} />ตั้งต้นสต็อก WIP</button>
-        <button type="button" onClick={() => setActiveTab("other-issue")} className={`flex h-[56px] min-w-[190px] flex-1 items-center justify-center gap-2 border-r border-[#aebbc9] px-3 text-sm font-bold sm:text-lg ${activeTab === "other-issue" ? "bg-[#d9a514] text-[#061f43]" : "text-[#061f43] hover:bg-[#edf2f7]"}`}><PackageMinus size={21} />เบิก WIP กรณีอื่น</button>
-        <button type="button" onClick={() => setActiveTab("waste")} className={`flex h-[56px] min-w-[150px] flex-1 items-center justify-center gap-2 border-r border-[#aebbc9] px-3 text-sm font-bold sm:text-lg ${activeTab === "waste" ? "bg-[#d9a514] text-[#061f43]" : "text-[#061f43] hover:bg-[#edf2f7]"}`}><Scale size={21} />ชั่งของเสีย</button>
-        <button type="button" onClick={() => setActiveTab("report")} className={`flex h-[56px] min-w-[180px] flex-1 items-center justify-center gap-2 px-3 text-sm font-bold sm:text-lg ${activeTab === "report" ? "bg-[#d9a514] text-[#061f43]" : "text-[#061f43] hover:bg-[#edf2f7]"}`}><FileSearch size={22} />รายงาน</button>
-      </nav>
+                <span className="shrink-0 border-l border-white/30 pl-3">{profile.username || "ผู้ใช้งาน"}</span>
+              </div>
+            </div>
+          </header>
+
+          <nav className="flex overflow-x-auto border-b border-[#061f43] bg-white print-hidden" aria-label="เมนูผลผลิตและ WIP">
+            <button type="button" onClick={() => switchTab("receipt")} className={`flex h-[56px] min-w-[210px] flex-1 items-center justify-center gap-2 border-r border-[#aebbc9] px-3 text-sm font-bold sm:gap-3 sm:text-lg ${activeTab === "receipt" ? "bg-[#d9a514] text-[#061f43]" : "text-[#061f43] hover:bg-[#edf2f7]"}`}><FileSearch size={22} />บันทึกผลผลิตและ WIP</button>
+            <button type="button" onClick={() => switchTab("opening")} className={`flex h-[56px] min-w-[190px] flex-1 items-center justify-center gap-2 border-r border-[#aebbc9] px-3 text-sm font-bold sm:text-lg ${activeTab === "opening" ? "bg-[#d9a514] text-[#061f43]" : "text-[#061f43] hover:bg-[#edf2f7]"}`}><Database size={21} />ตั้งต้นสต็อก WIP</button>
+            <button type="button" onClick={() => switchTab("other-issue")} className={`flex h-[56px] min-w-[190px] flex-1 items-center justify-center gap-2 border-r border-[#aebbc9] px-3 text-sm font-bold sm:text-lg ${activeTab === "other-issue" ? "bg-[#d9a514] text-[#061f43]" : "text-[#061f43] hover:bg-[#edf2f7]"}`}><PackageMinus size={21} />เบิก WIP กรณีอื่น</button>
+            <button type="button" onClick={() => switchTab("waste")} className={`flex h-[56px] min-w-[150px] flex-1 items-center justify-center gap-2 border-r border-[#aebbc9] px-3 text-sm font-bold sm:text-lg ${activeTab === "waste" ? "bg-[#d9a514] text-[#061f43]" : "text-[#061f43] hover:bg-[#edf2f7]"}`}><Scale size={21} />ชั่งของเสีย</button>
+            <button type="button" onClick={() => switchTab("report")} className={`flex h-[56px] min-w-[180px] flex-1 items-center justify-center gap-2 px-3 text-sm font-bold sm:text-lg ${activeTab === "report" ? "bg-[#d9a514] text-[#061f43]" : "text-[#061f43] hover:bg-[#edf2f7]"}`}><FileSearch size={22} />รายงาน</button>
+          </nav>
+        </>
+      )}
 
       {activeTab === "waste" ? (
         <WasteWeighTab productionDate={productionDate} operatorName={profile.username} />
       ) : activeTab === "opening" ? (
-        <WipOpeningBalanceTab openingDate={productionDate} operatorName={profile.username} />
+        <WipOpeningStockPanel openingDate={productionDate} onDirtyChange={setOpeningDirty} />
       ) : activeTab === "report" ? (
-        <FgWipReportTab productionDate={productionDate} />
+        <FgWipReportTab productionDate={productionDate} initialSubTab={initialReportTab || "daily"} />
       ) : activeTab === "other-issue" ? (
         <WipOtherIssueTab issueDate={productionDate} operatorName={profile.username} />
       ) : (
@@ -350,7 +365,7 @@ export default function FgWipEndOfDayPageClient() {
           {/* Left Column: Inputs */}
           <div className="space-y-4">
             <section className="min-w-0 border border-[#aebbc9] bg-white p-3 sm:p-5">
-              <h2 className="mb-5 flex items-center gap-3 text-lg font-bold"><span className="grid h-8 w-8 place-items-center bg-[#061f43] text-white">1</span>ผลผลิตสำเร็จรูป (FG) ที่ผลิต</h2>
+              <h2 className="mb-5 flex items-center gap-3 text-lg font-bold"><span className="grid h-8 w-8 place-items-center bg-[var(--surface-navy,#061f43)] text-white">1</span>ผลผลิตสำเร็จรูป (FG) ที่ผลิต</h2>
               <label className="mb-2 block text-sm font-semibold">สแกนบาร์โค้ดสินค้า FG / รหัสซื้อขาย</label>
               <div className="mb-1 flex min-w-0 flex-col sm:grid sm:grid-cols-[minmax(0,1fr)_auto]">
                 <div className="relative"><Barcode className="absolute left-3 top-3 text-[#67778a]" size={20} /><input value={barcodeInput} onChange={(event) => setBarcodeInput(event.target.value)} onKeyDown={scanFg} placeholder="สแกนแล้วกด Enter" className="h-12 w-full border border-[#aebbc9] pl-11 pr-3 outline-none focus:border-[#d9a514]" /></div>
@@ -382,13 +397,13 @@ export default function FgWipEndOfDayPageClient() {
             <section className="min-w-0 overflow-hidden rounded-xl border border-[#c8d2df] bg-white shadow-[0_5px_18px_rgba(6,31,67,0.06)] sm:rounded-none sm:border-[#aebbc9] sm:p-5 sm:shadow-none">
               <div className="border-b border-[#dce3eb] bg-gradient-to-r from-[#f8fafc] to-white p-4 sm:mb-5 sm:flex sm:items-center sm:justify-between sm:gap-4 sm:border-0 sm:bg-none sm:p-0">
                 <div className="flex items-center gap-3">
-                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#061f43] text-lg font-black text-white shadow-sm sm:h-8 sm:w-8 sm:rounded-none">2</span>
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--surface-navy,#061f43)] text-lg font-black text-white shadow-sm sm:h-8 sm:w-8 sm:rounded-none">2</span>
                   <div className="min-w-0">
                     <h2 className="text-[17px] font-black leading-tight text-[#061f43] sm:text-lg">WIP ยกยอดมาใช้ผลิต</h2>
                     <p className="mt-0.5 text-xs font-medium text-[#67778a]">เลือกยอดคงเหลือเพื่อนำกลับมาใช้ผลิต</p>
                   </div>
                 </div>
-                <button type="button" onClick={() => { setWipPickerOpen(true); loadWipPickerRows(""); }} className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#061f43] px-4 text-sm font-bold text-white shadow-[0_4px_12px_rgba(6,31,67,0.18)] transition-[transform,background-color,box-shadow] duration-200 hover:bg-[#0b3268] active:scale-[0.985] motion-reduce:transition-none sm:mt-0 sm:h-11 sm:w-auto sm:rounded-none sm:border-2 sm:border-[#061f43] sm:bg-white sm:text-[#061f43] sm:shadow-none sm:hover:bg-[#edf2f7]"><Plus size={17} strokeWidth={2.5} />เลือก WIP ยกยอดมา</button>
+                <button type="button" onClick={() => { setWipPickerOpen(true); loadWipPickerRows(""); }} className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-[var(--surface-navy,#061f43)] px-4 text-sm font-bold text-white shadow-[0_4px_12px_rgba(6,31,67,0.18)] transition-[transform,background-color,box-shadow] duration-200 hover:bg-[#0b3268] active:scale-[0.985] motion-reduce:transition-none sm:mt-0 sm:h-11 sm:w-auto sm:rounded-none sm:border-2 sm:border-[#061f43] sm:bg-white sm:text-[#061f43] sm:shadow-none sm:hover:bg-[#edf2f7]"><Plus size={17} strokeWidth={2.5} />เลือก WIP ยกยอดมา</button>
               </div>
               {selectedWipIssues.length === 0 ? (
                 <div className="m-4 grid min-h-[140px] place-items-center rounded-lg border border-dashed border-[#9aabba] bg-[#f8fafc] p-4 text-center text-[#526477] sm:m-0 sm:rounded-none">
@@ -431,7 +446,7 @@ export default function FgWipEndOfDayPageClient() {
                   </div>
                   <div className="hidden overflow-x-auto border border-[#ccd4dd] sm:block">
                   <table className="w-full min-w-[500px] border-collapse text-sm">
-                    <thead className="bg-[#f1f3f5]">
+                    <thead className="bg-[#f8f9fa] text-[#1a1c1e] border-b-2 border-[#1a1c1e]">
                       <tr>
                         <th className="border-r border-[#ccd4dd] px-3 py-2 font-semibold text-left">รายละเอียด WIP / LOT</th>
                         <th className="border-r border-[#ccd4dd] px-3 py-2 font-semibold text-center w-[110px]">คงเหลือ</th>
@@ -472,7 +487,7 @@ export default function FgWipEndOfDayPageClient() {
           {/* Right Column: Outputs */}
           <div>
             <section className="min-w-0 border border-[#aebbc9] bg-white p-3 sm:p-5">
-              <h2 className="mb-2 flex items-center gap-3 text-lg font-bold"><span className="grid h-8 w-8 place-items-center bg-[#061f43] text-white">3</span>WIP ค้างไลน์ (เศษเหลือสิ้นวัน)</h2>
+              <h2 className="mb-2 flex items-center gap-3 text-lg font-bold"><span className="grid h-8 w-8 place-items-center bg-[var(--surface-navy,#061f43)] text-white">3</span>WIP ค้างไลน์ (เศษเหลือสิ้นวัน - ไม่บังคับ)</h2>
               <div className="mb-5 flex items-center gap-3 border-l-4 border-[#d9a514] bg-[#fff8df] px-4 py-3">
                 <Database className="shrink-0 text-[#9a6f00]" size={22} />
                 <div className="min-w-0">
@@ -540,8 +555,8 @@ export default function FgWipEndOfDayPageClient() {
       </main>)}
 
       {pickerOpen ? <div className="fixed inset-0 z-[100] grid place-items-center bg-black/55 p-4" role="dialog" aria-modal="true" aria-label="เลือกสินค้า FG"><div className="flex max-h-[82vh] w-full max-w-4xl flex-col bg-white">
-        <div className="flex items-center justify-between bg-[#061f43] px-5 py-4 text-white"><div><h2 className="text-lg font-bold">เลือกสินค้า FG</h2><p className="text-xs text-white/70">KP13 · หมวด 04, 04-1, 04-2 · ข้อมูลบาร์โค้ดจาก Trade Code</p></div><button type="button" onClick={() => setPickerOpen(false)} className="grid h-10 w-10 place-items-center border border-white/40"><X /></button></div>
-        <div className="flex gap-2 border-b border-[#ccd4dd] p-4"><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหารหัสสินค้า ชื่อสินค้า หรือบาร์โค้ด" className="h-11 flex-1 border border-[#aebbc9] px-3 outline-none focus:border-[#d9a514]" /><div className="flex h-11 items-center gap-2 bg-[#061f43]/10 px-5 font-bold text-[#061f43]"><Search size={18} />กรองด่วน</div></div>
+        <div className="flex items-center justify-between bg-[var(--surface-navy,#061f43)] px-5 py-4 text-white"><div><h2 className="text-lg font-bold">เลือกสินค้า FG</h2><p className="text-xs text-white/70">KP13 · หมวด 04, 04-1, 04-2 · ข้อมูลบาร์โค้ดจาก Trade Code</p></div><button type="button" onClick={() => setPickerOpen(false)} className="grid h-10 w-10 place-items-center border border-white/40"><X /></button></div>
+        <div className="flex gap-2 border-b border-[#ccd4dd] p-4"><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหารหัสสินค้า ชื่อสินค้า หรือบาร์โค้ด" className="h-11 flex-1 border border-[#aebbc9] px-3 outline-none focus:border-[#d9a514]" /><div className="flex h-11 items-center gap-2 bg-[var(--surface-navy,#061f43)]/10 px-5 font-bold text-[#061f43]"><Search size={18} />กรองด่วน</div></div>
         <div className="overflow-auto p-4">{loadingProducts ? <div className="grid h-48 place-items-center"><Loader2 className="animate-spin" /></div> : filteredProducts.length ? (
           <div className="divide-y divide-[#d6dde5] border border-[#aebbc9]">
             {filteredProducts.map((row) => (
@@ -579,7 +594,7 @@ export default function FgWipEndOfDayPageClient() {
       {wipPickerOpen ? (
         <div className="fixed inset-0 z-[100] bg-black/55 sm:grid sm:place-items-center sm:p-4" role="dialog" aria-modal="true" aria-label="เลือก WIP ค้างไลน์">
           <div className="flex h-[100dvh] w-full flex-col bg-white sm:h-auto sm:max-h-[88vh] sm:max-w-4xl sm:shadow-2xl">
-            <div className="flex min-h-[88px] shrink-0 items-center justify-between bg-[#061f43] px-4 py-4 text-white sm:min-h-0 sm:px-5">
+            <div className="flex min-h-[88px] shrink-0 items-center justify-between bg-[var(--surface-navy,#061f43)] px-4 py-4 text-white sm:min-h-0 sm:px-5">
               <div>
                 <h2 className="text-xl font-bold sm:text-2xl">เลือก WIP ค้างไลน์</h2>
                 <p className="mt-1 text-sm text-white/75">แสดงเฉพาะรายการที่ยังมียอดคงเหลือ</p>

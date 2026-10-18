@@ -1,16 +1,18 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   CalendarRange,
+  Download,
   Printer,
   RefreshCw,
 } from "lucide-react";
 import WeightScalePrimaryHeader from "@/features/production-line/components/WeightScalePrimaryHeader";
 import { useUserProfile } from "@/lib/useUserProfile";
+import { ReportHeader, ReportFilterBar } from "@/components/print";
 import styles from "./ProductionInputOutputReport.module.css";
 
 const ROWS_PER_PAGE = 16;
@@ -57,6 +59,32 @@ function formatPrintedAt(value) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(parsed);
+}
+
+function serializeReportModuleCssRules(rules, moduleClassNames) {
+  let css = "";
+
+  for (const rule of rules) {
+    if (rule.cssRules) {
+      const nestedCss = serializeReportModuleCssRules(rule.cssRules, moduleClassNames);
+      if (nestedCss) {
+        css += `${rule.cssText.slice(0, rule.cssText.indexOf("{"))}{${nestedCss}}\n`;
+      }
+      continue;
+    }
+
+    if (rule.selectorText) {
+      const belongsToReport = moduleClassNames.some((className) =>
+        rule.selectorText.includes(`.${CSS.escape(className)}`)
+      );
+      if (belongsToReport) css += `${rule.cssText}\n`;
+      continue;
+    }
+
+    if (rule.cssText.startsWith("@page")) css += `${rule.cssText}\n`;
+  }
+
+  return css;
 }
 
 function buildPages(days) {
@@ -115,12 +143,11 @@ function LotHeader() {
 }
 
 function ReportTable({ page, showHeaders = true }) {
-  const jams = page.dayPage === 1 && Array.isArray(page.jams) ? page.jams : [];
-  const hasRows = page.rows.length > 0 || jams.length > 0;
-  const rowCount = Math.max(page.rows.length, jams.length);
+  const hasRows = page.rows.length > 0;
+  const rowCount = page.rows.length;
   const displayRows = Array.from({ length: rowCount }, (_, index) => ({
     production: page.rows[index] || null,
-    jam: jams[index] || null,
+    jam: page.rows[index]?.jam || null,
   }));
   const jamQuantity = sumJam(page.jams, "quantity");
   const jamWeightKg = sumJam(page.jams, "weightKg");
@@ -136,14 +163,14 @@ function ReportTable({ page, showHeaders = true }) {
       </colgroup>
       {showHeaders ? (
         <thead>
-        <tr className="bg-slate-50 text-slate-950">
+        <tr className="bg-[#f8f9fa] text-[#1a1c1e]">
           <th rowSpan={2}>#</th>
           <th colSpan={5} className="border-l border-l-slate-200">เปลือกที่ใช้จริง</th>
           <th colSpan={4} className="border-l border-l-slate-200">แยมใช้จริง</th>
-          <th colSpan={4} className="border-l border-l-slate-200">สินค้าสำเร็จรูปที่ผลิตได้</th>
+          <th colSpan={4} className="border-l border-l-slate-200">WIP / FG ปลายทางและผลผลิต</th>
           <th colSpan={3} className="input-output-waste-cell border-l border-l-slate-200">ของเสีย (กก.)</th>
         </tr>
-        <tr className="bg-white font-bold">
+        <tr className="bg-[#f8f9fa] text-[#1a1c1e] font-bold border-b-2 border-[#1a1c1e]">
           <th className="border-l border-l-slate-200">รหัสเปลือก</th>
           <th>ชื่อเปลือก</th>
           <th><LotHeader /></th>
@@ -177,6 +204,7 @@ function ReportTable({ page, showHeaders = true }) {
             production?.fgCode
             && hasMeasuredValue(production.fgQuantity, production.fgWeightKg)
           );
+          const showDestination = Boolean(production?.fgCode);
 
           return (
             <tr key={`${page.date}-${page.dayPage}-${index}`} className="input-output-data-row hover:bg-slate-50/50">
@@ -185,6 +213,9 @@ function ReportTable({ page, showHeaders = true }) {
               <td className="border-l border-l-slate-200 text-center font-mono whitespace-nowrap">{showShell ? production.shellCode : "—"}</td>
               <td className="text-left">
                 <span className="input-output-product-name">{showShell ? production.shellName : "—"}</span>
+                {showShell && production.destinationRoomName ? (
+                  <span className="mt-0.5 block text-[10px] font-bold text-amber-700">{production.destinationRoomName}</span>
+                ) : null}
               </td>
               <td className="input-output-lot-cell text-left font-mono tabular-nums">
                 <LotBreakdown lots={production?.shellLots} visible={showShell} />
@@ -201,9 +232,9 @@ function ReportTable({ page, showHeaders = true }) {
               <td className="bg-slate-50/20 text-center font-mono tabular-nums">{jam ? formatQuantity(jam.quantity) : "—"}</td>
               <td className="bg-slate-50/20 text-center font-mono tabular-nums">{jam ? formatNumber(jam.weightKg) : "—"}</td>
 
-              <td className="border-l border-l-slate-200 bg-slate-50/20 text-center font-mono whitespace-nowrap">{showFg ? production.fgCode : "—"}</td>
+              <td className="border-l border-l-slate-200 bg-slate-50/20 text-center font-mono whitespace-nowrap">{showDestination ? production.fgCode : "—"}</td>
               <td className="bg-slate-50/20 text-left">
-                <span className="input-output-product-name">{showFg ? production.fgName : "—"}</span>
+                <span className="input-output-product-name">{showDestination ? production.fgName : "—"}</span>
               </td>
               <td className="bg-slate-50/20 text-center font-mono font-bold tabular-nums text-slate-900">{showFg ? formatQuantity(production.fgQuantity) : "—"}</td>
               <td className="bg-slate-50/20 text-center font-mono font-bold tabular-nums text-slate-900">{showFg ? formatNumber(production.fgWeightKg) : "—"}</td>
@@ -231,7 +262,7 @@ function ReportTable({ page, showHeaders = true }) {
             <td colSpan={2} className="border-l border-l-slate-300 text-right">รวมแยมใช้จริง:</td>
             <td className="text-center font-mono">{formatQuantity(jamQuantity)}</td>
             <td className="text-center font-mono">{formatNumber(jamWeightKg)}</td>
-            <td colSpan={2} className="border-l border-l-slate-300 text-right">รวมสินค้าสำเร็จรูป:</td>
+            <td colSpan={2} className="border-l border-l-slate-300 text-right">รวมผลผลิต:</td>
             <td className="text-center font-mono">{formatQuantity(page.totals.fgQuantity)}</td>
             <td className="text-center font-mono">{formatNumber(page.totals.fgWeightKg)}</td>
             <td className="input-output-waste-cell border-l border-l-slate-300 text-right font-mono">{formatNumber(page.totals.labelScrapWeightKg)}</td>
@@ -247,23 +278,20 @@ function ReportTable({ page, showHeaders = true }) {
 function ReportSheet({ page, generatedAt, username, departmentName, warnings }) {
   return (
     <article className="input-output-sheet mx-auto bg-white text-slate-900 shadow-[0_10px_30px_rgba(15,23,42,0.14)]">
-      <header className="grid grid-cols-[1fr_1.4fr_1fr] items-end gap-4 border-b-2 border-slate-900 pb-3">
-        <div className="flex items-center gap-3">
-          <Image src="/brand/LOGO-KPF1.png" alt="KPF" width={62} height={50} className="h-11 w-auto object-contain" priority />
-          <div>
-            <div className="text-[12px] font-black text-[#102C57]">บริษัท เคพีฟู้ดส์ จำกัด</div>
-            <div className="text-[8px] font-semibold text-slate-500">K.P. foods Co.,Ltd.</div>
-          </div>
-        </div>
-        <div className="text-center">
-          <h2 className="text-[17px] font-black text-[#102C57]">รายงานสรุปวัตถุดิบและผลผลิตประจำวัน</h2>
-          <p className="mt-1 text-[9px] font-semibold text-slate-600">ประจำวันที่ {formatThaiDate(page.date)}</p>
-        </div>
-        <div className="text-right text-[8px] leading-4 text-slate-500">
-          <div>วันที่พิมพ์: <span className="font-semibold text-slate-800">{formatPrintedAt(generatedAt)}</span></div>
-          <div>ผู้พิมพ์: <span className="font-semibold text-slate-800">{username || "System"}</span></div>
-          <div>หน้า: <span className="font-semibold text-slate-800">{page.dayPage}/{page.dayPageCount}</span></div>
-        </div>
+      <header className="pb-1">
+        <ReportHeader
+          title="รายงานสรุปวัตถุดิบและผลผลิตประจำวัน"
+          subtitle="DAILY RAW MATERIAL & OUTPUT REPORT"
+          meta={[
+            { label: "ประจำวันที่", value: formatThaiDate(page.date) },
+            { label: "แผนก", value: departmentName || "แผนกผลิต" },
+          ]}
+          printedAt={formatPrintedAt(generatedAt)}
+          printedBy={username || "System"}
+          page={page.dayPage}
+          totalPages={page.dayPageCount}
+          variant="block"
+        />
       </header>
 
       <div className="mt-2 flex items-center justify-between text-[8px] text-slate-500">
@@ -301,36 +329,23 @@ function CompactPrintSheet({ days, generatedAt, username, departmentName, warnin
           <col className="w-[2.5%]" /><col className="w-[2.5%]" /><col className="w-[2.5%]" />
         </colgroup>
         <thead>
-          <tr className="input-output-print-report-header">
-            <th colSpan={15}>
-              <div className="flex items-end justify-between">
-                <div className="flex items-center gap-3 text-left">
-                  <Image src="/brand/LOGO-KPF1.png" alt="KPF" width={44} height={40} className="h-10 w-auto object-contain" priority />
-                  <div>
-                    <div className="text-[12px] font-black text-[#102C57]">บริษัท เคพีฟู้ดส์ จำกัด</div>
-                    <div className="text-[8px] font-semibold text-slate-500">K.P. foods Co.,Ltd.</div>
-                  </div>
-                </div>
-                <div className="text-center">
-                  <h2 className="text-[16px] font-black text-[#102C57]">รายงานสรุปวัตถุดิบและผลผลิต</h2>
-                  <p className="mt-1 text-[8px] font-semibold text-slate-600">ช่วงวันที่ {formatThaiDate(dateFrom)} ถึง {formatThaiDate(dateTo)}</p>
-                </div>
-                <div className="text-right text-[8px] leading-4 text-slate-500">
-                  <div>วันที่พิมพ์: <span className="font-semibold text-slate-800">{formatPrintedAt(generatedAt)}</span></div>
-                  <div>ผู้พิมพ์: <span className="font-semibold text-slate-800">{username || "System"}</span></div>
-                </div>
-              </div>
-            </th>
-          </tr>
-          <tr className="input-output-print-report-meta">
-            <th colSpan={7} className="text-left">แผนก: <span className="font-black">{departmentName || "แผนกผลิต"}</span></th>
-            <th colSpan={8} className="text-right">ข้อมูลเรียงตามวัน พร้อมยอดรวมแยกแต่ละวัน</th>
-          </tr>
+          <ReportHeader
+            title="รายงานสรุปวัตถุดิบและผลผลิต"
+            subtitle="RAW MATERIAL & OUTPUT SUMMARY REPORT"
+            meta={[
+              { label: "แผนก", value: departmentName || "แผนกผลิต" },
+              { label: "ช่วงวันที่", value: `${formatThaiDate(dateFrom)} ถึง ${formatThaiDate(dateTo)}` },
+            ]}
+            printedAt={formatPrintedAt(generatedAt)}
+            printedBy={username || "System"}
+            variant="table-rows"
+            colSpan={15}
+          />
           <tr className="input-output-print-table-header">
             <th rowSpan={2}>#</th>
             <th colSpan={4}>เปลือกที่ใช้จริง</th>
             <th colSpan={4}>แยมใช้จริง</th>
-            <th colSpan={3}>สินค้าสำเร็จรูปที่ผลิตได้</th>
+            <th colSpan={3}>WIP / FG ปลายทางและผลผลิต</th>
             <th colSpan={3} className="input-output-waste-cell">ของเสีย (กก.)</th>
           </tr>
           <tr className="input-output-print-table-header">
@@ -347,25 +362,25 @@ function CompactPrintSheet({ days, generatedAt, username, departmentName, warnin
         ) : null}
         {reportDays.map((day) => {
             const productionRows = Array.isArray(day.rows) ? day.rows : [];
-            const jams = Array.isArray(day.jams) ? day.jams : [];
-            const rowCount = Math.max(productionRows.length, jams.length, 1);
+            const rowCount = Math.max(productionRows.length, 1);
 
             return (
               <tbody key={day.date} className="input-output-print-day-group">
                 <tr className="input-output-print-date-row"><td colSpan={15}>วันที่ {formatThaiDate(day.date)}</td></tr>
                 {Array.from({ length: rowCount }, (_, index) => {
                   const production = productionRows[index] || null;
-                  const jam = jams[index] || null;
+                  const jam = production?.jam || null;
                   const showShell = Boolean(production?.shellCode && hasMeasuredValue(production.shellQuantity, production.shellWeightKg));
                   const showWaste = Boolean(production?.fgCode && Number(production.wasteWeightKg || 0) !== 0);
                   const showFg = Boolean(production?.fgCode && hasMeasuredValue(production.fgQuantity, production.fgWeightKg));
+                  const showDestination = Boolean(production?.fgCode);
 
                   return (
                     <tr key={`${day.date}-${index}`} className={`input-output-print-data-row${index === rowCount - 1 ? " input-output-print-last-data-row" : ""}`}>
                       <td>{index + 1}</td>
-                      <td>{showShell ? <span className="input-output-print-product-name">{production.shellCode} - {production.shellName}</span> : "—"}</td><td className="input-output-lot-cell"><LotBreakdown lots={production?.shellLots} visible={showShell} /></td><td className="text-center">{showShell ? formatQuantity(production.shellQuantity) : "—"}</td><td className="text-center">{showShell ? formatNumber(production.shellWeightKg) : "—"}</td>
+                      <td>{showShell ? <span className="input-output-print-product-name">{production.shellCode} - {production.shellName}{production.destinationRoomName ? ` (${production.destinationRoomName})` : ""}</span> : "—"}</td><td className="input-output-lot-cell"><LotBreakdown lots={production?.shellLots} visible={showShell} /></td><td className="text-center">{showShell ? formatQuantity(production.shellQuantity) : "—"}</td><td className="text-center">{showShell ? formatNumber(production.shellWeightKg) : "—"}</td>
                       <td>{jam?.name || "—"}</td><td className="input-output-lot-cell"><LotBreakdown lots={jam?.lots} visible={Boolean(jam)} /></td><td className="text-center">{jam ? formatQuantity(jam.quantity) : "—"}</td><td className="text-center">{jam ? formatNumber(jam.weightKg) : "—"}</td>
-                      <td>{showFg ? <span className="input-output-print-product-name">{production.fgCode} - {production.fgName}</span> : "—"}</td><td className="text-center">{showFg ? formatQuantity(production.fgQuantity) : "—"}</td><td className="text-center">{showFg ? formatNumber(production.fgWeightKg) : "—"}</td>
+                      <td>{showDestination ? <span className="input-output-print-product-name">{production.fgCode} - {production.fgName}</span> : "—"}</td><td className="text-center">{showFg ? formatQuantity(production.fgQuantity) : "—"}</td><td className="text-center">{showFg ? formatNumber(production.fgWeightKg) : "—"}</td>
                       <td className="input-output-waste-cell">{showWaste ? formatNumber(production.labelScrapWeightKg) : "—"}</td><td className="input-output-waste-cell">{showWaste ? formatNumber(production.brokenScrapWeightKg) : "—"}</td><td className="input-output-waste-cell">{showWaste ? formatNumber(production.burntScrapWeightKg) : "—"}</td>
                     </tr>
                   );
@@ -386,18 +401,292 @@ function CompactPrintReport(props) {
   );
 }
 
-export default function ProductionInputOutputReportPageClient({ initialData }) {
+export default function ProductionInputOutputReportPageClient({ initialData, reportCenter = false }) {
   const router = useRouter();
   const profile = useUserProfile();
   const [isPending, startTransition] = useTransition();
   const [dateFrom, setDateFrom] = useState(initialData?.filters?.dateFrom || "");
   const [dateTo, setDateTo] = useState(initialData?.filters?.dateTo || "");
   const [printMode, setPrintMode] = useState(PRINT_MODE_COMPACT);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [isPrintingPdf, setIsPrintingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState("");
   const pages = useMemo(() => buildPages(initialData?.days), [initialData?.days]);
   const warnings = Array.isArray(initialData?.warnings) ? initialData.warnings : [];
 
+  const generatePdfBlob = async () => {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 150_000);
+
+    try {
+      const reportRoot = document.querySelector("[data-print-report-root]");
+      if (!reportRoot) throw new Error("ไม่พบเนื้อหารายงานสำหรับสร้าง PDF");
+
+      const reportClone = reportRoot.cloneNode(true);
+      reportClone.querySelectorAll(".input-output-screen-only, .input-output-screen-report")
+        .forEach((element) => element.remove());
+      reportClone.querySelectorAll("img").forEach((image) => {
+        image.setAttribute("src", "/brand/LOGO-KPF1.png");
+        image.removeAttribute("srcset");
+        image.removeAttribute("sizes");
+      });
+
+      const stylesheetPaths = [];
+      const inlineStyles = [];
+      const reportModuleClasses = Array.from(reportRoot.classList);
+      for (const stylesheet of document.styleSheets) {
+        if (!stylesheet.href) {
+          const reportCss = serializeReportModuleCssRules(
+            stylesheet.cssRules,
+            reportModuleClasses
+          );
+          if (reportCss) inlineStyles.push(reportCss);
+          continue;
+        }
+
+        const stylesheetUrl = new URL(stylesheet.href, window.location.href);
+        if (
+          stylesheetUrl.origin === window.location.origin
+          && stylesheetUrl.pathname.startsWith("/_next/static/")
+        ) {
+          const pathWithSearch = `${stylesheetUrl.pathname}${stylesheetUrl.search}`;
+          if (!stylesheetPaths.includes(pathWithSearch)) {
+            stylesheetPaths.push(pathWithSearch);
+          }
+        }
+      }
+
+      const response = await fetch(
+        "/api/production-line/attendance/report/input-output/pdf",
+        {
+          method: "POST",
+          cache: "no-store",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            dateFrom: initialData?.filters?.dateFrom || dateFrom,
+            dateTo: initialData?.filters?.dateTo || dateTo,
+            html: reportClone.outerHTML,
+            bodyClass: document.body.className,
+            stylesheetPaths: Array.from(new Set(stylesheetPaths)),
+            inlineCss: inlineStyles.join("\n"),
+          }),
+          signal: controller.signal,
+        }
+      );
+      if (!response.ok) {
+        const payload = await response.json();
+        throw new Error(payload?.error || "ไม่สามารถสร้างไฟล์ PDF ได้");
+      }
+
+      const pdfBlob = await response.blob();
+      if (pdfBlob.type !== "application/pdf") {
+        throw new Error("เซิร์ฟเวอร์ไม่ได้ส่งไฟล์ PDF กลับมา");
+      }
+
+      return pdfBlob;
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  };
+
+  const downloadPdfReport = async () => {
+    setPdfError("");
+    setIsDownloadingPdf(true);
+
+    try {
+      const pdfBlob = await generatePdfBlob();
+      const blobUrl = URL.createObjectURL(pdfBlob);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      const fileDateFrom = initialData?.filters?.dateFrom || dateFrom || "start";
+      const fileDateTo = initialData?.filters?.dateTo || dateTo || "end";
+      link.download = `รายงานวัตถุดิบและผลผลิต_${fileDateFrom}_${fileDateTo}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    } catch (error) {
+      setPdfError(
+        error?.name === "AbortError"
+          ? "สร้าง PDF ใช้เวลานานเกินไป กรุณาลองใหม่"
+          : error?.message || "ไม่สามารถสร้างไฟล์ PDF ได้"
+      );
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  };
+
+  const printReport = async () => {
+    setPdfError("");
+    setIsPrintingPdf(true);
+
+    try {
+      const pdfBlob = await generatePdfBlob();
+      const blobUrl = URL.createObjectURL(pdfBlob);
+
+      let printFrame = document.getElementById("pdf-silent-print-frame");
+      if (printFrame) {
+        printFrame.remove();
+      }
+      printFrame = document.createElement("iframe");
+      printFrame.id = "pdf-silent-print-frame";
+      printFrame.style.position = "fixed";
+      printFrame.style.right = "0";
+      printFrame.style.bottom = "0";
+      printFrame.style.width = "4px";
+      printFrame.style.height = "4px";
+      printFrame.style.opacity = "0.01";
+      printFrame.style.border = "none";
+      printFrame.style.pointerEvents = "none";
+      printFrame.src = blobUrl;
+      document.body.appendChild(printFrame);
+
+      let printed = false;
+      const triggerPrint = () => {
+        if (printed) return;
+        printed = true;
+        try {
+          printFrame.contentWindow?.focus();
+          printFrame.contentWindow?.print();
+        } catch (e) {
+          console.error("Print frame error:", e);
+        } finally {
+          setIsPrintingPdf(false);
+          window.setTimeout(() => {
+            printFrame?.remove();
+            URL.revokeObjectURL(blobUrl);
+          }, 60_000);
+        }
+      };
+
+      printFrame.onload = () => {
+        window.setTimeout(triggerPrint, 600);
+      };
+      window.setTimeout(triggerPrint, 1500);
+    } catch (error) {
+      setIsPrintingPdf(false);
+      setPdfError(
+        error?.name === "AbortError"
+          ? "สร้าง PDF ใช้เวลานานเกินไป กรุณาลองใหม่"
+          : error?.message || "ไม่สามารถสร้างไฟล์ PDF ได้"
+      );
+    }
+  };
+
+  const exportToExcel = async () => {
+    try {
+      const excelModule = await import("exceljs/dist/exceljs.min.js");
+      const ExcelJS = excelModule?.default || excelModule;
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = "KPF Production Line";
+      workbook.created = new Date();
+
+      const worksheet = workbook.addWorksheet("รายงานสรุปวัตถุดิบและผลผลิต");
+      const columns = [
+        { header: "ลำดับ", key: "seq", width: 8 },
+        { header: "วันที่", key: "date", width: 14 },
+        { header: "รหัสเปลือก", key: "shellCode", width: 14 },
+        { header: "ชื่อเปลือก", key: "shellName", width: 28 },
+        { header: "ห้องปลายทาง", key: "destinationRoomName", width: 18 },
+        { header: "LOT เปลือก", key: "shellLots", width: 24 },
+        { header: "จำนวนเปลือก", key: "shellQty", width: 14 },
+        { header: "น้ำหนักเปลือก (กก.)", key: "shellWeightKg", width: 18 },
+        { header: "ชื่อแยม", key: "jamName", width: 24 },
+        { header: "LOT แยม", key: "jamLots", width: 24 },
+        { header: "จำนวนแยม", key: "jamQty", width: 14 },
+        { header: "น้ำหนักแยม (กก.)", key: "jamWeightKg", width: 18 },
+        { header: "รหัสสินค้า FG", key: "fgCode", width: 16 },
+        { header: "ชื่อสินค้า FG", key: "fgName", width: 28 },
+        { header: "จำนวน FG", key: "fgQty", width: 14 },
+        { header: "น้ำหนัก FG (กก.)", key: "fgWeightKg", width: 18 },
+        { header: "ของเสีย: ป้าย (กก.)", key: "labelScrapKg", width: 18 },
+        { header: "ของเสีย: หัก (กก.)", key: "brokenScrapKg", width: 18 },
+        { header: "ของเสีย: ไหม้ (กก.)", key: "burntScrapKg", width: 18 },
+      ];
+
+      worksheet.columns = columns;
+
+      const lastCol = String.fromCharCode(64 + columns.length);
+      worksheet.mergeCells(`A1:${lastCol}1`);
+      worksheet.getCell("A1").value = "รายงานสรุปวัตถุดิบและผลผลิตประจำวัน";
+      worksheet.getCell("A1").font = { size: 16, bold: true, color: { argb: "FF102C57" } };
+
+      worksheet.mergeCells(`A2:${lastCol}2`);
+      worksheet.getCell("A2").value = `แผนก: ${initialData?.scope?.departmentName || "แผนกผลิต"} | ช่วงวันที่: ${formatThaiDate(initialData?.filters?.dateFrom || dateFrom)} ถึง ${formatThaiDate(initialData?.filters?.dateTo || dateTo)}`;
+      worksheet.getCell("A2").font = { size: 11, color: { argb: "FF3A4A5E" } };
+
+      const headerRow = worksheet.getRow(4);
+      headerRow.values = columns.map((c) => c.header);
+      headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      headerRow.alignment = { vertical: "middle", horizontal: "center" };
+      headerRow.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF102C57" },
+      };
+      headerRow.height = 24;
+
+      let seq = 1;
+      const reportDays = Array.isArray(initialData?.days) ? initialData.days : [];
+
+      for (const day of reportDays) {
+        const productionRows = Array.isArray(day.rows) ? day.rows : [];
+        for (const production of productionRows) {
+          const jam = production?.jam || null;
+          const shellLotsText = Array.isArray(production?.shellLots)
+            ? production.shellLots.map((l) => `${l.lotNo} (${l.weightKg}kg)`).join(", ")
+            : "";
+          const jamLotsText = Array.isArray(jam?.lots)
+            ? jam.lots.map((l) => `${l.lotNo} (${l.weightKg}kg)`).join(", ")
+            : "";
+
+          worksheet.addRow({
+            seq: seq++,
+            date: day.date,
+            shellCode: production?.shellCode || "",
+            shellName: production?.shellName || "",
+            destinationRoomName: production?.destinationRoomName || "",
+            shellLots: shellLotsText,
+            shellQty: production?.shellQuantity || 0,
+            shellWeightKg: production?.shellWeightKg || 0,
+            jamName: jam?.name || "",
+            jamLots: jamLotsText,
+            jamQty: jam?.quantity || 0,
+            jamWeightKg: jam?.weightKg || 0,
+            fgCode: production?.fgCode || "",
+            fgName: production?.fgName || "",
+            fgQty: production?.fgQuantity || 0,
+            fgWeightKg: production?.fgWeightKg || 0,
+            labelScrapKg: production?.labelScrapWeightKg || 0,
+            brokenScrapKg: production?.brokenScrapWeightKg || 0,
+            burntScrapKg: production?.burntScrapWeightKg || 0,
+          });
+        }
+      }
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const fileDateFrom = initialData?.filters?.dateFrom || dateFrom || "start";
+      const fileDateTo = initialData?.filters?.dateTo || dateTo || "end";
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `รายงานวัตถุดิบและผลผลิต_${fileDateFrom}_${fileDateTo}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      console.error("Export Excel error:", err);
+      alert("ไม่สามารถส่งออก Excel ได้: " + (err?.message || ""));
+    }
+  };
+
   const applyFilters = () => {
     const params = new URLSearchParams();
+    if (reportCenter) params.set("reportCenter", "1");
     if (dateFrom) params.set("dateFrom", dateFrom);
     if (dateTo) params.set("dateTo", dateTo);
     startTransition(() => {
@@ -406,7 +695,7 @@ export default function ProductionInputOutputReportPageClient({ initialData }) {
   };
 
   return (
-    <div className={`${styles.reportRoot} ${printMode === PRINT_MODE_COMPACT ? styles.compactPrint : styles.dailyPrint} min-h-screen bg-[#f4f6f8] text-slate-900`}>
+    <div data-print-report-root className={`${styles.reportRoot} ${printMode === PRINT_MODE_COMPACT ? styles.compactPrint : styles.dailyPrint} min-h-screen bg-[#f4f6f8] text-slate-900`}>
       <div className="input-output-screen-only">
         <WeightScalePrimaryHeader
           eyebrow="รายงานไลน์การผลิต"
@@ -416,40 +705,55 @@ export default function ProductionInputOutputReportPageClient({ initialData }) {
         />
 
         <div className="mx-auto w-full max-w-[84rem] px-4 py-6 sm:px-6 lg:px-8">
-          <section className="border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="flex flex-col gap-1.5">
-                  <span className="inline-flex items-center gap-2 text-xs font-bold text-slate-700"><CalendarRange size={15} /> จากวันที่</span>
-                  <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-10 min-w-52 border border-slate-300 px-3 text-sm outline-none focus:border-[#d4af37]" />
-                </label>
-                <label className="flex flex-col gap-1.5">
-                  <span className="inline-flex items-center gap-2 text-xs font-bold text-slate-700"><CalendarRange size={15} /> ถึงวันที่</span>
-                  <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="h-10 min-w-52 border border-slate-300 px-3 text-sm outline-none focus:border-[#d4af37]" />
-                </label>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <label className="flex h-10 items-center gap-2 border border-slate-300 bg-white px-3">
-                  <span className="text-xs font-bold text-slate-700">รูปแบบพิมพ์</span>
-                  <select
-                    value={printMode}
-                    onChange={(event) => setPrintMode(event.target.value)}
-                    className="h-8 bg-transparent text-sm font-semibold text-slate-900 outline-none"
-                    aria-label="รูปแบบการพิมพ์รายงาน"
-                  >
-                    <option value={PRINT_MODE_COMPACT}>ประหยัดกระดาษ</option>
-                    <option value={PRINT_MODE_DAILY}>แยกวันละแผ่น</option>
-                  </select>
-                </label>
-                <button type="button" onClick={applyFilters} disabled={isPending} className="inline-flex h-10 items-center gap-2 bg-[#102C57] px-5 text-sm font-bold text-white transition hover:bg-[#173b70] disabled:opacity-60">
-                  <RefreshCw size={16} className={isPending ? "animate-spin" : ""} /> แสดงรายงาน
-                </button>
-                <button type="button" onClick={() => window.print()} disabled={!pages.length} className="inline-flex h-10 items-center gap-2 border border-[#102C57] px-5 text-sm font-bold text-[#102C57] transition hover:bg-slate-50 disabled:opacity-40">
-                  <Printer size={16} /> พิมพ์ A4 แนวนอน
-                </button>
+          <ReportFilterBar
+            dateMode="range"
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            onDateFromChange={setDateFrom}
+            onDateToChange={setDateTo}
+            isLoading={isPending}
+            onSearch={applyFilters}
+            searchButtonLabel="แสดงรายงาน"
+            onPrint={printReport}
+            printButtonLabel={isPrintingPdf ? "กำลังเตรียม..." : "พิมพ์ A4"}
+            onExportExcel={exportToExcel}
+            excelButtonLabel="ส่งออก Excel"
+            extraActions={
+              <button
+                type="button"
+                onClick={downloadPdfReport}
+                disabled={!pages.length || isDownloadingPdf}
+                className="inline-flex h-10 items-center justify-center gap-1.5 rounded-md bg-[var(--surface-navy,#102C57)] px-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#183b63] disabled:cursor-not-allowed disabled:opacity-60"
+                title="ดาวน์โหลด PDF"
+              >
+                <Download size={14} className={isDownloadingPdf ? "animate-spin" : ""} />
+                <span className="hidden sm:inline">{isDownloadingPdf ? "กำลังสร้าง..." : "PDF"}</span>
+              </button>
+            }
+          >
+            <div className="w-full sm:w-auto">
+              <label className="block text-[11px] font-black uppercase tracking-wider text-[#64748b] mb-1">
+                รูปแบบพิมพ์
+              </label>
+              <div className="relative flex h-10 items-center rounded-md border border-[#cbd5e1] bg-[#f8fafc] px-3 focus-within:border-[#102C57] focus-within:bg-white focus-within:ring-2 focus-within:ring-[#102C57]/10 transition">
+                <select
+                  value={printMode}
+                  onChange={(event) => setPrintMode(event.target.value)}
+                  className="bg-transparent text-[13px] font-semibold text-[#102C57] outline-none cursor-pointer"
+                  aria-label="รูปแบบการพิมพ์รายงาน"
+                >
+                  <option value={PRINT_MODE_COMPACT}>ประหยัดกระดาษ</option>
+                  <option value={PRINT_MODE_DAILY}>แยกวันละแผ่น</option>
+                </select>
               </div>
             </div>
-          </section>
+          </ReportFilterBar>
+
+          {pdfError ? (
+            <div role="alert" className="mt-4 border border-rose-300 bg-rose-50 p-3 text-sm font-semibold text-rose-800">
+              {pdfError}
+            </div>
+          ) : null}
 
           {warnings.length ? (
             <div className="mt-4 flex items-start gap-3 border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
@@ -513,6 +817,8 @@ export default function ProductionInputOutputReportPageClient({ initialData }) {
           />
         </div>
       ) : null}
+
+
 
     </div>
   );

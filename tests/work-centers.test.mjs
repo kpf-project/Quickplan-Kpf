@@ -25,6 +25,7 @@ test("normalizeWorkCenterInput prepares a valid work center payload", () => {
     description: null,
     sortOrder: 2,
     isActive: false,
+    requiresPlanning: false,
     consolidateRequisitionPreviewByDate: true,
     errors: [],
   });
@@ -39,6 +40,7 @@ test("normalizeWorkCenterInput reports required fields and clamps sort order", (
   });
 
   assert.equal(result.sortOrder, 0);
+  assert.equal(result.consolidateRequisitionPreviewByDate, false);
   assert.deepEqual(result.errors, [
     "departmentId is required",
     "code is required",

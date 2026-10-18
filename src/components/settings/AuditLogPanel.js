@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { RefreshCw, Search } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronRight, RefreshCw, Search } from "lucide-react";
+import SettingsTable from "@/components/settings/SettingsTable";
 import { adminFetch } from "@/lib/adminClient";
 
 function formatDate(value) {
@@ -9,6 +10,7 @@ function formatDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
   return new Intl.DateTimeFormat("th-TH", {
+    timeZone: "Asia/Bangkok",
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
@@ -194,233 +196,35 @@ export default function AuditLogPanel() {
     fetchLogs(1, search, typeFilter, { cursor: null, resetCursors: true });
   };
 
-  return (
-    <div className="space-y-8">
-      {/* Search and Filters Header Panel */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100 select-none">
-        <div>
-          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#d4af37]">
-            Security Audit Trail
-          </span>
-          <h2 className="text-[16px] font-black text-[#102C57] mt-0.5">
-            บันทึกการใช้งานระบบ (Audit Logs)
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            ประวัติการปฏิบัติการและการเปลี่ยนแปลงการกำหนดค่าทั้งหมด
-          </p>
-        </div>
-
-        {/* Filter Inputs Grid */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-          {/* Keyword Search */}
-          <div className="relative">
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="ค้นหาข้อความหรือชื่อผู้ใช้..."
-              className="h-9 w-full sm:w-56 border border-slate-200 bg-white px-3 text-xs font-semibold focus:outline-none rounded-[2px]"
-            />
-          </div>
-          
-          <button
-            type="button"
-            onClick={handleApplySearch}
-            className="h-9 px-4 bg-[#102C57] hover:bg-[#d4af37] text-white hover:text-[#102C57] text-[10px] font-black uppercase tracking-widest border border-[#102C57] hover:border-[#d4af37] transition rounded-[2px]"
-          >
-            SEARCH
-          </button>
-
-          {/* Type Selector */}
-          <select
-            value={typeFilter}
-            onChange={(event) => {
-              const nextType = event.target.value;
-              setTypeFilter(nextType);
-              fetchLogs(1, search, nextType, { cursor: null, resetCursors: true });
-            }}
-            className="h-9 w-40 border border-slate-200 bg-white px-2.5 text-xs font-semibold focus:outline-none rounded-[2px]"
-          >
-            <option value="all">ทุกแผนก/กิจกรรม</option>
-            <option value="auth">การลงทะเบียน/เข้าใช้</option>
-            <option value="user">จัดการผู้ใช้ระบบ</option>
-            <option value="bom">โครงสูตรการผลิต (BOM)</option>
-            <option value="approval">การอนุมัติสูตร BOM</option>
-            <option value="production">แผนกระบวนการผลิต</option>
-            <option value="category">หมวดประเภทสินค้า</option>
-            <option value="role">บทบาทหน้าที่ผู้เข้าใช้</option>
-            <option value="permission">สิทธิ์การเข้าถึงเมนู</option>
-            <option value="approver">รหัสยืนยันตัวตนผู้อนุมัติ</option>
-          </select>
-
-          <button
-            type="button"
-            onClick={() => fetchLogs(page, search, typeFilter)}
-            className="h-9 px-3 border border-slate-200 hover:border-slate-300 text-slate-600 text-[10px] font-black uppercase tracking-widest transition rounded-[2px] flex items-center justify-center gap-1.5 bg-slate-50"
-          >
-            <RefreshCw size={11} />
-            REFRESH
-          </button>
-        </div>
-      </div>
-
-      {loadError && (
-        <div className="p-3 text-xs font-bold text-rose-600 border border-rose-100 bg-rose-50 rounded-[2px]">
-          {loadError}
-        </div>
-      )}
-
-      {/* Main Logs Table Block */}
-      <div className="border border-slate-200 rounded-[2px] overflow-hidden bg-white">
-        {/* Mobile View List */}
-        <div className="md:hidden space-y-4 p-4">
-          {isLoading ? (
-            <div className="border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-xs text-slate-500 rounded-[2px]">
-              กำลังดึงข้อมูลบันทึกความปลอดภัย...
-            </div>
-          ) : visibleLogs.length === 0 ? (
-            <div className="border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-xs text-slate-500 rounded-[2px]">
-              ไม่พบรายการการปฏิบัติการที่เข้าเกณฑ์
-            </div>
-          ) : (
-            visibleLogs.map((log) => (
-              <div key={log.id} className="border border-slate-200 p-4 rounded-[2px] space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <span className="block font-bold text-[#102C57] text-xs">{log.actor_username || "-"}</span>
-                    <span className="block text-[10px] text-slate-400 font-medium mt-0.5">{formatDate(log.created_at)}</span>
-                  </div>
-                  <span className="inline-flex items-center rounded-[2px] border border-[#102C57]/20 bg-[#fdf7e6] px-2 py-0.5 text-[9px] font-black text-[#102C57] uppercase tracking-wider">
-                    {formatAction(log.action)}
-                  </span>
-                </div>
-                <div className="text-xs text-slate-700 bg-slate-50 p-2.5 rounded-[2px] font-medium border border-slate-100">
-                  <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">รายละเอียด</span>
-                  {buildSummary(log)}
-                </div>
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {buildDetailChips(log).map((chip) => (
-                    <span key={`${chip.label}-${chip.value}`} className="border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-bold text-slate-600 rounded-[2px]">
-                      {chip.label}: {chip.value}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-
-        {/* Desktop View Table */}
-        <div className="hidden md:block overflow-x-auto">
-          <table className="w-full text-xs text-left border-collapse table-fixed">
-            <colgroup>
-              <col className="w-[18%]" />
-              <col className="w-[15%]" />
-              <col className="w-[20%]" />
-              <col className="w-[47%]" />
-            </colgroup>
-            <thead>
-              <tr className="bg-slate-50 text-slate-500 border-b border-slate-200 uppercase font-black tracking-widest text-[9px] select-none">
-                <th className="px-5 py-3.5">เวลาปฏิบัติการ (Timestamp)</th>
-                <th className="px-5 py-3.5">ผู้รับผิดชอบ</th>
-                <th className="px-5 py-3.5">กิจกรรม</th>
-                <th className="px-5 py-3.5">รายละเอียดผลการสั่งการ</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {isLoading ? (
-                <tr>
-                  <td colSpan={4} className="px-5 py-12 text-center text-slate-400 italic font-medium bg-white">
-                    กำลังดึงข้อมูลบันทึกความปลอดภัยจากเซิร์ฟเวอร์...
-                  </td>
-                </tr>
-              ) : visibleLogs.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="px-5 py-12 text-center text-slate-400 italic font-medium bg-white">
-                    ยังไม่มีรายงานการปฏิบัติการระบบในส่วนนี้
-                  </td>
-                </tr>
-              ) : (
-                visibleLogs.map((log) => {
-                  const chips = buildDetailChips(log);
-                  return (
-                    <tr key={log.id} className="hover:bg-slate-50/30 transition">
-                      <td className="px-5 py-4 align-top">
-                        <span className="block font-bold text-[#102C57]">{formatDate(log.created_at)}</span>
-                        <span className="block text-[9px] text-slate-400 font-mono tracking-tighter mt-1">ID: #{String(log.id || "").slice(0, 8)}</span>
-                      </td>
-                      <td className="px-5 py-4 align-top font-bold text-slate-800">
-                        <span className="block">{log.actor_username || "-"}</span>
-                        <span className="block text-[9px] text-slate-400 font-medium tracking-wide uppercase mt-1">{formatTarget(log)}</span>
-                      </td>
-                      <td className="px-5 py-4 align-top">
-                        <span className="inline-flex items-center rounded-[2px] border border-[#102C57]/20 bg-[#fdf7e6] px-2.5 py-0.5 text-[10px] font-black text-[#102C57] uppercase tracking-wider">
-                          {formatAction(log.action)}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4 align-top">
-                        <p className="text-slate-800 font-semibold leading-relaxed">
-                          {buildSummary(log)}
-                        </p>
-                        
-                        <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                          {chips.slice(0, 4).map((chip) => (
-                            <span key={`${chip.label}-${chip.value}`} className="border border-slate-200 bg-slate-50/50 px-2 py-0.5 text-[9px] font-bold text-slate-600 rounded-[2px]">
-                              {chip.label}: {chip.value}
-                            </span>
-                          ))}
-                          {chips.length > 4 ? (
-                            <button
-                              type="button"
-                              onClick={() => setExpandedId(expandedId === log.id ? null : log.id)}
-                              className="text-[9px] font-black uppercase tracking-widest text-[#102C57] hover:text-[#d4af37] border border-slate-200 px-2 py-0.5 bg-white transition hover:bg-slate-50 rounded-[2px]"
-                            >
-                              {expandedId === log.id ? "HIDE META" : "SHOW MORE META"}
-                            </button>
-                          ) : null}
-                        </div>
-
-                        {expandedId === log.id ? (
-                          <div className="mt-2.5 border border-slate-200 bg-[#fafafb] p-3 text-[10px] space-y-1 rounded-[2px] max-w-lg font-mono">
-                            {chips.map((chip) => (
-                              <div key={`${chip.label}-${chip.value}`} className="flex justify-between border-b border-slate-100 pb-1 last:border-0 last:pb-0 gap-3">
-                                <span className="font-bold text-slate-500 uppercase tracking-wider">{chip.label}</span>
-                                <span className="text-slate-800 break-all">{chip.value}</span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : null}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-        <div className="flex items-center justify-between border-t border-slate-200 px-5 py-4 bg-slate-50/50 select-none">
-          <button
-            type="button"
-            onClick={() => fetchLogs(page - 1, search, typeFilter)}
-            disabled={!canGoPrev || isLoading}
-            className="h-8 px-4 bg-[#102C57] disabled:bg-slate-200 text-white disabled:text-slate-400 text-[10px] font-black uppercase tracking-widest border border-[#102C57] disabled:border-slate-200 transition hover:bg-[#d4af37] hover:text-[#102C57] hover:border-[#d4af37] disabled:hover:bg-slate-200 disabled:hover:text-slate-400 disabled:hover:border-slate-200 rounded-[2px] disabled:cursor-not-allowed select-none"
-          >
-            PREV
-          </button>
-          <span className="text-[10px] font-black text-slate-700 uppercase tracking-wider">
-            PAGE {pagination.page} / {pagination.totalPages} • TOTAL {pagination.total.toLocaleString()} EVENTS
-          </span>
-          <button
-            type="button"
-            onClick={() => fetchLogs(page + 1, search, typeFilter)}
-            disabled={!canGoNext || isLoading}
-            className="h-8 px-4 bg-[#102C57] disabled:bg-slate-200 text-white disabled:text-slate-400 text-[10px] font-black uppercase tracking-widest border border-[#102C57] disabled:border-slate-200 transition hover:bg-[#d4af37] hover:text-[#102C57] hover:border-[#d4af37] disabled:hover:bg-slate-200 disabled:hover:text-slate-400 disabled:hover:border-slate-200 rounded-[2px] disabled:cursor-not-allowed select-none"
-          >
-            NEXT
-          </button>
-        </div>
-      </div>
+  return <div className="settings-catalog">
+    <div className="settings-filter-row">
+      <select aria-label="ประเภทกิจกรรม" value={typeFilter} onChange={(event) => {const next = event.target.value;setTypeFilter(next);fetchLogs(1,search,next,{cursor:null,resetCursors:true});}}>
+        <option value="all">ทุกกิจกรรม</option><option value="auth">เข้า–ออกระบบ</option><option value="user">จัดการผู้ใช้</option><option value="bom">สูตรการผลิต</option><option value="approval">อนุมัติสูตร</option><option value="production">แผนการผลิต</option><option value="category">ประเภทสินค้า</option><option value="role">บทบาท</option><option value="permission">สิทธิ์</option><option value="approver">รหัสอนุมัติ</option>
+      </select>
+      <div className="settings-search"><Search size={15}/><input aria-label="ค้นหาประวัติ" value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => {if(event.key === "Enter") handleApplySearch();}} placeholder="ค้นหาชื่อผู้ใช้ หรือรายละเอียด..." /></div>
+      <button type="button" disabled={isLoading} onClick={handleApplySearch}>ค้นหา</button>
+      <button type="button" className="settings-primary" disabled={isLoading} onClick={() => fetchLogs(page,search,typeFilter)}><RefreshCw size={14}/>รีเฟรช</button>
     </div>
-  );
+    {loadError && <p role="alert" className="text-rose-600">{loadError}</p>}
+    <SettingsTable label="ประวัติการใช้งาน">
+      <thead><tr><th className="settings-sequence">ลำดับ</th><th>เวลา</th><th>ผู้ดำเนินการ</th><th>กิจกรรม</th><th>รายการที่เปลี่ยนแปลง</th><th className="settings-audit-summary">รายละเอียด</th></tr></thead>
+      <tbody>{isLoading ? <tr><td colSpan={6}>กำลังโหลดประวัติ...</td></tr> : !visibleLogs.length ? <tr><td colSpan={6}>ไม่พบรายการ</td></tr> : visibleLogs.map((log,index) => <Fragment key={log.id}>
+        <tr className={expandedId === log.id ? "settings-selected-row" : ""}>
+          <td><button type="button" aria-label="รายละเอียดรายการที่ " aria-expanded={expandedId === log.id} onClick={() => setExpandedId(expandedId === log.id ? null : log.id)}>{expandedId === log.id ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}<span>{(page - 1) * pageSize + index + 1}</span></button></td>
+          <td>{formatDate(log.created_at)}</td><td>{log.actor_username || "—"}</td><td>{formatAction(log.action)}</td><td>{formatTarget(log)}</td><td>{buildSummary(log)}</td>
+        </tr>
+        {expandedId === log.id && <tr className="settings-audit-detail"><td colSpan={6}>
+          <div className="settings-audit-detail-grid">
+            <section><h3>ข้อมูลก่อนเปลี่ยน</h3>{log.metadata?.before || log.metadata?.status_from ? <pre>{JSON.stringify(log.metadata.before || {status:log.metadata.status_from},null,2)}</pre> : <p>รายการนี้ไม่มีข้อมูลก่อนเปลี่ยน</p>}</section>
+            <section><h3>ข้อมูลหลังเปลี่ยน</h3>{log.metadata?.after || log.metadata?.status_to ? <pre>{JSON.stringify(log.metadata.after || {status:log.metadata.status_to},null,2)}</pre> : <p>รายการนี้ไม่มีข้อมูลหลังเปลี่ยน</p>}</section>
+          </div>
+          <div className="settings-audit-chips">{buildDetailChips(log).map((chip) => <span key={chip.label}>{chip.label}: {chip.value}</span>)}</div>
+          <details><summary>ข้อมูลการบันทึกทั้งหมด</summary><pre>{JSON.stringify(log.metadata || {},null,2)}</pre></details>
+        </td></tr>}
+      </Fragment>)}</tbody>
+    </SettingsTable>
+    <div className="settings-list-footer"><span>หน้า {page} · ทั้งหมด {pagination.total.toLocaleString()} รายการ</span><button type="button" disabled={!canGoPrev || isLoading} onClick={() => fetchLogs(page - 1,search,typeFilter)}>ก่อนหน้า</button><strong>{page}</strong><button type="button" disabled={!canGoNext || isLoading} onClick={() => fetchLogs(page + 1,search,typeFilter)}>ถัดไป</button></div>
+  </div>;
 }
 
 

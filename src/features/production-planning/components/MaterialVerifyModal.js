@@ -161,7 +161,7 @@ export default function MaterialVerifyModal({
       <div className="relative z-[301] flex max-h-[94dvh] w-full max-w-[1600px] flex-col overflow-hidden rounded-[4px] border border-[#102C57] bg-white shadow-xl">
         
         {/* Modal Header */}
-        <div className="flex shrink-0 items-center justify-between border-b-2 border-[#d4af37] bg-[#102C57] px-4 py-3 text-white sm:px-6">
+        <div className="flex shrink-0 items-center justify-between border-b-2 border-[#d4af37] bg-[var(--surface-navy,#102C57)] px-4 py-3 text-white sm:px-6">
           <div>
             <div className="flex items-center gap-2">
               <Warehouse className="text-[#d4af37]" size={19} />
@@ -259,10 +259,10 @@ export default function MaterialVerifyModal({
                 <table className="w-full min-w-[1320px] border-collapse text-left text-xs">
                   <thead>
                     <tr>
-                      <th colSpan={2} className="border-r border-white/50 bg-[#102C57] px-3 py-2 text-center text-[11px] font-bold text-white">วัตถุดิบ</th>
-                      <th colSpan={3} className="border-r border-white/50 bg-[#102C57] px-3 py-2 text-center text-[11px] font-bold text-white">ความต้องการจาก BOM</th>
-                      <th colSpan={2} className="border-r border-white/50 bg-[#102C57] px-3 py-2 text-center text-[11px] font-bold text-white">สต็อกพร้อมใช้</th>
-                      <th colSpan={2} className="bg-[#102C57] px-3 py-2 text-center text-[11px] font-bold text-white">ผลการตรวจ</th>
+                      <th colSpan={2} className="border-r border-white/50 bg-[var(--surface-navy,#102C57)] px-3 py-2 text-center text-[11px] font-bold text-white">วัตถุดิบ</th>
+                      <th colSpan={3} className="border-r border-white/50 bg-[var(--surface-navy,#102C57)] px-3 py-2 text-center text-[11px] font-bold text-white">ความต้องการจาก BOM</th>
+                      <th colSpan={2} className="border-r border-white/50 bg-[var(--surface-navy,#102C57)] px-3 py-2 text-center text-[11px] font-bold text-white">สต็อกพร้อมใช้</th>
+                      <th colSpan={2} className="bg-[var(--surface-navy,#102C57)] px-3 py-2 text-center text-[11px] font-bold text-white">ผลการตรวจ</th>
                     </tr>
                     <tr className="border-b border-slate-300 bg-slate-100 text-[10px] font-bold text-[#102C57]">
                       <th className="w-[235px] border-r border-slate-300 px-3 py-2">รหัสหลัก / ชื่อ</th>
@@ -371,7 +371,7 @@ export default function MaterialVerifyModal({
                     {/* Department Header */}
                     <button
                       onClick={() => toggleDept(dept.id)}
-                      className="flex w-full items-center justify-between border-b border-[#d4af37]/40 bg-[#102C57] px-3 py-2 text-left text-white"
+                      className="flex w-full items-center justify-between border-b border-[#d4af37]/40 bg-[var(--surface-navy,#102C57)] px-3 py-2 text-left text-white"
                     >
                       <span className="flex items-center gap-2 text-sm font-bold">
                         {isDeptExpanded ? <ChevronDown size={14} className="text-[#d4af37]" /> : <ChevronRight size={14} className="text-[#d4af37]" />}

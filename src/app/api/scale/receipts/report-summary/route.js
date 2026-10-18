@@ -1,19 +1,11 @@
 import { getSupabaseAdmin, jsonError } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { loadScaleReceiptSummaryReportData } from "@/lib/scale/receipts";
 import { normalizeParam } from "@/lib/validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const SCALE_RECEIPT_PERMISSION_KEYS = [
-  "production-line-attendance-view",
-  "production-line-attendance-manage",
-  "production-line-attendance-report-view",
-  "production-line-attendance-report-manage",
-  "production-line-settings-view",
-  "production-line-settings-manage",
-];
 
 function normalizeLimit(value, fallback = 50) {
   const parsed = Number.parseInt(String(value ?? "").trim(), 10);
@@ -62,7 +54,7 @@ function normalizeItemStatusFilter(value) {
 
 export async function GET(request) {
   try {
-    await requirePermissionKeys(request, SCALE_RECEIPT_PERMISSION_KEYS);
+    await requireTaskPermission(request, "production-scale-receipt-report");
 
     const { searchParams } = new URL(request.url);
     const supabaseAdmin = getSupabaseAdmin();

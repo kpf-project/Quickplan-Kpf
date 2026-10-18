@@ -1,5 +1,5 @@
 import { unstable_cache } from "next/cache";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { createAppError, fail, ok } from "@/lib/result";
 import { parsePaginationParams } from "@/lib/validation";
 
@@ -42,10 +42,7 @@ const getSuppliers = unstable_cache(fetchSuppliers, ["suppliers"], {
 });
 
 export async function listSuppliers(request) {
-  await requirePermissionKeys(request, [
-    "admin-suppliers",
-    "raw-materials-summary",
-  ]);
+  await requireTaskPermission(request, "data-suppliers-view");
   const { searchParams } = new URL(request.url);
   const { page, pageSize } = parsePaginationParams(searchParams);
   const cursor = searchParams.get("cursor");

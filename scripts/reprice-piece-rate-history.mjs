@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import nextEnv from "@next/env";
 import { createClient } from "@supabase/supabase-js";
+import { calculatePieceRateWageAmount } from "../src/lib/pieceRateWage.js";
 
 const round = (value) => Number(Number(value).toFixed(4));
 export function priceHistoricalRow(row, mappings, profiles, weights) {
@@ -27,7 +28,11 @@ export function priceHistoricalRow(row, mappings, profiles, weights) {
     wage_basis_snapshot: "kg",
     pay_rate_per_kg_snapshot: rate,
     pay_rate_per_unit_snapshot: Number(profile.pay_rate_per_unit || 0),
-    wage_amount_snapshot: round(kg * rate),
+    wage_amount_snapshot: calculatePieceRateWageAmount({
+      wageBasis: "kg",
+      normalizedKgAmount: kg,
+      payRatePerKg: rate,
+    }),
   };
 }
 

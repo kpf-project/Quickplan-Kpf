@@ -1,5 +1,5 @@
 import { getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { normalizeParam } from "@/lib/validation";
 
 function normalizeDepartmentCode(value) {
@@ -121,9 +121,7 @@ async function findPendingPlansByDepartment({ supabaseAdmin, departmentId }) {
 
 export async function PUT(request, { params }) {
   try {
-    const { userId } = await requirePermissionKeys(request, [
-      "production-line-settings-manage",
-    ]);
+    const { userId } = await requireTaskPermission(request, "production-settings-departments-edit");
 
     const { id } = await params;
     const departmentId = normalizeParam(id);
@@ -192,9 +190,7 @@ export async function PUT(request, { params }) {
 
 export async function DELETE(request, { params }) {
   try {
-    const { userId } = await requirePermissionKeys(request, [
-      "production-line-settings-manage",
-    ]);
+    const { userId } = await requireTaskPermission(request, "production-settings-departments-delete");
 
     const { id } = await params;
     const departmentId = normalizeParam(id);

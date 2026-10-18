@@ -28,6 +28,7 @@ export function usePermissions() {
         setState({
           permissions: payload?.permissions ?? [],
           isAdmin: Boolean(payload?.is_admin),
+          taskPermissionsEnabled: payload?.task_permissions_enabled === true,
           loaded: true,
         });
       } catch (error) {

@@ -21,10 +21,16 @@ function normalizeUnitLabel(value) {
   return normalized;
 }
 
-function formatThaiTimestamp(value) {
+function formatThaiTimestamp(value, timeZone) {
   const parsed = new Date(value || Date.now());
   if (Number.isNaN(parsed.getTime())) {
     return "-";
+  }
+  if (timeZone === "Asia/Bangkok") {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone, calendar: "gregory", hourCycle: "h23",
+      year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+    }).formatToParts(parsed).map(part => [part.type, part.value]));
+    return `${parts.day}/${parts.month}/${String(Number(parts.year) + 543).slice(-2)} ${parts.hour}:${parts.minute}:${parts.second}`;
   }
 
   const yy = String(parsed.getFullYear() + 543).slice(-2);
@@ -94,7 +100,7 @@ function canvasToMonoBitmapBase64(canvas) {
   return bytesToBase64(bitmap);
 }
 
-export function createWeightScaleLabelBitmapPayload(label) {
+export function createWeightScaleLabelBitmapPayload(label, { useNativeBarcode = false } = {}) {
   if (typeof document === "undefined") {
     return label;
   }
@@ -117,9 +123,10 @@ export function createWeightScaleLabelBitmapPayload(label) {
   const lotNo = String(label.lotNo || "-").trim() || "-";
   const barcodeValue = String(label.barcodeValue || "").trim();
   const unitLabel = normalizeUnitLabel(label.unitLabel);
-  const tareWeight = parseNumber(label.tareWeightKg, 0).toFixed(2);
-  const netWeight = parseNumber(label.netWeightKg, 0).toFixed(2);
-  const weighedAt = formatThaiTimestamp(label.weighedAt);
+  const weightDecimals = label.weightDecimals === 3 ? 3 : 2;
+  const tareWeight = parseNumber(label.tareWeightKg, 0).toFixed(weightDecimals);
+  const netWeight = parseNumber(label.netWeightKg, 0).toFixed(weightDecimals);
+  const weighedAt = formatThaiTimestamp(label.weighedAt, label.timeZone);
 
   ctx.textBaseline = "alphabetic";
   ctx.textAlign = "right";
@@ -148,34 +155,49 @@ export function createWeightScaleLabelBitmapPayload(label) {
 
   drawUnderlinedText(ctx, "Tare", 414, 180, "bold 36px Arial, Tahoma, sans-serif");
   ctx.font = "36px Arial, Tahoma, sans-serif";
-  ctx.fillText(`: ${tareWeight}`, 512, 180);
+  if (weightDecimals === 3) drawTextFit(ctx, `: ${tareWeight}`, 512, 180, 104, "36px Arial, Tahoma, sans-serif", 20);
+  else ctx.fillText(`: ${tareWeight}`, 512, 180);
 
   ctx.textAlign = "center";
   ctx.font = "bold 56px Arial, Tahoma, sans-serif";
-  ctx.fillText(`NET ${netWeight} ${unitLabel}`, 320, 252);
+  if (weightDecimals === 3) drawTextFit(ctx, `NET ${netWeight} ${unitLabel}`, 320, 252, 580, "bold 56px Arial, Tahoma, sans-serif", 28);
+  else ctx.fillText(`NET ${netWeight} ${unitLabel}`, 320, 252);
 
-  const barcodeCanvas = document.createElement("canvas");
-  JsBarcode(barcodeCanvas, barcodeValue || "-", {
-    format: "CODE128",
-    width: 2.2,
-    height: 58,
-    displayValue: false,
-    margin: 0,
-    background: "#ffffff",
-    lineColor: "#000000",
-  });
-  ctx.drawImage(barcodeCanvas, 146, 292, 348, 58);
+  if (!useNativeBarcode) {
+    const barcodeCanvas = document.createElement("canvas");
+    JsBarcode(barcodeCanvas, barcodeValue || "-", {
+      format: "CODE128",
+      width: 2.2,
+      height: 58,
+      displayValue: false,
+      margin: 0,
+      background: "#ffffff",
+      lineColor: "#000000",
+    });
+    ctx.drawImage(barcodeCanvas, 146, 292, 348, 58);
+  }
 
   ctx.font = "32px Arial, Tahoma, sans-serif";
   ctx.fillText(barcodeValue, 320, 386);
 
   return {
     ...label,
+    barcodeValue,
     labelBitmap: {
       widthDots: canvas.width,
       heightDots: canvas.height,
       dataBase64: canvasToMonoBitmapBase64(canvas),
     },
+    ...(useNativeBarcode && barcodeValue ? {
+      nativeBarcode: {
+        type: "128",
+        x: 160,
+        y: 286,
+        height: 64,
+        narrow: 2,
+        wide: 4,
+      },
+    } : {}),
     printer: {
       ...label.printer,
       labelWidthMm: LABEL_WIDTH_MM,

@@ -3,12 +3,25 @@ import { requirePermissionKeys } from "@/lib/permissionGuard";
 
 export const dynamic = 'force-dynamic';
 
+let cachedCategories = null;
+let cachedCategoriesExpiry = 0;
+const CATEGORIES_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
+export function invalidateCategoriesCache() {
+    cachedCategories = null;
+    cachedCategoriesExpiry = 0;
+}
+
 export async function GET(request) {
     try {
         await requirePermissionKeys(request, [
             "production-line-bom-view",
             "production-line-bom-manage",
         ]);
+
+        if (cachedCategories && Date.now() < cachedCategoriesExpiry) {
+            return Response.json({ data: cachedCategories });
+        }
 
         const supabaseAdmin = getSupabaseAdmin();
 
@@ -43,6 +56,9 @@ export async function GET(request) {
         const categories = Array.from(map.entries())
             .map(([code, name]) => ({ code, name }))
             .sort((a, b) => a.code.localeCompare(b.code));
+
+        cachedCategories = categories;
+        cachedCategoriesExpiry = Date.now() + CATEGORIES_CACHE_TTL_MS;
 
         return Response.json({ data: categories });
     } catch (error) {

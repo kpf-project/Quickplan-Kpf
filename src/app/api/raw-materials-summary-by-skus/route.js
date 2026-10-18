@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { fetchGatewayJson } from "@/lib/gatewayClient";
 import { toJsonResponse, ok } from "@/lib/result";
 import { applyStockDeduction } from "@/lib/stockDeduction";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request) {
     try {
-        await requirePermissionKeys(request, ["raw-materials-summary"]);
+        await requireTaskPermission(request, "raw-materials-summary-view");
 
         const { searchParams } = new URL(request.url);
 

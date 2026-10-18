@@ -22,7 +22,10 @@ import {
 import WeightScalePrimaryHeader from "@/features/production-line/components/WeightScalePrimaryHeader";
 import { fetchProductionPrisonIssueReport } from "@/features/production-line/services/productionPrisonClient";
 import { fetchProductionStockIssueReport } from "@/features/production-line/services/productionStockIssueClient";
+import { formatBusinessDateTime } from "@/lib/bangkokDate";
 import { useUserProfile } from "@/lib/useUserProfile";
+import { ReportHeader } from "@/components/print";
+import { upsertTab } from "@/lib/tabState";
 
 const LIMIT_OPTIONS = [20, 50, 100];
 const DEFAULT_REPORT_CONFIG = Object.freeze({
@@ -53,22 +56,6 @@ function formatQuantity(value) {
     minimumFractionDigits: 0,
     maximumFractionDigits: 3,
   });
-}
-
-function formatDateTime(value) {
-  if (!value) {
-    return "-";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "-";
-  }
-
-  return new Intl.DateTimeFormat("th-TH", {
-    dateStyle: "short",
-    timeStyle: "medium",
-  }).format(date);
 }
 
 function formatDateLabel(value) {
@@ -117,6 +104,10 @@ function normalizeRows(rows) {
     barcode: String(row?.barcode || "").trim() || "-",
     productCode: String(row?.productCode || "").trim().toUpperCase() || "-",
     productName: String(row?.productName || "").trim() || "-",
+    targetProductCode: String(row?.targetProductCode || "").trim().toUpperCase(),
+    targetProductName: String(row?.targetProductName || "").trim(),
+    destinationRoomCode: String(row?.destinationRoomCode || "").trim().toUpperCase(),
+    destinationRoomName: String(row?.destinationRoomName || "").trim(),
     lotNo: String(row?.lotNo || "").trim() || "-",
     quantity: Number(row?.quantity || 0),
     weightKg: Number(row?.weightKg || 0),
@@ -274,6 +265,14 @@ function getIssueStatusClassName(row) {
     : "border-rose-200 bg-rose-50 text-rose-700";
 }
 
+function getProductDisplay(row) {
+  const source = `${row.productCode} - ${row.productName}`;
+  if (row.destinationRoomName) return `${source} → ${row.destinationRoomName}`;
+  return row.targetProductCode
+    ? `${source} → ${row.targetProductCode} - ${row.targetProductName || "-"}`
+    : source;
+}
+
 function getIssueGroupStatus(group) {
   const items = Array.isArray(group?.items) ? group.items : [];
   const confirmedCount = items.filter((item) => isConfirmedIssueRow(item)).length;
@@ -321,7 +320,7 @@ async function exportIssueWorkbook({
     { header: "LOT", key: "lotNo", width: 16 },
     { header: "จำนวน", key: "quantity", width: 12 },
     { header: "น้ำหนัก (Kg)", key: "weightKg", width: 16 },
-    { header: "เวลา", key: "issuedAtLabel", width: 22 },
+    { header: "วันที่–เวลาเบิก", key: "issuedAtLabel", width: 22 },
     { header: "สถานะ", key: "statusLabel", width: 16 },
   ];
 
@@ -409,11 +408,11 @@ async function exportIssueWorkbook({
       worksheet.addRow({
         sequence: sequence,
         barcode: row.barcode,
-        productDisplay: `${row.productCode} - ${row.productName}`,
+        productDisplay: getProductDisplay(row),
         lotNo: row.lotNo,
         quantity: row.quantity,
         weightKg: row.weightKg,
-        issuedAtLabel: formatDateTime(row.issuedAt),
+        issuedAtLabel: formatBusinessDateTime(row.issueDate, row.issuedAt),
         statusLabel: getIssueStatusLabel(row),
       });
       sequence += 1;
@@ -548,14 +547,14 @@ export default function ProductionStockIssueReportPageClient({
     const groupMap = new Map();
 
     rows.forEach((row, index) => {
-      const key = [row.issueDate, row.lotNo, row.productCode, row.issueType].join("|");
+      const key = [row.issueDate, row.lotNo, row.productCode, row.destinationRoomCode, row.issueType].join("|");
       if (!groupMap.has(key)) {
         const group = {
           key,
           issueDate: row.issueDate,
           issueDateLabel: formatDateLabel(row.issueDate),
           lotNo: row.lotNo,
-          productDisplay: `${row.productCode} - ${row.productName}`,
+          productDisplay: getProductDisplay(row),
           issueType: row.issueType,
           totalQuantity: 0,
           totalWeightKg: 0,
@@ -657,8 +656,8 @@ export default function ProductionStockIssueReportPageClient({
     let pages = [];
     let currentPage = [];
     let currentWeight = 0;
-    const FIRST_PAGE_LIMIT = 44; 
-    const OTHER_PAGE_LIMIT = 44;
+    const FIRST_PAGE_LIMIT = 24;
+    const OTHER_PAGE_LIMIT = 24;
 
     const getLimit = () => (pages.length === 0 ? FIRST_PAGE_LIMIT : OTHER_PAGE_LIMIT);
 
@@ -748,6 +747,21 @@ export default function ProductionStockIssueReportPageClient({
 
     startTransition(async () => {
       try {
+        if (typeof window !== "undefined") {
+          const params = new URLSearchParams();
+          if (nextFilters.dateFrom) params.set("dateFrom", nextFilters.dateFrom);
+          if (nextFilters.dateTo) params.set("dateTo", nextFilters.dateTo);
+          if (nextFilters.search) params.set("search", nextFilters.search);
+          if (nextFilters.lotNo) params.set("lotNo", nextFilters.lotNo);
+          if (nextFilters.issueType && nextFilters.issueType !== "ALL") params.set("issueType", nextFilters.issueType);
+          if (Array.isArray(nextFilters.productCodes) && nextFilters.productCodes.length > 0) {
+            nextFilters.productCodes.forEach((code) => params.append("productCodes", code));
+          }
+          const newUrl = `${window.location.pathname}?${params.toString()}`;
+          window.history.replaceState({ ...window.history.state, as: newUrl, url: newUrl }, "", newUrl);
+          upsertTab(newUrl);
+        }
+
         const payload = await fetchIssueReport({
           dateFrom: nextFilters.dateFrom,
           dateTo: nextFilters.dateTo,
@@ -886,14 +900,14 @@ export default function ProductionStockIssueReportPageClient({
         const groups = [];
         const groupMap = new Map();
         exportRows.forEach((row) => {
-          const key = [row.issueDate, row.lotNo, row.productCode, row.issueType].join("|");
+          const key = [row.issueDate, row.lotNo, row.productCode, row.destinationRoomCode, row.issueType].join("|");
           if (!groupMap.has(key)) {
             const group = {
               key,
               issueDate: row.issueDate,
               issueDateLabel: formatDateLabel(row.issueDate),
               lotNo: row.lotNo,
-              productDisplay: `${row.productCode} - ${row.productName}`,
+              productDisplay: getProductDisplay(row),
               issueType: row.issueType,
               totalQuantity: 0,
               totalWeightKg: 0,
@@ -1127,7 +1141,7 @@ export default function ProductionStockIssueReportPageClient({
                     <span>พบ <strong className="font-extrabold text-[15px]">{barcodeMatches.length}</strong> รายการ</span>
                     <span>ที่ตรงกับคำค้นหา</span>
                     <code className="bg-[#fff9e0] px-1.5 py-0.5 border border-[#eadfb8] font-mono font-bold text-[#102C57]">{activeSearchBarcode}</code>
-                    <span className="inline-flex items-center rounded bg-[#102C57] px-2 py-0.5 text-[11px] font-black uppercase tracking-wider text-white whitespace-nowrap">
+                    <span className="inline-flex items-center rounded bg-[var(--surface-navy,#102C57)] px-2 py-0.5 text-[11px] font-black uppercase tracking-wider text-white whitespace-nowrap">
                       {barcodeMatches[currentMatchIndex]?.matchType === "product-code" ? "ตรงจากรหัสสินค้า" : "ตรงจากบาร์โค้ด"}
                     </span>
                   </div>
@@ -1293,7 +1307,7 @@ export default function ProductionStockIssueReportPageClient({
                   type="button"
                   onClick={handleReloadReport}
                   disabled={isPending}
-                  className="inline-flex h-12 w-full items-center justify-center gap-2 border border-[#d4af37] bg-[#102C57] px-5 text-sm font-black uppercase tracking-[0.14em] text-[#fff7df] transition hover:bg-[#173b67] disabled:cursor-not-allowed disabled:opacity-60 xl:w-auto"
+                  className="inline-flex h-12 w-full items-center justify-center gap-2 border border-[#d4af37] bg-[var(--surface-navy,#102C57)] px-5 text-sm font-black uppercase tracking-[0.14em] text-[#fff7df] transition hover:bg-[#173b67] disabled:cursor-not-allowed disabled:opacity-60 xl:w-auto"
                 >
                   {isPending ? (
                     <RefreshCw size={16} className="animate-spin" />
@@ -1498,7 +1512,7 @@ export default function ProductionStockIssueReportPageClient({
                 <button
                   type="button"
                   onClick={handlePrintReport}
-                  className="weight-scale-report-screen-only inline-flex h-10 items-center justify-center gap-2 border border-[#102C57] bg-[#102C57] px-4 text-[11px] font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#173b67]"
+                  className="weight-scale-report-screen-only inline-flex h-10 items-center justify-center gap-2 border border-[#102C57] bg-[var(--surface-navy,#102C57)] px-4 text-[11px] font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#173b67]"
                 >
                   <Printer size={14} />
                   พิมพ์รายงาน
@@ -1564,7 +1578,7 @@ export default function ProductionStockIssueReportPageClient({
         {/* Visual Paging Controls (Crystal Report Style - Sticky/Floating at the bottom) */}
         {reportPages.length > 1 && (
           <div className="weight-scale-report-screen-only fixed inset-x-0 bottom-2 z-50 flex justify-center pointer-events-none print:hidden">
-            <div className="flex items-center gap-3 bg-[#102C57]/95 text-white px-5 py-1.5 rounded-full shadow-lg backdrop-blur-sm">
+            <div className="flex items-center gap-3 bg-[var(--surface-navy,#102C57)]/95 text-white px-5 py-1.5 rounded-full shadow-lg backdrop-blur-sm">
               <button
                 type="button"
                 onClick={() => setCurrentViewPage(prev => Math.max(0, prev - 1))}
@@ -1594,60 +1608,34 @@ export default function ProductionStockIssueReportPageClient({
         )}
 
         {/* A4 Paper Sheets Rendering (Screen Only) */}
-        <div className="flex flex-col items-center gap-8 py-4 pb-40 print:hidden">
+        <div className="flex w-full flex-col items-center gap-8 overflow-x-auto py-4 pb-40 print:hidden">
           {reportPages.length ? (
             reportPages.map((pageRows, pageIndex) => (
               <section 
                 key={pageIndex} 
-                className={`weight-scale-report-print-shell detailed-issue-report-print-shell w-full max-w-[214mm] min-h-[296mm] bg-white border border-black shadow-[0_20px_50px_rgba(0,0,0,0.15),0_0_0_1px_rgba(0,0,0,0.05)] relative ${
+                className={`weight-scale-report-print-shell detailed-issue-report-print-shell min-h-[210mm] w-[297mm] min-w-[297mm] max-w-[297mm] bg-white border border-black shadow-[0_20px_50px_rgba(0,0,0,0.15),0_0_0_1px_rgba(0,0,0,0.05)] relative ${
                   pageIndex === currentViewPage ? 'block' : 'hidden'
                 }`}
               >
-                {/* Compact Corporate Header */}
-                <div className="bg-white px-6 py-3 border-b border-black">
-                   <div className="flex justify-between items-end mb-3">
-                      <div className="flex items-center gap-3">
-                        <Image
-                          src="/brand/LOGO-KPF1.png"
-                          alt="KPF"
-                          width={40}
-                          height={40}
-                          className="h-10 w-auto object-contain"
-                        />
-                        <div className="flex flex-col">
-                          <h1 className="text-[14px] font-black text-[#102C57] leading-none uppercase">บริษัท เคพีฟู้ดส์ จำกัด</h1>
-                          <p className="text-[9px] font-bold text-[#64748b] tracking-wider">K.P. foods Co.,Ltd.</p>
-                        </div>
-                      </div>
-
-                      <div className="text-center pb-1">
-                        <h2 className="text-[18px] font-black text-[#102C57] leading-none uppercase">{resolvedReportConfig.printTitle}</h2>
-                        <p className="text-[9px] font-bold text-[#d4af37] uppercase tracking-[0.2em] mt-1">Detailed Stock Issue Report</p>
-                      </div>
-
-                      <div className="text-[10px] text-[#102C57] leading-tight text-right">
-                        <div><span className="font-bold">วันที่พิมพ์:</span> {printedAtLabel}</div>
-                        <div><span className="font-bold">ผู้ออกรายงาน:</span> {profile.username || "System"}</div>
-                      </div>
-                   </div>
-
-                   <div className="grid grid-cols-[1fr_1fr_auto] gap-4 border-t border-black pt-2">
-                      <div className="flex min-w-0 gap-2 items-center whitespace-nowrap">
-                        <span className="text-[11px] font-black text-[#64748b] uppercase whitespace-nowrap">แผนก:</span>
-                        <span className="text-[11px] font-bold text-[#102C57] whitespace-nowrap">{scope.departmentName || "-"}</span>
-                      </div>
-                      <div className="flex min-w-0 gap-2 items-center justify-center whitespace-nowrap">
-                        <span className="text-[11px] font-black text-[#64748b] uppercase whitespace-nowrap">ช่วงวันที่:</span>
-                        <span className="text-[11px] font-bold text-[#102C57] whitespace-nowrap">{reportPeriodLabel}</span>
-                      </div>
-                      <div className="flex min-w-max gap-2 items-center justify-end whitespace-nowrap">
-                        <span className="text-[11px] font-black text-[#64748b] uppercase whitespace-nowrap">ประเภท:</span>
-                        <span className="text-[11px] font-bold text-[#102C57] whitespace-nowrap">{issueTypeSummaryLabel}</span>
-                      </div>
-                   </div>
+                {/* Corporate Report Header */}
+                <div className="bg-white px-6 py-2 border-b border-black">
+                  <ReportHeader
+                    title={resolvedReportConfig.printTitle}
+                    subtitle="Detailed Stock Issue Report"
+                    meta={[
+                      { label: "แผนก", value: scope.departmentName || "-" },
+                      { label: "ช่วงวันที่", value: reportPeriodLabel },
+                      { label: "ประเภท", value: issueTypeSummaryLabel },
+                    ]}
+                    printedAt={printedAtLabel}
+                    printedBy={profile.username || "System"}
+                    page={pageIndex + 1}
+                    totalPages={reportPages.length}
+                    variant="block"
+                  />
                 </div>
 
-                <div className="weight-scale-report-print-body bg-white px-4 py-2 min-h-[240mm]">
+                <div className="weight-scale-report-print-body min-h-[155mm] bg-white px-4 py-2">
                   <div className="overflow-hidden">
                     <table className="detailed-issue-report-table min-w-full table-fixed border-collapse">
                       <colgroup>
@@ -1659,15 +1647,15 @@ export default function ProductionStockIssueReportPageClient({
                         <col style={{ width: "8%" }} />
                         <col style={{ width: "15%" }} />
                       </colgroup>
-                      <thead className="bg-[#f8f5ee]">
-                        <tr className="border-b border-black text-[12.5px] font-black uppercase tracking-normal text-[#111111]">
+                      <thead className="bg-[#f8f9fa]">
+                        <tr className="border-b-2 border-[#1a1c1e] text-[12.5px] font-black uppercase tracking-normal text-[#1a1c1e]">
                           <th className="px-3 py-0.5 text-center">ลำดับ</th>
                           <th className="px-3 py-0.5 text-center">รหัสบาร์โค้ด</th>
                           <th className="px-3 py-0.5 text-left detailed-issue-product-cell">สินค้า</th>
                           <th className="px-3 py-0.5 text-center">LOT</th>
                           <th className="px-3 py-0.5 text-center">จำนวน</th>
                           <th className="px-3 py-0.5 text-center">น้ำหนัก</th>
-                          <th className="px-3 py-0.5 text-center detailed-issue-time-cell">เวลา</th>
+                          <th className="px-3 py-0.5 text-center detailed-issue-time-cell">วันที่–เวลาเบิก</th>
                         </tr>
                       </thead>
                       <tbody className="bg-white">
@@ -1675,7 +1663,7 @@ export default function ProductionStockIssueReportPageClient({
                           if (vRow.type === 'group-header') {
                             const group = vRow.data;
                             return (
-                              <tr key={vIndex} className="bg-[#102C57] text-white">
+                              <tr key={vIndex} className="bg-[var(--surface-navy,#102C57)] text-white">
                                 <td colSpan={7} className="px-3 py-1">
                                   <div className="flex items-center gap-5 whitespace-nowrap">
                                     <div className="flex shrink-0 items-center gap-2 whitespace-nowrap">
@@ -1710,11 +1698,11 @@ export default function ProductionStockIssueReportPageClient({
                               >
                                 <td className="px-3 py-0.5 text-center">{row.sequence}</td>
                                 <td className="px-3 py-0.5 text-center font-mono text-[11px] whitespace-nowrap">{row.barcode}</td>
-                                <td className="px-3 py-0.5 text-left whitespace-nowrap detailed-issue-product-cell">{row.productCode} - {row.productName}</td>
+                                <td className="px-3 py-0.5 text-left whitespace-nowrap detailed-issue-product-cell">{getProductDisplay(row)}</td>
                                 <td className="px-3 py-0.5 text-center whitespace-nowrap">{row.lotNo}</td>
                                 <td className="px-3 py-0.5 text-center">{formatQuantity(row.quantity)}</td>
                                 <td className="px-3 py-0.5 text-center">{formatWeight(row.weightKg)}</td>
-                                <td className="px-3 py-0.5 text-center text-[11px] leading-none whitespace-nowrap detailed-issue-time-cell">{formatDateTime(row.issuedAt)}</td>
+                                <td className="px-3 py-0.5 text-center text-[11px] leading-none whitespace-nowrap detailed-issue-time-cell">{formatBusinessDateTime(row.issueDate, row.issuedAt)}</td>
                               </tr>
                             );
                           }
@@ -1754,13 +1742,13 @@ export default function ProductionStockIssueReportPageClient({
               </section>
             ))
           ) : (
-            <div className="w-full max-w-[210mm] bg-white border border-black px-4 py-12 text-center text-sm text-[#111111]">
+            <div className="w-[297mm] min-w-[297mm] max-w-[297mm] bg-white border border-black px-4 py-12 text-center text-sm text-[#111111]">
                {isPending ? "กำลังโหลดข้อมูล..." : resolvedReportConfig.emptyMessage}
             </div>
           )}
         </div>
 
-      {/* Continuous Print Table for A4 Portrait */}
+      {/* Continuous print table: the browser paginates the A4 landscape document. */}
       <div className="weight-scale-report-print-only hidden print:block">
         <style dangerouslySetInnerHTML={{ __html: `
           @media print {
@@ -1770,19 +1758,20 @@ export default function ProductionStockIssueReportPageClient({
             }
           }
           @page {
-            size: A4 portrait;
+            size: A4 landscape;
             margin: 8mm 6mm;
           }
           .daily-issue-print-table {
             width: 100% !important;
             table-layout: fixed !important;
             border-collapse: collapse !important;
-            font-size: 11px !important;
+            font-size: 10.5pt !important;
+            line-height: 1.25 !important;
             color: #111827 !important;
           }
           .daily-issue-print-table th,
           .daily-issue-print-table td {
-            border: 0.5px solid #cbd5e1 !important;
+            border: 0.5pt solid #cbd5e1 !important;
             padding: 4px 5px !important;
             vertical-align: middle !important;
             white-space: nowrap !important;
@@ -1803,27 +1792,30 @@ export default function ProductionStockIssueReportPageClient({
             color: #102C57 !important;
           }
           .daily-issue-print-table .table-header th {
-            background: #f8f5ee !important;
-            color: #111111 !important;
+            background: #f8f9fa !important;
+            color: #1a1c1e !important;
             font-weight: 900 !important;
             text-align: center !important;
             font-size: 11px !important;
-            border: 0.5px solid #cbd5e1 !important;
+            border: 0.5pt solid #cbd5e1 !important;
+            border-bottom: 2px solid #1a1c1e !important;
             white-space: nowrap !important;
             word-break: keep-all !important;
             overflow: visible !important;
             text-overflow: clip !important;
           }
           .daily-issue-print-table .group-header-row td {
-            background: #102C57 !important;
+            background: var(--surface-navy, #102C57) !important;
             color: #ffffff !important;
             font-weight: 900 !important;
             padding: 4px 6px !important;
-            border: 0.5px solid #102C57 !important;
+            border: 0.5pt solid #102C57 !important;
             break-after: avoid !important;
             page-break-after: avoid !important;
           }
-          .daily-issue-print-table thead,
+          .daily-issue-print-table thead {
+            display: table-header-group !important;
+          }
           .daily-issue-print-table thead tr,
           .daily-issue-print-table .group-header-row,
           .daily-issue-print-table .subtotal-row,
@@ -1832,8 +1824,8 @@ export default function ProductionStockIssueReportPageClient({
             page-break-inside: avoid !important;
           }
           .daily-issue-print-table tbody tr.item-row {
-            break-inside: auto !important;
-            page-break-inside: auto !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
           }
           .daily-issue-print-table tbody tr.item-row:nth-child(even) {
             background-color: #f8fafc !important;
@@ -1842,31 +1834,24 @@ export default function ProductionStockIssueReportPageClient({
             background-color: #fbfcfd !important;
             color: #111111 !important;
             font-weight: 900 !important;
-            border: 0.5px solid #cbd5e1 !important;
+            border: 0.5pt solid #cbd5e1 !important;
           }
           .daily-issue-print-table .grand-total-row td {
             background-color: #f0eada !important;
             color: #102C57 !important;
             font-weight: 900 !important;
-            border: 0.5px solid #d4af37 !important;
+            border: 0.5pt solid #d4af37 !important;
           }
-          .daily-issue-print-table .table-header th:nth-child(1),
-          .daily-issue-print-table .table-header th:nth-child(2),
-          .daily-issue-print-table .table-header th:nth-child(4),
-          .daily-issue-print-table .table-header th:nth-child(5),
-          .daily-issue-print-table .table-header th:nth-child(6),
-          .daily-issue-print-table .table-header th:nth-child(7),
-          .daily-issue-print-table tbody tr.item-row td:nth-child(1),
-          .daily-issue-print-table tbody tr.item-row td:nth-child(2),
-          .daily-issue-print-table tbody tr.item-row td:nth-child(4),
-          .daily-issue-print-table tbody tr.item-row td:nth-child(5),
-          .daily-issue-print-table tbody tr.item-row td:nth-child(6),
-          .daily-issue-print-table tbody tr.item-row td:nth-child(7) {
+          .daily-issue-print-table .table-header th:not(:nth-child(4)),
+          .daily-issue-print-table tbody tr.item-row td:not(:nth-child(4)) {
             text-align: center !important;
           }
-          .daily-issue-print-table .table-header th:nth-child(3),
-          .daily-issue-print-table tbody tr.item-row td:nth-child(3) {
+          .daily-issue-print-table .table-header th:nth-child(4),
+          .daily-issue-print-table tbody tr.item-row td:nth-child(4) {
             text-align: left !important;
+            white-space: normal !important;
+            overflow-wrap: anywhere !important;
+            line-height: 1.2 !important;
           }
           .daily-issue-print-table .subtotal-row td:first-child,
           .daily-issue-print-table .grand-total-row td:first-child {
@@ -1882,84 +1867,57 @@ export default function ProductionStockIssueReportPageClient({
         {flatVirtualRows.length ? (
           <table className="daily-issue-print-table">
             <colgroup>
-              <col style={{ width: "5%" }} />
-              <col style={{ width: "15%" }} />
-              <col style={{ width: "35%" }} />
+              <col style={{ width: "4%" }} />
               <col style={{ width: "13%" }} />
+              <col style={{ width: "13%" }} />
+              <col style={{ width: "36%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "8%" }} />
               <col style={{ width: "6%" }} />
-              <col style={{ width: "11%" }} />
-              <col style={{ width: "15%" }} />
+              <col style={{ width: "10%" }} />
             </colgroup>
             <thead>
-              <tr className="print-report-header">
-                <th colSpan={7}>
-                  <div className="flex items-end justify-between">
-                    <div className="flex items-center gap-3 text-left">
-                      <Image
-                        src="/brand/LOGO-KPF1.png"
-                        alt="KPF"
-                        width={40}
-                        height={40}
-                        className="h-10 w-auto object-contain"
-                      />
-                      <div>
-                        <div className="text-[13px] font-black text-[#102C57]">บริษัท เคพีฟู้ดส์ จำกัด</div>
-                        <div className="text-[9px] font-bold text-[#64748b]">K.P. foods Co.,Ltd.</div>
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-[17px] font-black text-[#102C57]">{resolvedReportConfig.printTitle}</div>
-                      <div className="mt-1 text-[8px] font-black uppercase tracking-[0.22em] text-[#d4af37]">Detailed Stock Issue Report</div>
-                    </div>
-                    <div className="text-right text-[9px] leading-tight text-[#102C57]">
-                      <div><span className="font-black text-[#64748b]">วันที่พิมพ์:</span> {printedAtLabel}</div>
-                      <div><span className="font-black text-[#64748b]">ผู้ออกรายงาน:</span> {profile.username || "System"}</div>
-                    </div>
-                  </div>
-                </th>
-              </tr>
-              <tr className="print-report-meta">
-                <th colSpan={3} className="text-left">แผนก: <span className="font-black">{scope.departmentName || "-"}</span></th>
-                <th colSpan={2} className="text-center">ช่วงวันที่: <span className="font-black">{reportPeriodLabel}</span></th>
-                <th colSpan={2} className="text-right">ประเภท: <span className="font-black">{issueTypeSummaryLabel}</span></th>
-              </tr>
+              <ReportHeader
+                title={resolvedReportConfig.printTitle}
+                subtitle="Detailed Stock Issue Report"
+                meta={[
+                  { label: "แผนก", value: scope.departmentName || "-" },
+                  { label: "ช่วงวันที่", value: reportPeriodLabel },
+                  { label: "ประเภท", value: issueTypeSummaryLabel },
+                ]}
+                printedAt={printedAtLabel}
+                printedBy={profile.username || "System"}
+                variant="table-rows"
+                colSpan={8}
+              />
               <tr className="table-header">
                 <th>ลำดับ</th>
+                <th>วันที่–เวลาเบิก</th>
                 <th>รหัสบาร์โค้ด</th>
-                <th className="text-left">สินค้า</th>
+                <th className="text-left">สินค้า WIP → สินค้าปลายทาง</th>
                 <th>LOT</th>
+                <th>ประเภท</th>
                 <th>จำนวน</th>
                 <th>น้ำหนัก</th>
-                <th>เวลา</th>
               </tr>
             </thead>
             <tbody>
               {flatVirtualRows.map((vRow, vIndex) => {
                 if (vRow.type === 'group-header') {
-                  const group = vRow.data;
-                  return (
-                    <tr key={vIndex} className="group-header-row">
-                      <td colSpan={7}>
-                        <div className="flex items-center gap-5">
-                          <span>วันที่: {group.issueDateLabel}</span>
-                          <span>สินค้า/LOT: {group.productDisplay} | {group.lotNo}</span>
-                          <span>ประเภท: {getIssueTypeLabel(issueTypes, group.issueType)}</span>
-                        </div>
-                      </td>
-                    </tr>
-                  );
+                  return null;
                 }
                 if (vRow.type === 'item') {
                   const row = vRow.data;
                   return (
                     <tr key={vIndex} className="item-row">
                       <td>{row.sequence}</td>
+                      <td>{formatBusinessDateTime(row.issueDate, row.issuedAt)}</td>
                       <td>{row.barcode}</td>
-                      <td className="text-left">{row.productCode} - {row.productName}</td>
+                      <td className="text-left">{getProductDisplay(row)}</td>
                       <td>{row.lotNo}</td>
+                      <td>{getIssueTypeLabel(issueTypes, row.issueType)}</td>
                       <td>{formatQuantity(row.quantity)}</td>
                       <td>{formatWeight(row.weightKg)} Kg</td>
-                      <td>{formatDateTime(row.issuedAt)}</td>
                     </tr>
                   );
                 }
@@ -1967,10 +1925,9 @@ export default function ProductionStockIssueReportPageClient({
                   const group = vRow.data;
                   return (
                     <tr key={vIndex} className="subtotal-row">
-                      <td colSpan={4} className="text-right">สรุปรวมกลุ่ม</td>
+                      <td colSpan={6} className="text-right">รวม {group.productDisplay} | LOT {group.lotNo}</td>
                       <td>{formatQuantity(group.totalQuantity)}</td>
                       <td>{formatWeight(group.totalWeightKg)} Kg</td>
-                      <td />
                     </tr>
                   );
                 }
@@ -1978,10 +1935,9 @@ export default function ProductionStockIssueReportPageClient({
                   const data = vRow.data;
                   return (
                     <tr key={vIndex} className="grand-total-row">
-                      <td colSpan={4} className="text-right uppercase tracking-wider">สรุปรวมทั้งสิ้น</td>
+                      <td colSpan={6} className="text-right uppercase tracking-wider">สรุปรวมทั้งสิ้น</td>
                       <td>{formatQuantity(data.totalQuantity)}</td>
                       <td>{formatWeight(data.totalWeightKg)} Kg</td>
-                      <td />
                     </tr>
                   );
                 }

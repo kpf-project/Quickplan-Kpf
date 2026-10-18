@@ -161,7 +161,7 @@ export default function MachineSettingsTab({ canManage = false }) {
     <div className="max-w-[95%] mx-auto py-4">
       <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-5 md:p-6">
         <div className="flex items-start gap-3">
-          <div className="h-10 w-10 rounded-xl bg-[#102C57]/10 flex items-center justify-center text-[#102C57]">
+          <div className="h-10 w-10 rounded-xl bg-[var(--surface-navy,#102C57)]/10 flex items-center justify-center text-[#102C57]">
             <Printer size={20} />
           </div>
           <div className="flex-1">
@@ -197,7 +197,7 @@ export default function MachineSettingsTab({ canManage = false }) {
             maxLength={8}
             placeholder="เช่น P01"
             className="w-full md:max-w-xs h-10 px-3 rounded-lg border border-gray-200 bg-white text-sm font-mono tracking-wider uppercase focus:ring-1 focus:ring-[#d4af37] outline-none"
-            disabled={loading || saving}
+            disabled={loading || saving || !canManage}
           />
           <p className="text-[11px] text-gray-500 mt-2">
             แนะนำให้ตั้งให้ตรงสติ๊กเกอร์เครื่องจริง เพื่อไม่ให้ซ้ำกันตอนใช้ 50-100 เครื่อง

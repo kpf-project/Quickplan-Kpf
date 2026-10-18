@@ -22,7 +22,8 @@ test("gateway defines /api/production-receipts route with DT_PROPERTIES=305 and 
   assert.match(routeSource, /DEPTTAB\.DEPT_CODE/);
   assert.match(routeSource, /PRJTAB\.PRJ_NAME/);
   assert.match(routeSource, /parseReceiptCursor/);
-  assert.match(routeSource, /NET_AMOUNT_INCL_VAT/);
+  assert.match(routeSource, /NET_AMOUNT_EXCL_VAT/);
+  assert.match(routeSource, /UNIT_PRICE_EXCL_VAT/);
 });
 
 test("rawMaterialsService and client define production receipts functions", () => {

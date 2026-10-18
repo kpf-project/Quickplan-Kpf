@@ -1,6 +1,6 @@
 import { getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
 import { logAuditEvent } from "@/lib/auditLog";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import {
   createProductionStockIssue,
   loadProductionStockIssuePageData,
@@ -10,21 +10,10 @@ import { ok, toJsonResponse } from "@/lib/result";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const PRODUCTION_STOCK_PERMISSION_KEYS = [
-  "production-line-attendance-view",
-  "production-line-attendance-manage",
-  "production-line-attendance-report-view",
-  "production-line-attendance-report-manage",
-  "production-line-settings-view",
-  "production-line-settings-manage",
-];
-const PRODUCTION_STOCK_MANAGE_PERMISSION_KEYS = [
-  "production-line-attendance-manage",
-];
 
 export async function GET(request) {
   try {
-    await requirePermissionKeys(request, PRODUCTION_STOCK_PERMISSION_KEYS);
+    await requireTaskPermission(request, "production-stock-issue-view");
     const payload = await loadProductionStockIssuePageData(getSupabaseAdmin());
     return toJsonResponse(ok(payload));
   } catch (error) {
@@ -37,10 +26,7 @@ export async function POST(request) {
   let body = null;
   let operationCompleted = false;
   try {
-    const permission = await requirePermissionKeys(
-      request,
-      PRODUCTION_STOCK_MANAGE_PERMISSION_KEYS
-    );
+    const permission = await requireTaskPermission(request, "production-stock-issue-write");
     actorId = permission.userId;
     body = await readJson(request);
 
@@ -50,6 +36,7 @@ export async function POST(request) {
         issueType: body?.issueType,
         remark: body?.remark,
         issueDate: body?.issueDate,
+        destinationRoomCode: body?.destinationRoomCode,
         actorUserId: permission.userId,
       },
       getSupabaseAdmin()
@@ -64,6 +51,7 @@ export async function POST(request) {
         barcode: body?.barcode || null,
         issueType: body?.issueType || null,
         issueDate: issue?.issueDate || body?.issueDate || null,
+        destinationRoomCode: issue?.destinationRoomCode || null,
       },
     });
 
@@ -86,6 +74,7 @@ export async function POST(request) {
           barcode: body?.barcode || null,
           issueType: body?.issueType || null,
           issueDate: body?.issueDate || null,
+          destinationRoomCode: body?.destinationRoomCode || null,
           error: error?.message || String(error),
           negativeLotBlocked: String(error?.message || "").includes("คงเหลือไม่พอ"),
         },

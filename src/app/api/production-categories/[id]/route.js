@@ -1,12 +1,10 @@
 import { getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { normalizeParam } from "@/lib/validation";
 
 export async function PUT(request, { params }) {
   try {
-    const { userId } = await requirePermissionKeys(request, [
-      "production-line-settings-manage",
-    ]);
+    const { userId } = await requireTaskPermission(request, "production-settings-categories-edit");
     const { id } = await params;
     const body = await readJson(request);
     const code = normalizeParam(body.code);
@@ -58,9 +56,7 @@ export async function PUT(request, { params }) {
 
 export async function DELETE(request, { params }) {
   try {
-    const { userId } = await requirePermissionKeys(request, [
-      "production-line-settings-manage",
-    ]);
+    const { userId } = await requireTaskPermission(request, "production-settings-categories-delete");
     const { id } = await params;
     const supabaseAdmin = getSupabaseAdmin();
 

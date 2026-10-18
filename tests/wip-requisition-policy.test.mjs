@@ -419,7 +419,7 @@ test("preview keeps subplan WIP names even when the WIP itself has no room routi
   const preview = readSource("src/app/api/production-planning/requisition/preview/route.js");
 
   assert.match(preview, /workCenterId \|\| "UNASSIGNED_ROOM"/);
-  assert.match(preview, /const subplanWipName = isSubplanRow\(planRow\)/);
+  assert.match(preview, /const subplanWipName = `\$\{rawWipName\} \$\{formattedQty\}\$\{showUnit\}`/);
   assert.doesNotMatch(preview, /routingByKey\.get\(`\$\{departmentId\}\|\*\|\$\{wipSku\}`\)/);
 });
 
@@ -486,6 +486,102 @@ test("requisition documents split by FG category 04 and section, not by WIP pare
   }
   assert.match(preview, /doc\.workstreamCode \|\| "DEFAULT"/);
   assert.match(confirm, /workstreamCode:\s*doc\.workstreamCode/);
+});
+
+test("work-center consolidation merges FG and section document discriminators", async () => {
+  const { buildRequisitionDocumentBaseKey } = await import(
+    "../src/lib/requisitionDocumentGrouping.js"
+  );
+
+  const shared = {
+    ownerDepartmentId: "OWNER-1",
+    roomId: "ROOM-1",
+    shiftCode: "SHIFT1",
+    consolidateRequisitionPreviewByDate: true,
+  };
+
+  assert.equal(
+    buildRequisitionDocumentBaseKey({
+      ...shared,
+      parentSku: "FG-001",
+      workstreamCode: "SECTION-CREAM",
+    }),
+    "OWNER-1|ROOM-1|SHIFT1|CONSOLIDATED"
+  );
+  assert.equal(
+    buildRequisitionDocumentBaseKey({
+      ...shared,
+      parentSku: "FG-002",
+      workstreamCode: "SECTION-PACK",
+    }),
+    "OWNER-1|ROOM-1|SHIFT1|CONSOLIDATED"
+  );
+  assert.notEqual(
+    buildRequisitionDocumentBaseKey({
+      ...shared,
+      consolidateRequisitionPreviewByDate: false,
+      parentSku: "FG-001",
+      workstreamCode: "SECTION-CREAM",
+    }),
+    buildRequisitionDocumentBaseKey({
+      ...shared,
+      consolidateRequisitionPreviewByDate: false,
+      parentSku: "FG-002",
+      workstreamCode: "SECTION-PACK",
+    })
+  );
+});
+
+test("room headers prefer explicitly planned WIP rows over inferred legacy-section rows", async () => {
+  const { selectRequisitionWorkNames } = await import(
+    "../src/lib/requisitionDocumentGrouping.js"
+  );
+
+  assert.deepEqual(
+    selectRequisitionWorkNames(
+      new Set(["แป้งหมัก 14", "แผ่นแครกเกอร์สมุย 3"]),
+      new Set(["แป้งหมัก 91.034", "แป้งหมัก 2"])
+    ),
+    ["แป้งหมัก 14", "แผ่นแครกเกอร์สมุย 3"]
+  );
+  assert.deepEqual(
+    selectRequisitionWorkNames(new Set(), new Set(["แป้งหมัก 91.034"])),
+    ["แป้งหมัก 91.034"]
+  );
+});
+
+test("FG work names do not borrow another product's dates from the room", async () => {
+  const { findRequisitionWorkNames } = await import("../src/lib/requisitionDocumentGrouping.js");
+  const names = new Map([
+    ["ROOM|2026-10-12", new Set(["B01-1009 180"])],
+    ["ROOM|2026-10-12|B01-1009", new Set(["B01-1009 180"])],
+    ["ROOM|2026-10-13", new Set(["B06-0005 100"])],
+  ]);
+  assert.equal(findRequisitionWorkNames(names, "ROOM|2026-10-13", "B01-1009"), undefined);
+  assert.deepEqual([...findRequisitionWorkNames(names, "ROOM|2026-10-12", "B01-1009")], ["B01-1009 180"]);
+  assert.deepEqual([...findRequisitionWorkNames(names, "ROOM|2026-10-13", null)], ["B06-0005 100"]);
+});
+
+test("five packing dates with one planned FG per date render exactly five product columns", async () => {
+  const { findRequisitionWorkNames } = await import("../src/lib/requisitionDocumentGrouping.js");
+  const { buildRequisitionPreviewDocuments } = await import("../src/lib/requisitionPreviewDisplay.js");
+  const plan = [
+    ["2026-10-12", "B01-1009"], ["2026-10-13", "B06-0005"],
+    ["2026-10-14", "BL0-5010"], ["2026-10-15", "BL0-5010"],
+    ["2026-10-16", "BL0-5009"],
+  ];
+  const names = new Map(plan.flatMap(([date, sku]) => [
+    [`ROOM|${date}`, new Set([sku])], [`ROOM|${date}|${sku}`, new Set([sku])],
+  ]));
+  const docs = [...new Set(plan.map(([, sku]) => sku))].map((sku) => ({
+    documentKey: sku, parentSku: sku, parentSkuName: sku,
+    roomId: "ROOM", ownerDepartmentId: "KP13", shiftCode: "SHIFT1",
+    workNamesByDate: Object.fromEntries(plan.map(([date]) => [date, findRequisitionWorkNames(names, `ROOM|${date}`, sku)])
+      .filter(([, value]) => value?.size).map(([date, value]) => [date, [...value]])),
+    lines: [{ materialGoodsCode: "MAT", unit: "KG", qtyByDate: Object.fromEntries(plan.filter(([, code]) => code === sku).map(([date]) => [date, 1])), totalQty: 1 }],
+  }));
+  const [result] = buildRequisitionPreviewDocuments(docs);
+  assert.deepEqual(result.previewColumns.map((column) => [column.dateValue, column.productCode]), plan);
 });
 
 test("subplan claim rows retain section metadata for WIP names and document grouping", () => {

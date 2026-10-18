@@ -178,7 +178,7 @@
 .workspace { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(340px, .55fr); gap: 1px; overflow: hidden; border: 1px solid #ccd7e3; border-top: 0; background: #ccd7e3; box-shadow: 0 16px 40px rgb(8 30 58 / 10%); }
 .scanPanel, .actionPanel { padding: 24px; background: rgb(255 255 255 / 96%); }
 .sectionHeading { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
-.sectionHeading .step { display: grid; place-items: center; width: 38px; height: 38px; color: white; border-radius: 10px; background: var(--navy); font-size: 12px; font-weight: 900; }
+.sectionHeading .step { display: grid; place-items: center; width: 38px; height: 38px; color: white; border-radius: 10px; background: var(--surface-navy, var(--navy)); font-size: 12px; font-weight: 900; }
 .sectionHeading div { display: flex; flex-direction: column; }
 .sectionHeading strong { font-size: 18px; }
 .sectionHeading small { color: #718096; font-size: 12px; }
@@ -188,7 +188,7 @@
 .scanForm > svg { color: var(--navy); }
 .scanForm input { min-width: 0; padding: 9px 4px; color: #0d2748; border: 0; outline: 0; font-size: 17px; font-weight: 700; text-transform: uppercase; }
 .scanForm button, .primaryAction { display: inline-flex; align-items: center; justify-content: center; gap: 9px; border: 0; cursor: pointer; font-weight: 800; }
-.scanForm button { padding: 11px 18px; color: white; border-radius: 9px; background: var(--navy); }
+.scanForm button { padding: 11px 18px; color: white; border-radius: 9px; background: var(--surface-navy, var(--navy)); }
 .scanForm button:disabled, .primaryAction:disabled { cursor: not-allowed; opacity: .42; }
 .scanForm button svg, .primaryAction svg { width: 18px; height: 18px; }
 .issueInputStack { display: flex; flex-direction: column; gap: 9px; }
@@ -316,7 +316,7 @@
 .labelTableWrap { width: 100%; overflow: auto; }
 .labelTable { width: 100%; min-width: 1120px; border-collapse: collapse; color: #1a314d; font-size: 12px; }
 .labelTable thead { position: sticky; z-index: 2; top: 0; }
-.labelTable th { padding: 9px 10px; color: #dce8f5; border-right: 1px solid rgb(255 255 255 / 10%); background: #12345f; font-size: 10px; font-weight: 900; text-align: left; white-space: nowrap; }
+.labelTable th { padding: 9px 10px; color: #dce8f5; border-right: 1px solid rgb(255 255 255 / 10%); background: var(--surface-navy, #12345f); font-size: 10px; font-weight: 900; text-align: left; white-space: nowrap; }
 .labelTable th:first-child, .labelTable td:first-child { width: 38px; text-align: center; }
 .labelTable th:nth-child(2), .labelTable td:nth-child(2) { width: 54px; text-align: center; }
 .labelTable td { padding: 7px 10px; border-right: 1px solid #e5eaf0; border-bottom: 1px solid #dce3eb; background: white; vertical-align: middle; white-space: nowrap; }
@@ -585,7 +585,7 @@
 .historyHeader span { padding: 3px 8px; color: #6d7e92; border-radius: 999px; background: #edf1f5; font-size: 11px; font-weight: 800; }
 .tableWrap { overflow-x: auto; }
 .history table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.history th { padding: 9px 12px; color: white; background: var(--navy); text-align: left; white-space: nowrap; }
+.history th { padding: 9px 12px; color: white; background: var(--surface-navy, var(--navy)); text-align: left; white-space: nowrap; }
 .history td { padding: 10px 12px; border-bottom: 1px solid #e2e7ed; white-space: nowrap; }
 .history td:nth-child(5) { white-space: normal; }
 .historyEmpty { display: grid; min-height: 88px; place-items: center; color: #8a98aa; font-size: 13px; }

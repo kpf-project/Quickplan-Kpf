@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin, jsonError } from "@/lib/adminApi";
 import { requirePermissionKeys } from "@/lib/permissionGuard";
 import { normalizeParam } from "@/lib/validation";
+import { fetchSupabaseRowsByChunks } from "@/lib/supabaseRangeFetch";
 
 export const dynamic = "force-dynamic";
 
@@ -55,17 +56,15 @@ export async function GET(request) {
     const groupIds = groups.map((g) => String(g.id || "").trim()).filter(Boolean);
 
     // Fetch items for those groups, filtered by ownerDepartmentId
-    const itemsResult = await supabaseAdmin
-      .from("production_requisition_group_items")
-      .select("group_id, material_goods_code, material_sku_code, created_at")
-      .in("group_id", groupIds)
-      .eq("owner_department_id", ownerDepartmentId);
+    const items = await fetchSupabaseRowsByChunks(
+      groupIds,
+      (chunk) => supabaseAdmin
+        .from("production_requisition_group_items")
+        .select("group_id, material_goods_code, material_sku_code, created_at")
+        .in("group_id", chunk)
+        .eq("owner_department_id", ownerDepartmentId)
+    );
 
-    if (itemsResult.error) {
-      throw new Error(itemsResult.error.message);
-    }
-
-    const items = Array.isArray(itemsResult.data) ? itemsResult.data : [];
     if (!items.length) {
       return NextResponse.json({ ok: true, data: [] });
     }

@@ -542,6 +542,8 @@ export async function loadProductionStockMovementSummaryReportData(
     includeAll = false,
     expandDailyBalances = true,
     activityOnly = false,
+    groupByTarget = false,
+    groupByRoom = false,
   } = {}
 ) {
   const scopeData = await loadScaleProductsData(supabaseAdmin);
@@ -571,7 +573,11 @@ export async function loadProductionStockMovementSummaryReportData(
       const reportDateFrom = normalizeText(dateFrom) || getBangkokDateInput();
       const reportDateTo = normalizeText(dateTo) || reportDateFrom;
       const { data: activityRows, error: activityError } = await supabaseAdmin.rpc(
-        "get_production_stock_activity_summary",
+        groupByRoom
+          ? "get_production_stock_activity_summary_by_room"
+          : groupByTarget
+            ? "get_production_stock_activity_summary_by_target"
+            : "get_production_stock_activity_summary",
         {
           p_department_id: scope.departmentId,
           p_date_from: reportDateFrom,
@@ -588,6 +594,11 @@ export async function loadProductionStockMovementSummaryReportData(
         lotNo: normalizeText(row.lot_no) || "-",
         productCode: normalizeUpperText(row.product_code) || "-",
         productName: normalizeText(row.product_name) || normalizeUpperText(row.product_code),
+        targetProductCode: normalizeUpperText(row.target_product_code),
+        targetProductName: normalizeText(row.target_product_name),
+        targetProductCategoryCode: normalizeUpperText(row.target_product_category_code),
+        destinationRoomCode: normalizeUpperText(row.destination_room_code),
+        destinationRoomName: normalizeText(row.destination_room_name),
         inboundQuantity: 0,
         inboundWeightKg: 0,
         issueQuantity: normalizeDecimal(row.issue_quantity),

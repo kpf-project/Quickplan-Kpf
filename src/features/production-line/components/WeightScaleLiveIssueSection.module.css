@@ -1,0 +1,27 @@
+.page { padding: 16px 24px; color: #102c57; }
+.controls { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; }
+.controls label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; font-weight: 600; }
+.controls .grow { flex: 1; min-width: 180px; }
+.page input, .page select, .page button { min-height: 36px; border: 1px solid #cbd7e6; border-radius: 4px; padding: 6px 12px; background: white; color: inherit; font-size: 14px; }
+.page button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; font-weight: 700; white-space: nowrap; cursor: pointer; }
+.page button:disabled { opacity: .45; cursor: not-allowed; }
+.page .primary { background: var(--surface-navy, #10345d); color: white; border-color: transparent; min-width: 160px; }
+.page .danger { background: #df2638; color: white; border-color: transparent; }
+.scan { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.scan input { flex: 1; min-width: 0; height: 44px; font-size: 16px; }
+.scan button { height: 44px; }
+.note { font-size: 12px; color: #64748b; }
+.message { padding: 8px 12px; margin: 8px 0; font-size: 14px; background: #eaf5ed; }
+.message[data-error="true"] { color: #b42332; background: #fff1f2; }
+.preview { display: flex; align-items: center; gap: 16px; padding: 12px 16px; background: white; border: 1px solid #dce5ef; border-radius: 5px; margin-bottom: 12px; }
+.product { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+.product img { object-fit: contain; }
+.product strong { display: block; font-size: 16px; }
+.product p { margin: 3px 0; font-size: 14px; }
+.weight { border-left: 1px solid #dce5ef; padding-left: 20px; min-width: 130px; }
+.weight small { display: block; }
+.weight strong { font-size: 28px; }
+.reason { display: flex; flex-direction: column; gap: 5px; }
+.status { font-size: 12px; }
+.page :is(input,select,button):focus-visible { outline: 2px solid #1683dd; outline-offset: 2px; }
+@media(max-width: 900px) { .preview { flex-wrap: wrap; } .page { padding: 12px; } .scan { flex-wrap: wrap; } }

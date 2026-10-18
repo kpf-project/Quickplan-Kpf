@@ -1,15 +1,10 @@
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { fetchGatewayJson } from "@/lib/gatewayClient";
 import { normalizeParam } from "@/lib/validation";
 import { ok } from "@/lib/result";
 
 export async function listIccatTypes(request) {
-  await requirePermissionKeys(request, [
-    "admin-products",
-    "raw-materials-summary",
-    "raw-materials-lot",
-    "raw-materials-movement",
-  ]);
+  await requireTaskPermission(request, "data-product-categories-view");
   const { searchParams } = new URL(request.url);
   const group = normalizeParam(searchParams.get("group"));
   const params = new URLSearchParams();

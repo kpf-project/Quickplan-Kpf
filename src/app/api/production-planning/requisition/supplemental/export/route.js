@@ -10,6 +10,7 @@ import {
   assertRequisitionDepartmentAccess,
   loadRequisitionAccessScope,
 } from "@/lib/requisitionPreviewAccess";
+import { fetchSupabaseRowsByChunks } from "@/lib/supabaseRangeFetch";
 
 export const dynamic = "force-dynamic";
 
@@ -107,11 +108,13 @@ function requireDocumentScope(doc) {
 async function validateSupplementalMaterials(supabaseAdmin, lines) {
   const skuCodes = Array.from(new Set(lines.map((line) => line.materialSkuCode).filter(Boolean)));
   if (!skuCodes.length) return lines;
-  const { data, error } = await supabaseAdmin
-    .from("products_cache")
-    .select("sku_code,sku_name,iccat_code,uom_name")
-    .in("sku_code", skuCodes);
-  if (error) throw error;
+  const data = await fetchSupabaseRowsByChunks(
+    skuCodes,
+    (chunk) => supabaseAdmin
+      .from("products_cache")
+      .select("sku_code,sku_name,iccat_code,uom_name")
+      .in("sku_code", chunk)
+  );
   const productBySku = new Map((data || []).map((row) => [normalizeCode(row?.sku_code), row]));
   const missing = skuCodes.filter((skuCode) => !productBySku.has(skuCode));
   if (missing.length) {

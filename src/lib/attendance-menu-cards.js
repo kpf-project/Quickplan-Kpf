@@ -52,7 +52,13 @@ export function buildAttendanceMenuCards(permissionState = {}) {
   const permissions = new Set(
     Array.isArray(permissionState.permissions) ? permissionState.permissions : []
   );
+  const taskKeys = {
+    "/production-line/fg-wip": ["production-fg-wip-view", "production-fg-wip-write"],
+    "/production-line/weight-scale": ["production-scale-receipt-view", "production-scale-receipt-write"],
+    "/production-line/attendance/piece-rate-scan": ["production-piece-rate-master-view", "production-piece-rate-record"],
+  };
   return ATTENDANCE_MENU_CARDS.filter((card) =>
     card.permissionsAny.some((permission) => permissions.has(permission))
+    || (taskKeys[card.href] || []).some((permission) => permissions.has(permission))
   );
 }

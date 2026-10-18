@@ -1,0 +1,31 @@
+{
+  "currentJams": [
+    {
+      "id": "f9c8eb6c-b700-4b49-9908-aa0f9b22f151",
+      "usage_date": "2026-10-13",
+      "goods_code": "M04-0126-1",
+      "goods_name_snapshot": "แยมสตรอเบอรี่ PJST3",
+      "lot_no": "261007",
+      "weight_kg": 170,
+      "status": "confirmed",
+      "created_by": "f8302506-a07c-490c-aee7-fbf959aee0cb",
+      "created_at": "2026-10-13T09:05:58.770704+00:00",
+      "voided_by": null,
+      "voided_at": null
+    },
+    {
+      "id": "2f6cc52a-37f9-4f8f-8bfb-dc8a98bcd4b6",
+      "usage_date": "2026-10-13",
+      "goods_code": "M04-0088",
+      "goods_name_snapshot": "สับปะรดกวน",
+      "lot_no": "261003    261007",
+      "weight_kg": 590,
+      "status": "confirmed",
+      "created_by": "e9b0dec3-f302-45e8-9243-aa9727550022",
+      "created_at": "2026-10-14T04:18:54.569893+00:00",
+      "voided_by": null,
+      "voided_at": null
+    }
+  ],
+  "currentWaste": []
+}

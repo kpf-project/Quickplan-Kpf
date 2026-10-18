@@ -1,5 +1,5 @@
 import { getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { normalizeParam } from "@/lib/validation";
 
 const ALLOWED_SCOPE_ROLES = new Set(["viewer", "editor"]);
@@ -29,10 +29,7 @@ function normalizeUserIds(values) {
 
 export async function GET(request) {
   try {
-    await requirePermissionKeys(request, [
-      "production-line-settings-view",
-      "production-line-settings-manage",
-    ]);
+    await requireTaskPermission(request, "production-settings-department-users-view");
 
     const { searchParams } = new URL(request.url);
     const departmentId = normalizeParam(searchParams.get("departmentId"));
@@ -87,9 +84,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const { userId: actorUserId } = await requirePermissionKeys(request, [
-      "production-line-settings-manage",
-    ]);
+    const { userId: actorUserId } = await requireTaskPermission(request, "production-settings-department-users-create");
 
     const body = await readJson(request);
     const departmentId = normalizeParam(body.departmentId);
@@ -123,9 +118,7 @@ export async function POST(request) {
 
 export async function DELETE(request) {
   try {
-    await requirePermissionKeys(request, [
-      "production-line-settings-manage",
-    ]);
+    await requireTaskPermission(request, "production-settings-department-users-delete");
 
     const body = await readJson(request);
     const departmentId = normalizeParam(body.departmentId);

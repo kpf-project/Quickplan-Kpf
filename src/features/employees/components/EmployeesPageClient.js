@@ -624,7 +624,7 @@ function EmployeesPageContent() {
 
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1200px] text-left border-collapse">
-              <thead className="bg-[#102C57] text-white sticky top-0 z-20 shadow-md">
+              <thead className="bg-[var(--surface-navy,#102C57)] text-white sticky top-0 z-20 shadow-md">
                 <tr>
                   <th className="py-3 px-4 text-xs font-bold uppercase tracking-wider border-b border-[#0f172a] text-center w-[130px]">รูปพนักงาน</th>
                   <th className="py-3 px-4 text-xs font-bold uppercase tracking-wider border-b border-[#0f172a] w-[140px]">รหัส</th>
@@ -731,7 +731,7 @@ function EmployeesPageContent() {
 
 export default function EmployeesPageClient() {
   return (
-    <PermissionGate permissionsAny={["admin-employees"]}>
+    <PermissionGate permissionsAny={["admin-employees", "hr-employees-view", "hr-departments-view"]}>
       <EmployeesPageContent />
     </PermissionGate>
   );

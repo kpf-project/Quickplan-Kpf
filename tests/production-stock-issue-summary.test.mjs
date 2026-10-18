@@ -42,6 +42,11 @@ test("issue summary calculates issued, returned, and actual usage totals", () =>
     issueType: "KPF",
     productCode: "WKB-0001",
     productName: "Test Product",
+    targetProductCode: "",
+    targetProductName: "",
+    targetProductCategoryCode: "",
+    destinationRoomCode: "BISCUIT_PACKING",
+    destinationRoomName: "ห้องบรรจุบิสกิต",
     quantity: 2,
     totalWeightKg: 200,
     returnQuantity: 1,
@@ -61,6 +66,24 @@ test("issue summary calculates issued, returned, and actual usage totals", () =>
     totalActualQuantity: 1,
     totalActualWeightKg: 180,
   });
+});
+
+test("issue summary keeps KPF destination rooms separate", () => {
+  const base = {
+    issueDate: "2026-10-01",
+    lotNo: "LOT-001",
+    issueType: "KPF",
+    productCode: "WKB-0001",
+    productName: "Shell",
+    quantity: 1,
+    weightKg: 10,
+  };
+  const rows = buildProductionStockIssueSummaryRows([
+    { ...base, destinationRoomCode: "BISCUIT_PACKING", destinationRoomName: "ห้องบรรจุบิสกิต" },
+    { ...base, destinationRoomCode: "PACKING_400", destinationRoomName: "ห้องบรรจุ 400" },
+  ]);
+
+  assert.deepEqual(rows.map((row) => row.destinationRoomCode).sort(), ["BISCUIT_PACKING", "PACKING_400"]);
 });
 
 test("issue summary collects and sorts returnDates", () => {

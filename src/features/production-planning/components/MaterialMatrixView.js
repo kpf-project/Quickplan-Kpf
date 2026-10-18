@@ -191,7 +191,7 @@ function DeptMatrixTable({ dept, dates }) {
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       {/* Dept header bar */}
-      <div className="flex items-center justify-between bg-[#102C57] px-4 py-3">
+      <div className="flex items-center justify-between bg-[var(--surface-navy,#102C57)] px-4 py-3">
         <div className="flex items-center gap-2">
           <span className="text-sm font-bold text-white">{dept.deptName}</span>
           {dept.deptCode && (

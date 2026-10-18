@@ -3,12 +3,21 @@ function normalizeDecimal(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function getDestinationRoom(row) {
+  if (row.issueType !== "KPF") return { code: "", name: "" };
+  return {
+    code: row.destinationRoomCode || "BISCUIT_PACKING",
+    name: row.destinationRoomName || "ห้องบรรจุบิสกิต",
+  };
+}
+
 export function buildProductionStockIssueSummaryRows(rows = []) {
   const groups = new Map();
 
   // Create virtual rows (split issues and returns if they occurred on different dates)
   const virtualRows = [];
   rows.forEach((row) => {
+    const destinationRoom = getDestinationRoom(row);
     const issueStatus = row.documentStatus === "voided" || row.itemStatus === "voided"
       ? "voided"
       : "confirmed";
@@ -20,6 +29,11 @@ export function buildProductionStockIssueSummaryRows(rows = []) {
       issueType: row.issueType,
       productCode: row.productCode,
       productName: row.productName,
+      targetProductCode: row.targetProductCode || "",
+      targetProductName: row.targetProductName || "",
+      targetProductCategoryCode: row.targetProductCategoryCode || "",
+      destinationRoomCode: destinationRoom.code,
+      destinationRoomName: destinationRoom.name,
       quantity: normalizeDecimal(row.quantity),
       weightKg: normalizeDecimal(row.weightKg),
       returnQuantity: 0,
@@ -38,6 +52,11 @@ export function buildProductionStockIssueSummaryRows(rows = []) {
         issueType: row.issueType,
         productCode: row.productCode,
         productName: row.productName,
+        targetProductCode: row.targetProductCode || "",
+        targetProductName: row.targetProductName || "",
+        targetProductCategoryCode: row.targetProductCategoryCode || "",
+        destinationRoomCode: destinationRoom.code,
+        destinationRoomName: destinationRoom.name,
         quantity: 0,
         weightKg: 0,
         returnQuantity: normalizeDecimal(row.returnQuantity),
@@ -50,7 +69,14 @@ export function buildProductionStockIssueSummaryRows(rows = []) {
 
   // Group by virtual row date
   virtualRows.forEach((vRow) => {
-    const key = [vRow.date, vRow.lotNo, vRow.productCode, vRow.issueType, vRow.issueStatus].join("|");
+    const key = [
+      vRow.date,
+      vRow.lotNo,
+      vRow.productCode,
+      vRow.destinationRoomCode,
+      vRow.issueType,
+      vRow.issueStatus,
+    ].join("|");
     if (!groups.has(key)) {
       groups.set(key, {
         issueStatus: vRow.issueStatus,
@@ -59,6 +85,11 @@ export function buildProductionStockIssueSummaryRows(rows = []) {
         issueType: vRow.issueType,
         productCode: vRow.productCode,
         productName: vRow.productName,
+        targetProductCode: vRow.targetProductCode,
+        targetProductName: vRow.targetProductName,
+        targetProductCategoryCode: vRow.targetProductCategoryCode,
+        destinationRoomCode: vRow.destinationRoomCode,
+        destinationRoomName: vRow.destinationRoomName,
         quantity: 0,
         totalWeightKg: 0,
         returnQuantity: 0,

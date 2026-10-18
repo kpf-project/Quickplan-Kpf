@@ -1,5 +1,9 @@
 import "server-only";
 import { resolvePieceRateReportMetrics } from "@/lib/pieceRateReportMetrics";
+import {
+  applyPieceRatePayPeriodWage,
+  calculatePieceRateWageAmount,
+} from "@/lib/pieceRateWage";
 
 import crypto from "crypto";
 import ExcelJS from "exceljs";
@@ -9,29 +13,19 @@ import {
   getEmployeeCodeMatchKey,
   normalizeEmployeeCode,
 } from "@/lib/employeeCode";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
-import { getUserPermissions } from "@/lib/permissionsData";
-import { getSessionFromRequest } from "@/lib/sessionToken";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { fetchGatewayJson } from "@/lib/gatewayClient";
 import { findPieceRateBusinessDuplicate } from "@/lib/pieceRateDuplicateGuard";
 import { buildPieceRateLotNo } from "@/lib/piece-rate-desktop-label";
+import {
+  alignPieceRateMetadataToWorkDate,
+  getBangkokWorkDate,
+  resolvePieceRateWorkTimestamp,
+  validatePieceRateWorkDate,
+} from "@/lib/piece-rate-work-date";
 import { normalizeParam, parsePaginationParams } from "@/lib/validation";
 import { assertPieceRateLogHasNoActiveStockIssue } from "@/features/attendance/services/pieceRateStockService";
 
-const ATTENDANCE_PERMISSION_KEYS = [
-  "production-line-attendance-view",
-  "production-line-attendance-manage",
-];
-const REPORT_VIEW_PERMISSION_KEYS = [
-  "production-line-attendance-report-view",
-  "production-line-attendance-report-manage",
-  "production-line-attendance-view",
-  "production-line-attendance-manage",
-];
-const REPORT_MANAGE_PERMISSION_KEYS = [
-  "production-line-attendance-report-manage",
-  "production-line-attendance-manage",
-];
 const REPORT_MONEY_PERMISSION_KEY = "production-line-attendance-piece-rate-money-view";
 
 const LOG_TABLE = "production_piece_rate_logs";
@@ -40,8 +34,8 @@ const PROFILE_TABLE = "production_piece_rate_profiles";
 const MAPPING_TABLE = "production_piece_rate_product_mappings";
 const WEIGHT_TABLE = "production_piece_rate_profile_weights";
 const EMPLOYEE_PHOTO_TABLE = "employee_photos";
-const PIECE_RATE_DOC_COUNTER_FUNCTION = "next_piece_rate_doc_number";
-const PIECE_RATE_RAISE_DOC_COUNTER_FUNCTION = "raise_piece_rate_doc_counter";
+const PIECE_RATE_DOC_COUNTER_FUNCTION = "next_piece_rate_doc_number_for_date";
+const PIECE_RATE_RAISE_DOC_COUNTER_FUNCTION = "raise_piece_rate_doc_counter_for_date";
 const REPORT_DOC_COUNTER_FUNCTION = "issue_production_report_doc_number";
 const PIECE_RATE_DOC_SEQ_MAX = 999;
 const PIECE_RATE_OFFLINE_DOC_NO_REGEX = /^([0-9]{4})([0-9]{2})([0-9]{2})([0-9]{3})$/;
@@ -66,30 +60,33 @@ const DOC_STATUS_SET = new Set([
   DOC_STATUS_CANCELLED,
 ]);
 
-async function resolvePermissionSet(request, userId) {
-  const session = getSessionFromRequest(request, userId);
-  if (Array.isArray(session?.permissions)) {
-    return new Set(session.permissions);
-  }
-  const permissionData = await getUserPermissions(userId);
-  return new Set(permissionData.permissions || []);
-}
-
 function buildReportCapabilities({ isAdmin = false, permissionSet = new Set() }) {
+  const strict = process.env.ROLE_TASK_PERMISSIONS_ENABLED === "true";
   const canEdit =
     isAdmin
-    || permissionSet.has("production-line-attendance-report-manage")
-    || permissionSet.has("production-line-attendance-manage");
+    || (strict
+      ? permissionSet.has("production-piece-rate-adjust")
+      : permissionSet.has("production-line-attendance-report-manage")
+        || permissionSet.has("production-line-attendance-manage"));
+  const canCancel = isAdmin || (strict
+    ? permissionSet.has("production-piece-rate-cancel")
+    : canEdit);
   const canViewMoney =
     isAdmin
-    || canEdit
-    || permissionSet.has("production-line-attendance-piece-rate-money-view");
+    || permissionSet.has(REPORT_MONEY_PERMISSION_KEY);
   const canViewReport =
-    canEdit
-    || permissionSet.has("production-line-attendance-report-view")
-    || permissionSet.has("production-line-attendance-view");
+    isAdmin
+    || (strict
+      ? [
+        "production-piece-rate-report-view",
+        "production-piece-rate-report-export",
+        "production-piece-rate-report-print",
+      ].some((key) => permissionSet.has(key))
+      : canEdit
+        || permissionSet.has("production-line-attendance-report-view")
+        || permissionSet.has("production-line-attendance-view"));
 
-  return { canViewReport, canViewMoney, canEdit };
+  return { canViewReport, canViewMoney, canEdit, canCancel };
 }
 
 function normalizeText(value) {
@@ -662,12 +659,13 @@ async function reservePieceRateDocumentNo(
   machineCode,
   docYearBE,
   docMonth,
-  { source = "daily_scan", actorUserId = null, requestId = null, metadata = {} } = {}
+  { workDate, source = "daily_scan", actorUserId = null, requestId = null, metadata = {} } = {}
 ) {
   const { data, error } = await supabaseAdmin.rpc(PIECE_RATE_DOC_COUNTER_FUNCTION, {
     p_machine_code: machineCode,
     p_year_be: docYearBE,
     p_month: docMonth ?? null,
+    p_doc_date: workDate,
     p_source: source,
     p_actor_user_id: actorUserId,
     p_request_id: requestId,
@@ -712,7 +710,7 @@ async function raisePieceRateDocumentCounter(
   machineCode,
   docYearBE,
   docSeq,
-  { docNo = null, source = "system", actorUserId = null, requestId = null, metadata = {} } = {}
+  { workDate, docNo = null, source = "system", actorUserId = null, requestId = null, metadata = {} } = {}
 ) {
   const normalizedSeq = Number.parseInt(String(docSeq ?? ""), 10);
   if (!Number.isFinite(normalizedSeq) || normalizedSeq <= 0) {
@@ -723,6 +721,7 @@ async function raisePieceRateDocumentCounter(
     p_machine_code: machineCode,
     p_year_be: docYearBE,
     p_seq: Math.min(normalizedSeq, PIECE_RATE_DOC_SEQ_MAX),
+    p_doc_date: workDate,
     p_doc_no: docNo || null,
     p_source: source,
     p_actor_user_id: actorUserId,
@@ -1041,7 +1040,7 @@ function mapPieceRateReportRow(row, capabilities) {
     loggedAt: actualWeighedAt,
     actualWeighedAt,
     serverLoggedAt,
-    groupDayKey: String(actualWeighedAt || "").slice(0, 10) || "-",
+    groupDayKey: actualWeighedAt ? getBangkokWorkDate(actualWeighedAt) : "-",
     docNo: row.doc_no || null,
     lotNo: row.lot_no || null,
     machineCode: row.machine_code || "-",
@@ -1089,8 +1088,19 @@ function mapPieceRateReportRow(row, capabilities) {
   };
 }
 
-function buildCreateResponse(row, duplicated = false) {
+function applyPieceRateReportWageRules(rows, capabilities) {
+  return capabilities?.canViewMoney ? applyPieceRatePayPeriodWage(rows) : rows;
+}
 
+function canViewPieceRateRates(permission = {}) {
+  return process.env.ROLE_TASK_PERMISSIONS_ENABLED !== "true"
+    || permission.isAdmin
+    || permission.permissions?.includes("production-piece-rate-rate-view")
+    || permission.permissions?.includes(REPORT_MONEY_PERMISSION_KEY);
+}
+
+function buildCreateResponse(row, duplicated = false, permission = {}) {
+  const canViewRates = canViewPieceRateRates(permission);
   const inputMode = normalizeInputMode(row.input_mode_snapshot, "kg");
   const fallbackDescriptors = buildInputDescriptors(inputMode);
 
@@ -1130,8 +1140,8 @@ function buildCreateResponse(row, duplicated = false) {
       inputLabel: row.input_label_snapshot || fallbackDescriptors.inputLabel,
       inputUnitLabel: row.input_unit_label_snapshot || fallbackDescriptors.inputUnitLabel,
       normalizedKgAmount: Number(row.normalized_kg_amount_snapshot || 0),
-      payRatePerUnit: Number(row.pay_rate_per_unit_snapshot || 0),
-      payRatePerKg: Number(row.pay_rate_per_kg_snapshot || 0),
+      payRatePerUnit: canViewRates ? Number(row.pay_rate_per_unit_snapshot || 0) : null,
+      payRatePerKg: canViewRates ? Number(row.pay_rate_per_kg_snapshot || 0) : null,
       operatorUsername: row.operator_username_snapshot || row.operator_user_id || "-",
       docStatus: normalizeDocStatus(row.doc_status, DOC_STATUS_ACTIVE),
     },
@@ -1310,6 +1320,33 @@ async function fetchAllPieceRateReportRawRows(
   timestampColumn = "actual_weighed_at",
   includeActualWeighedAt = true
 ) {
+  if (Array.isArray(filters?.productKeys) && filters.productKeys.length > 20) {
+    const batches = [];
+    for (let i = 0; i < filters.productKeys.length; i += 20) {
+      batches.push(filters.productKeys.slice(i, i + 20));
+    }
+    const results = await Promise.all(
+      batches.map((batch) =>
+        fetchAllPieceRateReportRawRows(
+          supabaseAdmin,
+          selectColumns,
+          { ...filters, productKeys: batch },
+          timestampColumn,
+          includeActualWeighedAt
+        )
+      )
+    );
+    const seenIds = new Set();
+    const combined = [];
+    results.flat().forEach((row) => {
+      if (row?.id && !seenIds.has(row.id)) {
+        seenIds.add(row.id);
+        combined.push(row);
+      }
+    });
+    return combined;
+  }
+
   const chunkSize = 1000;
   let fromIndex = 0;
   const rows = [];
@@ -1351,7 +1388,7 @@ async function fetchAllPieceRateReportRawRows(
 }
 
 function buildPieceRateReportGroupKey(row) {
-  const dayKey = String(row.loggedAt || "").slice(0, 10) || "-";
+  const dayKey = row.loggedAt ? getBangkokWorkDate(row.loggedAt) : "-";
   return [
     dayKey,
     getEmployeeCodeMatchKey(row.rawEmployeeCode || row.employeeCode) || row.employeeCode || "-",
@@ -1360,8 +1397,8 @@ function buildPieceRateReportGroupKey(row) {
 }
 
 function compareGroupedPieceRateRows(left, right) {
-  const leftDay = String(left.groupDayKey || left.loggedAt || "").slice(0, 10);
-  const rightDay = String(right.groupDayKey || right.loggedAt || "").slice(0, 10);
+  const leftDay = left.groupDayKey || (left.loggedAt ? getBangkokWorkDate(left.loggedAt) : "");
+  const rightDay = right.groupDayKey || (right.loggedAt ? getBangkokWorkDate(right.loggedAt) : "");
   const dayCompare = leftDay.localeCompare(rightDay);
   if (dayCompare !== 0) return dayCompare;
 
@@ -1389,7 +1426,7 @@ function sortGroupedPieceRateRows(rows) {
 }
 
 function buildGroupedPieceRateSubtotalKey(row) {
-  const dayKey = String(row.groupDayKey || row.loggedAt || "").slice(0, 10) || "-";
+  const dayKey = row.groupDayKey || (row.loggedAt ? getBangkokWorkDate(row.loggedAt) : "-");
   const productCode = row.productCode || row.productSkuCode || row.productGoodsCode || row.productBarcode || "-";
   const productName = row.productName || "-";
   return `${dayKey}::${productCode}::${productName}`;
@@ -1500,7 +1537,7 @@ function aggregatePieceRateEmployeeRows(rows, capabilities) {
     const workTypeName = row.workTypeName || row.pieceRateProfileName || "-";
     const employeeGroupKey = `${getEmployeeCodeMatchKey(row.rawEmployeeCode || employeeCode) || employeeCode}::${workTypeName}`;
     const current = grouped.get(employeeGroupKey);
-    const dayKey = String(row.loggedAt || "").slice(0, 10) || "-";
+    const dayKey = row.loggedAt ? getBangkokWorkDate(row.loggedAt) : "-";
     const productKey = row.productGoodsCode || row.productCode || row.productSkuCode || row.productBarcode || "-";
 
     if (!current) {
@@ -1671,7 +1708,7 @@ function aggregatePieceRateProductRows(rows) {
   const grouped = new Map();
 
   rows.forEach((row) => {
-    const dayKey = String(row.loggedAt || "").slice(0, 10) || "-";
+    const dayKey = row.loggedAt ? getBangkokWorkDate(row.loggedAt) : "-";
     const productCode = row.productGoodsCode || row.productCode || row.productSkuCode || "-";
     const groupKey = `${dayKey}::${productCode}`;
     const current = grouped.get(groupKey);
@@ -1845,8 +1882,8 @@ async function reservePieceRateReportDocumentNo(
 }
 
 export async function listPieceRateReport(request) {
-  const permission = await requirePermissionKeys(request, REPORT_VIEW_PERMISSION_KEYS);
-  const permissionSet = await resolvePermissionSet(request, permission.userId);
+  const permission = await requireTaskPermission(request, "production-piece-rate-report-view");
+  const permissionSet = new Set(permission.permissions || []);
   const capabilities = buildReportCapabilities({
     isAdmin: permission.isAdmin,
     permissionSet,
@@ -1959,7 +1996,10 @@ export async function listPieceRateReport(request) {
       buildPieceRateReportSelectColumns({ includeActualWeighedAt: true }),
       baseFilters
     );
-    mappedRows = rawRows.map((row) => mapPieceRateReportRow(row, capabilities));
+    mappedRows = applyPieceRateReportWageRules(
+      rawRows.map((row) => mapPieceRateReportRow(row, capabilities)),
+      capabilities
+    );
     activeMappedRows = filterActivePieceRateRows(mappedRows);
     summarySourceRows = activeMappedRows;
     totalRecords = mappedRows.length;
@@ -1978,7 +2018,6 @@ export async function listPieceRateReport(request) {
     }
 
     mappedRows = (dataResult.data || []).map((row) => mapPieceRateReportRow(row, capabilities));
-    activeMappedRows = filterActivePieceRateRows(mappedRows);
     totalRecords = Number(countResult.count || 0);
 
     const summaryRawRows = await fetchAllPieceRateReportRawRows(
@@ -1986,9 +2025,15 @@ export async function listPieceRateReport(request) {
       buildPieceRateReportSelectColumns({ includeActualWeighedAt: true }),
       baseFilters
     );
-    summarySourceRows = filterActivePieceRateRows(
-      summaryRawRows.map((row) => mapPieceRateReportRow(row, capabilities))
-    );
+    summarySourceRows = filterActivePieceRateRows(applyPieceRateReportWageRules(
+      summaryRawRows.map((row) => mapPieceRateReportRow(row, capabilities)),
+      capabilities
+    ));
+    const roundedWageById = new Map(summarySourceRows.map((row) => [row.id, row.wageAmount]));
+    mappedRows = mappedRows.map((row) => roundedWageById.has(row.id)
+      ? { ...row, wageAmount: roundedWageById.get(row.id) }
+      : row);
+    activeMappedRows = filterActivePieceRateRows(mappedRows);
   }
 
   const normalizedRows = viewMode === "grouped"
@@ -2033,8 +2078,8 @@ export async function listPieceRateReport(request) {
 }
 
 export async function listPieceRateGroupDocuments(request) {
-  const permission = await requirePermissionKeys(request, REPORT_VIEW_PERMISSION_KEYS);
-  const permissionSet = await resolvePermissionSet(request, permission.userId);
+  const permission = await requireTaskPermission(request, "production-piece-rate-report-view");
+  const permissionSet = new Set(permission.permissions || []);
   const capabilities = buildReportCapabilities({
     isAdmin: permission.isAdmin,
     permissionSet,
@@ -2095,7 +2140,10 @@ export async function listPieceRateGroupDocuments(request) {
     throw new ApiError(500, "Failed to load piece-rate group documents", result.error.message);
   }
 
-  const rows = (result.data || []).map((row) => mapPieceRateReportRow(row, capabilities));
+  const rows = applyPieceRateReportWageRules(
+    (result.data || []).map((row) => mapPieceRateReportRow(row, capabilities)),
+    capabilities
+  );
   const summary = rows.reduce((acc, row) => {
     acc.totalInput += Number(row.inputValue || 0);
     acc.totalCount += Number(row.countValue || 0);
@@ -2182,8 +2230,8 @@ function getRevisionDocumentSummary(revisionRow, currentLog = {}) {
 }
 
 export async function listPieceRateRevisions(request, logId) {
-  const permission = await requirePermissionKeys(request, REPORT_VIEW_PERMISSION_KEYS);
-  const permissionSet = await resolvePermissionSet(request, permission.userId);
+  const permission = await requireTaskPermission(request, "production-piece-rate-report-view");
+  const permissionSet = new Set(permission.permissions || []);
   const capabilities = buildReportCapabilities({
     isAdmin: permission.isAdmin,
     permissionSet,
@@ -2269,9 +2317,9 @@ export async function listPieceRateRevisions(request, logId) {
   };
 }
 
-export async function exportPieceRateReportExcel(request) {
-  const permission = await requirePermissionKeys(request, REPORT_VIEW_PERMISSION_KEYS);
-  const permissionSet = await resolvePermissionSet(request, permission.userId);
+export async function exportPieceRateReportExcel(request, body = null) {
+  const permission = await requireTaskPermission(request, "production-piece-rate-report-export");
+  const permissionSet = new Set(permission.permissions || []);
   const capabilities = buildReportCapabilities({
     isAdmin: permission.isAdmin,
     permissionSet,
@@ -2282,6 +2330,7 @@ export async function exportPieceRateReportExcel(request) {
   }
 
   const { searchParams } = new URL(request.url);
+  const parsedFromQuery = parsePieceRateReportSearchParams(searchParams);
   const {
     search,
     dateFrom,
@@ -2292,7 +2341,15 @@ export async function exportPieceRateReportExcel(request) {
     hideReplaced,
     from,
     to,
-  } = parsePieceRateReportSearchParams(searchParams);
+  } = body && typeof body === "object"
+    ? {
+        ...parsedFromQuery,
+        ...body,
+        productKeys: Array.isArray(body.productKeys) ? body.productKeys : parsedFromQuery.productKeys,
+        from: body.from || body.dateFrom || parsedFromQuery.from,
+        to: body.to || body.dateTo || parsedFromQuery.to,
+      }
+    : parsedFromQuery;
 
   const supabaseAdmin = getSupabaseAdmin();
   const selectColumns = buildPieceRateReportSelectColumns();
@@ -2305,7 +2362,10 @@ export async function exportPieceRateReportExcel(request) {
     productKeys,
   });
 
-  const mappedRows = rawRows.map((row) => mapPieceRateReportRow(row, capabilities));
+  const mappedRows = applyPieceRateReportWageRules(
+    rawRows.map((row) => mapPieceRateReportRow(row, capabilities)),
+    capabilities
+  );
   const exportRows = viewMode === "grouped"
     ? aggregatePieceRateReportRows(mappedRows, capabilities)
     : viewMode === "employee"
@@ -2560,8 +2620,8 @@ export async function exportPieceRateReportExcel(request) {
 }
 
 export async function issuePieceRateReportPrintDocument(request, body = {}) {
-  const permission = await requirePermissionKeys(request, REPORT_VIEW_PERMISSION_KEYS);
-  const permissionSet = await resolvePermissionSet(request, permission.userId);
+  const permission = await requireTaskPermission(request, "production-piece-rate-report-print");
+  const permissionSet = new Set(permission.permissions || []);
   const capabilities = buildReportCapabilities({
     isAdmin: permission.isAdmin,
     permissionSet,
@@ -2600,7 +2660,10 @@ export async function issuePieceRateReportPrintDocument(request, body = {}) {
     productKeys: params.productKeys,
   });
 
-  const mappedRows = rawRows.map((row) => mapPieceRateReportRow(row, capabilities));
+  const mappedRows = applyPieceRateReportWageRules(
+    rawRows.map((row) => mapPieceRateReportRow(row, capabilities)),
+    capabilities
+  );
   const normalizedRows = params.viewMode === "grouped"
     ? aggregatePieceRateReportRows(mappedRows, capabilities)
     : params.viewMode === "employee"
@@ -2663,8 +2726,8 @@ export async function issuePieceRateReportPrintDocument(request, body = {}) {
 }
 
 export async function getPieceRateEmployeeSummaryDetails(request) {
-  const permission = await requirePermissionKeys(request, REPORT_VIEW_PERMISSION_KEYS);
-  const permissionSet = await resolvePermissionSet(request, permission.userId);
+  const permission = await requireTaskPermission(request, "production-piece-rate-report-view");
+  const permissionSet = new Set(permission.permissions || []);
   const capabilities = buildReportCapabilities({
     isAdmin: permission.isAdmin,
     permissionSet,
@@ -2717,13 +2780,16 @@ export async function getPieceRateEmployeeSummaryDetails(request) {
     throw new ApiError(500, "Failed to load employee summary details", result.error.message);
   }
 
-  const documents = (result.data || []).map((row) => mapPieceRateReportRow(row, capabilities));
+  const documents = applyPieceRateReportWageRules(
+    (result.data || []).map((row) => mapPieceRateReportRow(row, capabilities)),
+    capabilities
+  );
   const employeeRows = aggregatePieceRateEmployeeRows(documents, capabilities);
   const dailyGrouped = new Map();
   const productGrouped = new Map();
 
   documents.forEach((row) => {
-    const dayKey = String(row.loggedAt || "").slice(0, 10) || "-";
+    const dayKey = row.loggedAt ? getBangkokWorkDate(row.loggedAt) : "-";
     const productKey = row.productGoodsCode || row.productCode || row.productSkuCode || row.productBarcode || "-";
 
     const currentDay = dailyGrouped.get(dayKey) || {
@@ -2803,8 +2869,8 @@ export async function getPieceRateEmployeeSummaryDetails(request) {
 }
 
 export async function listPieceRateReportProducts(request) {
-  const permission = await requirePermissionKeys(request, REPORT_VIEW_PERMISSION_KEYS);
-  const permissionSet = await resolvePermissionSet(request, permission.userId);
+  const permission = await requireTaskPermission(request, "production-piece-rate-report-view");
+  const permissionSet = new Set(permission.permissions || []);
   const capabilities = buildReportCapabilities({
     isAdmin: permission.isAdmin,
     permissionSet,
@@ -2859,8 +2925,8 @@ export async function listPieceRateReportProducts(request) {
 }
 
 export async function listEditablePieceRateProducts(request) {
-  const permission = await requirePermissionKeys(request, REPORT_MANAGE_PERMISSION_KEYS);
-  const permissionSet = await resolvePermissionSet(request, permission.userId);
+  const permission = await requireTaskPermission(request, "production-piece-rate-adjust");
+  const permissionSet = new Set(permission.permissions || []);
   const capabilities = buildReportCapabilities({
     isAdmin: permission.isAdmin,
     permissionSet,
@@ -2937,7 +3003,8 @@ export async function listEditablePieceRateProducts(request) {
 }
 
 export async function lookupPieceRateProduct(request) {
-  await requirePermissionKeys(request, ATTENDANCE_PERMISSION_KEYS);
+  const permission = await requireTaskPermission(request, "production-piece-rate-master-view");
+  const canViewRates = canViewPieceRateRates(permission);
   const { searchParams } = new URL(request.url);
   const productBarcode = normalizeBarcode(searchParams.get("barcode") || searchParams.get("productBarcode"));
   if (!productBarcode) {
@@ -2971,15 +3038,15 @@ export async function lookupPieceRateProduct(request) {
         weightOptionId: resolved.profile.weightOptionId,
         weightOptionLabel: resolved.profile.weightOptionLabel,
         weightKg: resolved.profile.weightKg,
-        payRatePerKg: resolved.profile.payRatePerKg,
-        payRatePerUnit: resolved.profile.payRatePerUnit,
+        payRatePerKg: canViewRates ? resolved.profile.payRatePerKg : null,
+        payRatePerUnit: canViewRates ? resolved.profile.payRatePerUnit : null,
       },
     },
   };
 }
 
 export async function lookupPieceRateEmployee(request) {
-  await requirePermissionKeys(request, ATTENDANCE_PERMISSION_KEYS);
+  await requireTaskPermission(request, "production-piece-rate-master-view");
   const { searchParams } = new URL(request.url);
   const employeeCode = normalizeParam(searchParams.get("employeeCode"));
   const date = normalizeParam(searchParams.get("date")) || new Date().toISOString().slice(0, 10);
@@ -3001,9 +3068,12 @@ export async function lookupPieceRateEmployee(request) {
 }
 
 export async function getPieceRateOfflineMaster(request) {
-  await requirePermissionKeys(request, ATTENDANCE_PERMISSION_KEYS);
+  const permission = await requireTaskPermission(request, "production-piece-rate-master-view");
   const { searchParams } = new URL(request.url);
   const includeStaticMaster = searchParams.get("includeStaticMaster") !== "false";
+  if (includeStaticMaster && !canViewPieceRateRates(permission)) {
+    throw new ApiError(403, "Offline master requires piece-rate rate-view permission");
+  }
   const employeeCursor = normalizeCursorValue(searchParams.get("employeeCursor"));
   const employeePageSize = Math.min(
     Math.max(Number.parseInt(String(searchParams.get("employeePageSize") || "200"), 10) || 200, 50),
@@ -3118,14 +3188,24 @@ export async function createPieceRateLogInternal(supabaseAdmin, permission, body
   }
 
   if (existingLog.data) {
-    return buildCreateResponse(existingLog.data, true);
+    return buildCreateResponse(existingLog.data, true, permission);
   }
 
-  const loggedAt = body.loggedAt ? new Date(body.loggedAt) : new Date();
-  if (Number.isNaN(loggedAt.getTime())) {
+  const capturedAt = body.loggedAt ? new Date(body.loggedAt) : new Date();
+  if (Number.isNaN(capturedAt.getTime())) {
     throw new ApiError(400, "วันที่หรือรูปแบบเวลาไม่ถูกต้อง");
   }
-  const loggedAtIso = loggedAt.toISOString();
+  let workDate;
+  let loggedAtIso;
+  try {
+    workDate = validatePieceRateWorkDate(
+      body.workDate || body.work_date || getBangkokWorkDate(capturedAt)
+    );
+    loggedAtIso = resolvePieceRateWorkTimestamp({ workDate, capturedAt });
+  } catch (error) {
+    throw new ApiError(400, error?.message || "วันที่ทำงานไม่ถูกต้อง");
+  }
+  const loggedAt = new Date(loggedAtIso);
 
   const employeeCode = normalizeEmployeeCode(body.employeeCode || body.scanResult);
   if (!employeeCode) {
@@ -3143,7 +3223,7 @@ export async function createPieceRateLogInternal(supabaseAdmin, permission, body
   let employeeCheckOut = employeeSnapshotSource.checkOut ?? body.employeeCheckOut ?? body.employee_check_out;
 
   if (!employeeName) {
-    const dateStr = loggedAt.toISOString().slice(0, 10);
+    const dateStr = workDate;
     try {
       const resolvedEmp = await lookupEmployeeByCode(employeeCode, dateStr)
         || await lookupEmployeeSnapshotFromPieceRateLogs(supabaseAdmin, employeeCode);
@@ -3197,10 +3277,10 @@ export async function createPieceRateLogInternal(supabaseAdmin, permission, body
     inputValue,
     machineCode,
     source,
-    metadata,
+    metadata: { ...metadata, workDate },
   });
   if (duplicateLog) {
-    return buildCreateResponse(duplicateLog, true);
+    return buildCreateResponse(duplicateLog, true, permission);
   }
 
 
@@ -3221,6 +3301,9 @@ export async function createPieceRateLogInternal(supabaseAdmin, permission, body
       if (Number.isNaN(parsedDate.getTime()) || getBangkokDateKey(parsedDate) !== parsedDateKey) {
         throw new ApiError(400, "วันที่ในเลขที่เอกสารออฟไลน์ไม่ถูกต้อง");
       }
+      if (parsedDateKey !== workDate.replaceAll("-", "")) {
+        throw new ApiError(400, "วันที่ในเลขที่เอกสารไม่ตรงกับวันที่ทำงาน");
+      }
       docYearBE = parsedYear + 543;
 
       documentNo = {
@@ -3235,6 +3318,7 @@ export async function createPieceRateLogInternal(supabaseAdmin, permission, body
         docYearBE,
         parsedSeq,
         {
+          workDate,
           docNo: documentNo.docNo,
           source: toDocCounterSource(source),
           actorUserId: permission.userId,
@@ -3269,6 +3353,7 @@ export async function createPieceRateLogInternal(supabaseAdmin, permission, body
         docYearBE,
         docCounterHintSeq,
         {
+          workDate,
           source: "system",
           actorUserId: permission.userId,
           requestId,
@@ -3283,6 +3368,7 @@ export async function createPieceRateLogInternal(supabaseAdmin, permission, body
       docYearBE,
       getBangkokMonth(loggedAt),
       {
+        workDate,
         source: toDocCounterSource(source),
         actorUserId: permission.userId,
         requestId,
@@ -3305,12 +3391,23 @@ export async function createPieceRateLogInternal(supabaseAdmin, permission, body
       productCode: productGoodsCode,
       recordedAt: loggedAtIso,
     });
+  const actualPailWeightKg = inputMode === "pail" && body.actualWeightKg !== undefined
+    ? parsePositiveNumber(body.actualWeightKg, "actualWeightKg")
+    : null;
   const normalizedKgAmount = inputMode === "pail"
-    ? roundToScale(inputValue * Number(resolved.profile.weightKg || resolved.profile.kgPerPail || 0), 4)
+    ? roundToScale(
+      actualPailWeightKg
+        ?? inputValue * Number(resolved.profile.weightKg || resolved.profile.kgPerPail || 0),
+      4
+    )
     : roundToScale(inputValue, 4);
-  const wageAmount = wageBasis === "count"
-    ? roundToScale(countValue * Number(resolved.profile.payRatePerUnit || 0), 4)
-    : roundToScale(normalizedKgAmount * Number(resolved.profile.payRatePerKg || 0), 4);
+  const wageAmount = calculatePieceRateWageAmount({
+    wageBasis,
+    normalizedKgAmount,
+    countValue,
+    payRatePerKg: resolved.profile.payRatePerKg,
+    payRatePerUnit: resolved.profile.payRatePerUnit,
+  });
 
   const logId = body.id || body.requestId || crypto.randomUUID();
 
@@ -3357,12 +3454,14 @@ export async function createPieceRateLogInternal(supabaseAdmin, permission, body
     operator_user_id: permission.userId,
     operator_username_snapshot: operatorUsername,
     metadata: {
-      ...metadata,
+      ...alignPieceRateMetadataToWorkDate(metadata, loggedAtIso),
+      workDate,
       machineCode,
       resolvedInputMode: inputMode,
       resolvedWageBasis: wageBasis,
       countValue,
       normalizedKgAmount,
+      actualWeightKg: actualPailWeightKg,
     },
     machine_code: machineCode,
     doc_year_be: docYearBE,
@@ -3402,7 +3501,7 @@ export async function createPieceRateLogInternal(supabaseAdmin, permission, body
       }
     } else {
       const { duplicated, data } = rpcResult.data;
-      return buildCreateResponse(data, duplicated);
+      return buildCreateResponse(data, duplicated, permission);
     }
   } catch (rpcErr) {
     if (rpcErr instanceof ApiError) {
@@ -3416,7 +3515,7 @@ export async function createPieceRateLogInternal(supabaseAdmin, permission, body
   }
 
   if (!insertResult.error) {
-    return buildCreateResponse(insertResult.data, false);
+    return buildCreateResponse(insertResult.data, false, permission);
   }
 
   if (insertResult.error.code === "23505") {
@@ -3431,7 +3530,7 @@ export async function createPieceRateLogInternal(supabaseAdmin, permission, body
     }
 
     if (existingResult.data) {
-      return buildCreateResponse(existingResult.data, true);
+      return buildCreateResponse(existingResult.data, true, permission);
     }
   }
 
@@ -3445,9 +3544,13 @@ function recalculatePieceRateTotals(row, inputValue, countValue) {
   const normalizedKgAmount = inputMode === "pail"
     ? roundToScale(inputValue * resolvedWeightKg, 4)
     : roundToScale(inputValue, 4);
-  const wageAmount = wageBasis === "count"
-    ? roundToScale(countValue * Number(row.pay_rate_per_unit_snapshot || 0), 4)
-    : roundToScale(normalizedKgAmount * Number(row.pay_rate_per_kg_snapshot || 0), 4);
+  const wageAmount = calculatePieceRateWageAmount({
+    wageBasis,
+    normalizedKgAmount,
+    countValue,
+    payRatePerKg: row.pay_rate_per_kg_snapshot,
+    payRatePerUnit: row.pay_rate_per_unit_snapshot,
+  });
 
   return {
     inputMode,
@@ -3458,8 +3561,8 @@ function recalculatePieceRateTotals(row, inputValue, countValue) {
 }
 
 export async function updatePieceRateLog(request, logId, body = {}) {
-  const permission = await requirePermissionKeys(request, REPORT_MANAGE_PERMISSION_KEYS);
-  const permissionSet = await resolvePermissionSet(request, permission.userId);
+  const permission = await requireTaskPermission(request, "production-piece-rate-adjust");
+  const permissionSet = new Set(permission.permissions || []);
   const capabilities = buildReportCapabilities({
     isAdmin: permission.isAdmin,
     permissionSet,
@@ -3834,13 +3937,13 @@ export async function updatePieceRateLog(request, logId, body = {}) {
 }
 
 export async function cancelPieceRateLog(request, logId, body = {}) {
-  const permission = await requirePermissionKeys(request, REPORT_MANAGE_PERMISSION_KEYS);
-  const permissionSet = await resolvePermissionSet(request, permission.userId);
+  const permission = await requireTaskPermission(request, "production-piece-rate-cancel");
+  const permissionSet = new Set(permission.permissions || []);
   const capabilities = buildReportCapabilities({
     isAdmin: permission.isAdmin,
     permissionSet,
   });
-  if (!capabilities.canEdit) {
+  if (!capabilities.canCancel) {
     throw new ApiError(403, "Forbidden");
   }
 
@@ -3923,13 +4026,13 @@ export async function cancelPieceRateLog(request, logId, body = {}) {
 }
 
 export async function createPieceRateLog(request, body = {}) {
-  const permission = await requirePermissionKeys(request, ATTENDANCE_PERMISSION_KEYS);
+  const permission = await requireTaskPermission(request, "production-piece-rate-record");
   const supabaseAdmin = getSupabaseAdmin();
   return createPieceRateLogInternal(supabaseAdmin, permission, body);
 }
 
 export async function importPieceRateLogs(request, body = {}) {
-  const permission = await requirePermissionKeys(request, ATTENDANCE_PERMISSION_KEYS);
+  const permission = await requireTaskPermission(request, "production-piece-rate-record");
   const supabaseAdmin = getSupabaseAdmin();
 
   const items = Array.isArray(body.items) ? body.items : [];

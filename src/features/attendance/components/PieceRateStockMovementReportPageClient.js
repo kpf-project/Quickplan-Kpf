@@ -3,10 +3,12 @@
 console.log("[PieceRateStockReportClient] Module file initialized.");
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useUserProfile } from "@/lib/useUserProfile";
 import { paginateReportItems } from "@/features/attendance/utils/paginateReportItems";
 import { buildPieceRateIssueSummaryRows } from "@/features/attendance/utils/buildPieceRateIssueSummaryRows";
+import { ReportHeader as UniversalReportHeader, ReportFilterBar } from "@/components/print";
 import {
   ArrowLeft,
   Boxes,
@@ -56,11 +58,11 @@ function today(offset = 0) {
   }).format(date);
 }
 
-function formatQty(value) {
+function formatQty(value, digits = 0) {
   const numeric = Number(value || 0);
   if (!numeric) return "-";
   return numeric.toLocaleString("th-TH", {
-    maximumFractionDigits: 0,
+    maximumFractionDigits: digits,
   });
 }
 
@@ -118,17 +120,15 @@ function MetricCard({ label, value, tone = "navy" }) {
 function ReportHeader({ reportType, dateFrom, dateTo, summary }) {
   const title = getReportTitle(reportType);
   return (
-    <div className="report-title-section">
-      <div>
-        <div className="report-kicker">JAM LABEL STOCK REPORT</div>
-        <h1>{title}</h1>
-        <p>ช่วงวันที่ {dateFrom} ถึง {dateTo} · ข้อมูลแยกตามสินค้าและ LOT</p>
-      </div>
-      <div className="report-summary-text">
-        <span>จำนวนรายการ</span>
-        <strong>{Number(summary?.count || 0).toLocaleString("th-TH")}</strong>
-      </div>
-    </div>
+    <UniversalReportHeader
+      title={title}
+      subtitle="JAM LABEL STOCK REPORT"
+      meta={[
+        { label: "ช่วงวันที่", value: `${dateFrom} ถึง ${dateTo}` },
+        { label: "จำนวนรายการ", value: Number(summary?.count || 0).toLocaleString("th-TH") },
+      ]}
+      className="mb-4"
+    />
   );
 }
 
@@ -476,7 +476,7 @@ function getInboundStatusLabel(status) {
   return "-";
 }
 
-function InboundReportHeader({ dateFrom, dateTo, itemCount, printedAtLabel, profile, reportKind = "inbound" }) {
+function InboundReportHeader({ dateFrom, dateTo, itemCount, printedAtLabel, profile, reportKind = "inbound", pageIndex, totalPages, variant }) {
   const isIssueReport = reportKind === "issue";
   const isMovementReport = reportKind === "movement";
   const isBalanceReport = reportKind === "balance";
@@ -487,44 +487,20 @@ function InboundReportHeader({ dateFrom, dateTo, itemCount, printedAtLabel, prof
     ? "Stock Movement Report"
     : isBalanceReport ? "Stock Balance Report" : isIssueReport ? "Goods Issue Report" : reportKind === "inbound-fg" ? "Finished Goods Detailed Receipt Report" : "WIP Detailed Receipt Report";
   return (
-    <>
-      <header className="flex justify-between items-start border-b-2 border-black pb-4 mb-4">
-        <div className="flex items-center gap-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/LOGO-KPF1.png" alt="KPF" className="h-10 w-auto object-contain" />
-          <div className="flex flex-col text-left">
-            <h1 className="text-[14px] font-black leading-none uppercase">บริษัท เคพีฟู้ดส์ จำกัด</h1>
-            <p className="text-[9px] font-bold tracking-wider">K.P. foods Co.,Ltd.</p>
-          </div>
-        </div>
-        <div className="text-center pb-1">
-          <h2 className="text-[18px] font-black leading-none uppercase">
-            {reportTitle}
-          </h2>
-          <p className="text-[9px] font-bold uppercase tracking-[0.2em] mt-1">
-            {reportSubtitle}
-          </p>
-        </div>
-        <div className="text-[10px] leading-tight text-right flex flex-col gap-0.5">
-          <div><span className="font-bold mr-1">วันที่พิมพ์:</span> {printedAtLabel}</div>
-          <div><span className="font-bold mr-1">ผู้ออกรายงาน:</span> {profile?.username || profile?.name || "System"}</div>
-        </div>
-      </header>
-      <div className="grid grid-cols-3 border-t border-dashed border-black pt-2 mb-3">
-        <div className="flex gap-2 items-center text-left">
-          <span className="text-[11px] font-black uppercase whitespace-nowrap">แผนก:</span>
-          <span className="text-[11px] font-bold">แผนกป้ายแยม</span>
-        </div>
-        <div className="flex gap-2 items-center justify-center">
-          <span className="text-[11px] font-black uppercase whitespace-nowrap">{isBalanceReport ? "ยอดล่าสุด ณ วันที่:" : "ช่วงวันที่:"}</span>
-          <span className="text-[11px] font-bold">{isBalanceReport ? formatSingleDate(dateTo) : formatPeriod(dateFrom, dateTo)}</span>
-        </div>
-        <div className="flex gap-2 items-center justify-end text-right">
-          <span className="text-[11px] font-black uppercase whitespace-nowrap">รายการ:</span>
-          <span className="text-[11px] font-bold">{itemCount}</span>
-        </div>
-      </div>
-    </>
+    <UniversalReportHeader
+      title={reportTitle}
+      subtitle={reportSubtitle}
+      printedAt={printedAtLabel}
+      printedBy={profile?.username || profile?.name || "System"}
+      page={totalPages > 0 && variant !== "print" && pageIndex != null ? pageIndex + 1 : undefined}
+      totalPages={totalPages > 0 && variant !== "print" && totalPages != null ? totalPages : undefined}
+      meta={[
+        { label: "แผนก", value: "แผนกป้ายแยม" },
+        { label: isBalanceReport ? "ยอดล่าสุด ณ วันที่" : "ช่วงวันที่", value: isBalanceReport ? formatSingleDate(dateTo) : formatPeriod(dateFrom, dateTo) },
+        { label: "รายการ", value: itemCount },
+      ]}
+      className="mb-3"
+    />
   );
 }
 
@@ -878,7 +854,7 @@ function InboundReportA4({
                       ? [3, 11, 11, 28, 9, 6, 8, 24]
                       : isScreenInbound
                       ? [4, 11, 10, 20, 10, 5, 8, 5, 10, 11, 6]
-                      : [4, 12, 13, 21, 10, 5, 8, 12, 15]
+                      : [4, 12, 13, 21, 10, 5, 8, 12, 15] /* : [4, 12, 10, 21, 10, 5, 8, 5, 9, 16] */
                     ).map((width, index) => <col key={index} style={{ width: `${width}%` }} />)}
                   </colgroup>
                   <thead>
@@ -1132,45 +1108,21 @@ function InboundSummaryReportHeader({ dateFrom, dateTo, printedAtLabel, profile,
   const isFG = reportKind === "inbound-fg";
   const reportTitle = isFG ? "รายงานสรุป FG ที่ผลิตเสร็จ" : "รายงานสรุปรับเข้าป้ายแยม (WIP)";
   const reportSubtitle = isFG ? "Finished Goods Summary Receipt Report" : "WIP Summary Receipt Report";
-  
   return (
-    <>
-      <header className="flex justify-between items-start border-b-2 border-black pb-4 mb-4">
-        <div className="flex items-center gap-3 text-left">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/LOGO-KPF1.png" alt="KPF" className="h-10 w-auto object-contain" />
-          <div className="flex flex-col">
-            <h1 className="text-[14px] font-black leading-none uppercase text-black">บริษัท เคพีฟู้ดส์ จำกัด</h1>
-            <p className="text-[9px] font-bold text-black tracking-wider">K.P. foods Co.,Ltd.</p>
-          </div>
-        </div>
-        <div className="text-center pb-1">
-          <h2 className="text-[18px] font-black leading-none uppercase text-black">{reportTitle}</h2>
-          <p className="text-[9px] font-bold text-black uppercase tracking-[0.2em] mt-1">{reportSubtitle}</p>
-        </div>
-        <div className="text-[10px] leading-tight text-black text-right flex flex-col gap-0.5">
-          <div><span className="font-bold mr-1">วันที่พิมพ์:</span> {printedAtLabel}</div>
-          <div><span className="font-bold mr-1">ผู้ออกรายงาน:</span> {profile?.username || profile?.name || "System"}</div>
-          {totalPages > 0 && variant !== "print" && (
-            <div><span className="font-bold mr-1">หน้า:</span> {pageIndex + 1} / {totalPages}</div>
-          )}
-        </div>
-      </header>
-      <div className="grid grid-cols-3 border-t border-dashed border-black pt-2 mb-3">
-        <div className="flex gap-2 items-center text-left">
-          <span className="text-[11px] font-black uppercase whitespace-nowrap">แผนก:</span>
-          <span className="text-[11px] font-bold">แผนกป้ายแยม</span>
-        </div>
-        <div className="flex gap-2 items-center justify-center">
-          <span className="text-[11px] font-black uppercase whitespace-nowrap">ช่วงวันที่:</span>
-          <span className="text-[11px] font-bold">{formatPeriod(dateFrom, dateTo)}</span>
-        </div>
-        <div className="flex gap-2 items-center justify-end text-right">
-          <span className="text-[11px] font-black uppercase whitespace-nowrap">รายการสรุป:</span>
-          <span className="text-[11px] font-bold">{pageRowsCount}</span>
-        </div>
-      </div>
-    </>
+    <UniversalReportHeader
+      title={reportTitle}
+      subtitle={reportSubtitle}
+      printedAt={printedAtLabel}
+      printedBy={profile?.username || profile?.name || "System"}
+      page={totalPages > 0 && variant !== "print" && pageIndex != null ? pageIndex + 1 : undefined}
+      totalPages={totalPages > 0 && variant !== "print" && totalPages != null ? totalPages : undefined}
+      meta={[
+        { label: "แผนก", value: "แผนกป้ายแยม" },
+        { label: "ช่วงวันที่", value: formatPeriod(dateFrom, dateTo) },
+        { label: "รายการสรุป", value: pageRowsCount },
+      ]}
+      className="mb-3"
+    />
   );
 }
 
@@ -1460,7 +1412,7 @@ function IssueSummaryReportA4({
                 </colgroup>
                 <thead>
                   <tr className="border-b border-slate-400 bg-[#f5f5f5]">
-                    <th className={`${cellPadding} text-center text-[10px] font-bold`}>#</th>
+                    <th className={`${cellPadding} text-center text-[10px] font-bold`}>ลำดับ</th>
                     <th className={`${cellPadding} text-center text-[10px] font-bold`}>วันที่เบิก</th>
                     <th className={`${cellPadding} text-left text-[10px] font-bold`}>รหัส WIP</th>
                     <th className={`${cellPadding} text-left text-[10px] font-bold`}>สินค้า WIP</th>
@@ -1487,7 +1439,7 @@ function IssueSummaryReportA4({
                           </div>
                         ))}
                       </td>
-                      <td className={`${cellPadding} text-center font-bold`}>{formatQty(row.quantity)}</td>
+                      <td className={`${cellPadding} text-center font-bold`}>{formatQty(row.quantity, 3)}</td>
                       <td className={`${cellPadding} text-center font-bold`}>{formatWeight(row.totalWeightKg, 3)}</td>
                       <td className={`${cellPadding} whitespace-nowrap text-center font-mono font-bold`} title={row.fgProductCode}>{row.fgProductCode || "-"}</td>
                       <td className={`${cellPadding} issue-summary-name-cell whitespace-nowrap`} title={row.fgProductName}>{row.fgProductName || "-"}</td>
@@ -1498,7 +1450,7 @@ function IssueSummaryReportA4({
                   <tfoot>
                     <tr className="border-t-2 border-black bg-[#f5f5f5] font-black text-black">
                       <td colSpan={5} className={`${cellPadding} text-right`}>รวมทั้งหมด</td>
-                      <td className={`${cellPadding} text-center`}>{formatQty(totalQty)}</td>
+                      <td className={`${cellPadding} text-center`}>{formatQty(totalQty, 3)}</td>
                       <td className={`${cellPadding} text-center`}>{formatWeight(totalWeight, 3)}</td>
                       <td className={cellPadding} colSpan={2}>รายการเบิกสำเร็จ {summaryRows.length.toLocaleString("th-TH")} กลุ่ม</td>
                     </tr>
@@ -1533,12 +1485,14 @@ function IssueSummaryReportA4({
   );
 }
 
-export default function PieceRateStockMovementReportPageClient() {
+export default function PieceRateStockMovementReportPageClient({ initialReportType = "inbound", initialPrisonView = "receipt", initialDateFrom = PIECE_RATE_REPORT_START_DATE, initialDateTo } = {}) {
   const profile = useUserProfile();
-  const [dateFrom, setDateFrom] = useState(PIECE_RATE_REPORT_START_DATE);
-  const [dateTo, setDateTo] = useState(today());
+  const searchParams = useSearchParams();
+  const isReportCenter = searchParams?.get("reportCenter") === "1";
+  const [dateFrom, setDateFrom] = useState(initialDateFrom);
+  const [dateTo, setDateTo] = useState(initialDateTo || today());
   const [search, setSearch] = useState("");
-  const [reportType, setReportType] = useState("inbound");
+  const [reportType, setReportType] = useState(initialReportType);
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState({});
   const [isLoading, setIsLoading] = useState(true);
@@ -1550,7 +1504,7 @@ export default function PieceRateStockMovementReportPageClient() {
   const [issueStatusFilters, setIssueStatusFilters] = useState(["issue"]);
   const [isSummaryView, setIsSummaryView] = useState(false);
   const [openDropdown, setOpenDropdown] = useState(null);
-  const [prisonView, setPrisonView] = useState("receipt");
+  const [prisonView, setPrisonView] = useState(initialPrisonView);
   const isBalanceReport = reportType === "balance" || (reportType === "prison" && prisonView === "balance");
 
   console.log("[PieceRateStockReport] Main Render. State:", {
@@ -1915,6 +1869,7 @@ export default function PieceRateStockMovementReportPageClient() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
+    if (!params.has("report")) return;
     const nextReportType = normalizeReportType(params.get("report"));
     setReportType((current) => (current === nextReportType ? current : nextReportType));
   }, []);
@@ -1926,8 +1881,9 @@ export default function PieceRateStockMovementReportPageClient() {
 
   try {
     return (
-      <main className="piece-rate-stock-report min-h-screen bg-[#eef3f8] p-4 text-[#0b2d55]">
-<section className="mx-auto max-w-[1900px] overflow-hidden rounded-xl border border-[#b9cadc] bg-white shadow-sm">
+      <main className={`piece-rate-stock-report min-h-screen ${isReportCenter ? "bg-transparent p-1 pt-2" : "bg-[#eef3f8] p-4"} text-[#0b2d55]`}>
+<section className={`mx-auto max-w-[1900px] overflow-hidden ${isReportCenter ? "border-0 shadow-none rounded-none" : "rounded-xl border border-[#b9cadc] shadow-sm"} bg-white`}>
+        {!isReportCenter && (
         <header className="screen-header">
           <div>
             <div className="header-kicker">PIECE RATE STOCK</div>
@@ -1949,6 +1905,7 @@ export default function PieceRateStockMovementReportPageClient() {
             </Link>
           </div>
         </header>
+        )}
 
         {!["inbound", "issue", "movement", "balance"].includes(reportType) && (
           <div className="print-only">
@@ -1956,6 +1913,7 @@ export default function PieceRateStockMovementReportPageClient() {
           </div>
         )}
 
+        {!isReportCenter && (
         <nav className="report-tabs">
           {REPORT_TABS.map((tab) => {
             const Icon = tab.icon;
@@ -2035,8 +1993,9 @@ export default function PieceRateStockMovementReportPageClient() {
             );
           })}
         </nav>
+        )}
 
-        {reportType === "prison" ? (
+        {reportType === "prison" && !isReportCenter ? (
           <div className="flex items-center gap-2 border-b border-[#c9d5e4] bg-white px-4 py-3">
             <span className="mr-2 text-xs font-black text-slate-500">ประเภทรายงาน</span>
             {[
@@ -2051,88 +2010,86 @@ export default function PieceRateStockMovementReportPageClient() {
           </div>
         ) : null}
 
-        <form
-          className="filter-panel"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void loadRows();
-          }}
-        >
-          {reportType !== "balance" && (
-            reportType === "prison" && prisonView === "balance" ? null : <>
-              <label>
-                จากวันที่
-                <input type="date" min={PIECE_RATE_REPORT_START_DATE} value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
-              </label>
-              <label>
-                ถึงวันที่
-                <input type="date" min={PIECE_RATE_REPORT_START_DATE} value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
-              </label>
-            </>
-          )}
-          <label className="search-field">
-            ค้นหา
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="เลขป้าย, เอกสาร, สินค้า, LOT, พนักงาน"
-            />
-          </label>
-          {(reportType === "inbound" || reportType === "inbound-fg") && (
-            <label>
-              สถานะใบชั่ง
-              <select
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value)}
-                className="h-10 min-w-[150px] border border-[#c9d5e4] rounded-lg px-3 text-[#0f172a] text-sm font-bold bg-white focus:outline-none"
-              >
-                <option value="inbound">รับเข้าทั้งหมด</option>
-                <option value="ready">พร้อมเบิก</option>
-                <option value="issued">เบิกแล้ว</option>
-                <option value="cancelled">ยกเลิกชั่ง</option>
-              </select>
-            </label>
-          )}
-          {reportType === "issue" && !isSummaryView && (
-            <fieldset className="issue-status-filter flex flex-col gap-1 border-0 p-0">
-              <legend className="mb-1 text-xs font-bold text-[#334155]">สถานะการเบิก</legend>
-              <div className="flex h-10 items-center gap-1 rounded-lg border border-[#c9d5e4] bg-white px-2">
-                {[
-                  { value: "issue", label: "เบิกสำเร็จ" },
-                  { value: "issue_void", label: "ยกเลิกเบิก" },
-                ].map((option) => {
-                  const isChecked = issueStatusFilters.includes(option.value);
-                  return (
-                    <label
-                      key={option.value}
-                      className={`issue-status-option flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm font-bold transition-colors ${isChecked ? "bg-[#eef4fb] text-[#123c6c]" : "text-[#64748b]"}`}
+        <div className="p-4 print:hidden">
+          <ReportFilterBar
+            dateMode={reportType === "balance" || (reportType === "prison" && prisonView === "balance") ? "none" : "range"}
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            onDateFromChange={setDateFrom}
+            onDateToChange={setDateTo}
+            searchQuery={search}
+            onSearchQueryChange={setSearch}
+            searchPlaceholder="เลขป้าย, เอกสาร, สินค้า, LOT, พนักงาน"
+            searchLabel="ค้นหาป้าย / เอกสาร / สินค้า / LOT"
+            isLoading={isLoading}
+            onSearch={() => loadRows()}
+            searchButtonLabel="ค้นหา"
+            onPrint={() => window.print()}
+            printButtonLabel="พิมพ์ A4"
+            customControls={
+              <>
+                {(reportType === "inbound" || reportType === "inbound-fg") && (
+                  <label className="flex flex-col gap-1.5 text-xs font-bold text-[#102C57]">
+                    <span>สถานะใบชั่ง</span>
+                    <select
+                      value={statusFilter}
+                      onChange={(event) => setStatusFilter(event.target.value)}
+                      className="h-11 min-w-[150px] border border-[#dbe6f2] rounded-md px-3 text-[#0f172a] text-xs font-semibold bg-white outline-none focus:border-[#d4af37]"
                     >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => setIssueStatusFilters((current) => (
-                          current.includes(option.value)
-                            ? current.filter((value) => value !== option.value)
-                            : [...current, option.value]
-                        ))}
-                        className="h-4 w-4 accent-[#123c6c]"
-                      />
-                      {option.label}
-                    </label>
-                  );
-                })}
-              </div>
-            </fieldset>
-          )}
-          <button type="submit" className="primary-action">
-            <Search size={17} />
-            ค้นหา
-          </button>
-          <button type="button" className="ghost-action" onClick={() => void loadRows()}>
-            <RefreshCw size={17} />
-            รีเฟรช
-          </button>
-        </form>
+                      <option value="inbound">รับเข้าทั้งหมด</option>
+                      <option value="ready">พร้อมเบิก</option>
+                      <option value="issued">เบิกแล้ว</option>
+                      <option value="cancelled">ยกเลิกชั่ง</option>
+                    </select>
+                  </label>
+                )}
+                {reportType === "issue" && !isSummaryView && (
+                  <fieldset className="flex flex-col gap-1.5 border-0 p-0">
+                    <legend className="text-xs font-bold text-[#102C57]">สถานะการเบิก</legend>
+                    <div className="flex h-11 items-center gap-1.5 rounded-md border border-[#dbe6f2] bg-white px-2">
+                      {[
+                        { value: "issue", label: "เบิกสำเร็จ" },
+                        { value: "issue_void", label: "ยกเลิกเบิก" },
+                      ].map((option) => {
+                        const isChecked = issueStatusFilters.includes(option.value);
+                        return (
+                          <label
+                            key={option.value}
+                            className={`flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-xs font-bold transition-colors ${isChecked ? "bg-[#eef4fb] text-[#123c6c]" : "text-slate-500"}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => setIssueStatusFilters((current) => (
+                                current.includes(option.value)
+                                  ? current.filter((value) => value !== option.value)
+                                  : [...current, option.value]
+                              ))}
+                              className="h-3.5 w-3.5 accent-[#102C57]"
+                            />
+                            {option.label}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </fieldset>
+                )}
+              </>
+            }
+            actions={
+              <button
+                type="button"
+                onClick={() => void loadRows()}
+                disabled={isLoading}
+                className="inline-flex h-11 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-4 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+              >
+                <RefreshCw size={14} className={isLoading ? "animate-spin" : ""} />
+                รีเฟรช
+              </button>
+            }
+            className="mb-0 border-0 bg-white p-4 shadow-sm"
+          />
+        </div>
 
         <div className="report-body">
           {reportType === "movement" && (
@@ -2406,14 +2363,16 @@ export default function PieceRateStockMovementReportPageClient() {
               font-variant-numeric: tabular-nums;
             }
             .movement-a4-table th {
-              border-color: #64748b;
-              background: #f1f5f9;
+              border-color: #cbd5e1;
+              border-bottom: 2px solid #1a1c1e;
+              background: #f8f9fa;
+              color: #1a1c1e;
               font-weight: 900;
               text-align: center;
               white-space: nowrap;
             }
             .movement-a4-table .movement-group-header th {
-              background: #e2e8f0;
+              background: #f8f9fa;
             }
             .movement-a4-table tbody tr:nth-child(even) {
               background: #f8fafc;
@@ -2467,8 +2426,10 @@ export default function PieceRateStockMovementReportPageClient() {
               font-variant-numeric: tabular-nums;
             }
             .balance-a4-table th {
-              border-color: #64748b;
-              background: #f1f5f9;
+              border-color: #cbd5e1;
+              border-bottom: 2px solid #1a1c1e;
+              background: #f8f9fa;
+              color: #1a1c1e;
               font-weight: 900;
               text-align: center;
             }
@@ -2531,7 +2492,17 @@ export default function PieceRateStockMovementReportPageClient() {
             .issue-summary-report .issue-summary-lot-line + .issue-summary-lot-line {
               margin-top: 2px;
             }
+            @media screen {
+              .issue-summary-report.inbound-report-screen .issue-summary-table .issue-summary-name-cell {
+                white-space: normal !important;
+                overflow-wrap: anywhere;
+              }
+            }
             @media print {
+              * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
               @page {
                 size: ${(isSummaryView && reportType === "issue") || !(["balance"].includes(reportType) || isSummaryView) ? "A4 landscape" : "A4 portrait"} !important;
                 margin: 0 !important;
@@ -2588,7 +2559,8 @@ export default function PieceRateStockMovementReportPageClient() {
                 page-break-after: auto !important;
               }
               .stock-report-inbound .inbound-print-page,
-              .stock-report-inbound-fg .inbound-print-page {
+              .stock-report-inbound-fg .inbound-print-page,
+              .stock-report-prison .inbound-print-page {
                 width: ${isSummaryView ? "210mm" : "297mm"} !important;
               }
               .stock-report-movement .inbound-print-page {
@@ -2613,13 +2585,13 @@ export default function PieceRateStockMovementReportPageClient() {
               .inbound-print-page table td {
                 font-size: 10px !important;
                 padding: 3px 4px !important;
-                border: 0.5px solid #cbd5e1 !important;
+                border: 0.5pt solid #cbd5e1 !important;
                 white-space: nowrap !important;
                 overflow: visible !important;
                 text-overflow: clip !important;
               }
               .inbound-print-page table thead th {
-                border: 0.5px solid #000000 !important;
+                border: 0.5pt solid #000000 !important;
                 background-color: #f5f5f5 !important;
               }
               .inbound-print-page table thead {
@@ -2668,7 +2640,7 @@ export default function PieceRateStockMovementReportPageClient() {
               .inbound-print-page table tfoot td {
                 font-size: 10px !important;
                 padding: 3px 4px !important;
-                border: 0.5px solid #cbd5e1 !important;
+                border: 0.5pt solid #cbd5e1 !important;
               }
               .inbound-print-page table tfoot {
                 display: table-row-group !important;
@@ -2941,10 +2913,11 @@ export default function PieceRateStockMovementReportPageClient() {
         }
 
         .report-table th {
-          border: 1px solid #294f7a;
+          border: 1px solid #cbd5e1;
+          border-bottom: 2px solid #1a1c1e;
           padding: 8px 8px;
-          color: #fff;
-          background: var(--navy);
+          color: #1a1c1e;
+          background: #f8f9fa;
           font-weight: 900;
           vertical-align: middle;
         }

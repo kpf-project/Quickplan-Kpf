@@ -4,7 +4,8 @@ const DEFAULT_SCALE_AGENT_URL = "http://127.0.0.1:41952";
 const SCALE_AGENT_URL_STORAGE_KEY = "kpf-scale-serial-agent-url-v1";
 const SCALE_AGENT_RECONNECT_DELAY_MS = 3000;
 
-function resolveBaseUrl() {
+function resolveBaseUrl(localOnly = false) {
+  if (localOnly) return DEFAULT_SCALE_AGENT_URL;
   if (typeof window !== "undefined") {
     const configured = window.localStorage.getItem(SCALE_AGENT_URL_STORAGE_KEY);
     const normalizedConfigured = String(configured || "").trim();
@@ -16,8 +17,8 @@ function resolveBaseUrl() {
   return DEFAULT_SCALE_AGENT_URL;
 }
 
-function resolveStreamUrl() {
-  return `${resolveBaseUrl().replace(/^http/i, "ws")}/stream`;
+function resolveStreamUrl(localOnly = false) {
+  return `${resolveBaseUrl(localOnly).replace(/^http/i, "ws")}/stream`;
 }
 
 async function parseAgentResponse(response) {
@@ -33,8 +34,8 @@ export function getDefaultScaleAgentUrl() {
   return DEFAULT_SCALE_AGENT_URL;
 }
 
-export async function fetchScaleAgentHealth() {
-  const baseUrl = resolveBaseUrl();
+export async function fetchScaleAgentHealth({ localOnly = false } = {}) {
+  const baseUrl = resolveBaseUrl(localOnly);
   const response = await fetch(`${baseUrl}/health`, {
     method: "GET",
     cache: "no-store",
@@ -43,8 +44,8 @@ export async function fetchScaleAgentHealth() {
   return parseAgentResponse(response);
 }
 
-export async function fetchScaleAgentPorts() {
-  const baseUrl = resolveBaseUrl();
+export async function fetchScaleAgentPorts({ localOnly = false } = {}) {
+  const baseUrl = resolveBaseUrl(localOnly);
   const response = await fetch(`${baseUrl}/ports`, {
     method: "GET",
     cache: "no-store",
@@ -53,8 +54,8 @@ export async function fetchScaleAgentPorts() {
   return parseAgentResponse(response);
 }
 
-export async function fetchScaleAgentSerialConfig() {
-  const baseUrl = resolveBaseUrl();
+export async function fetchScaleAgentSerialConfig({ localOnly = false } = {}) {
+  const baseUrl = resolveBaseUrl(localOnly);
   const response = await fetch(`${baseUrl}/config/serial`, {
     method: "GET",
     cache: "no-store",
@@ -63,8 +64,8 @@ export async function fetchScaleAgentSerialConfig() {
   return parseAgentResponse(response);
 }
 
-export async function saveScaleAgentSerialConfig(payload) {
-  const baseUrl = resolveBaseUrl();
+export async function saveScaleAgentSerialConfig(payload, { localOnly = false } = {}) {
+  const baseUrl = resolveBaseUrl(localOnly);
   const response = await fetch(`${baseUrl}/config/serial`, {
     method: "POST",
     headers: {
@@ -77,7 +78,7 @@ export async function saveScaleAgentSerialConfig(payload) {
   return parseAgentResponse(response);
 }
 
-export function subscribeScaleAgentStream(handlers = {}) {
+export function subscribeScaleAgentStream(handlers = {}, { localOnly = false } = {}) {
   let socket = null;
   let reconnectTimer = null;
   let closedByCaller = false;
@@ -106,7 +107,7 @@ export function subscribeScaleAgentStream(handlers = {}) {
     }
 
     try {
-      socket = new WebSocket(resolveStreamUrl());
+    socket = new WebSocket(resolveStreamUrl(localOnly));
     } catch (error) {
       handlers.onError?.(error);
       scheduleReconnect();

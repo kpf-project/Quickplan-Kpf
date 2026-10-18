@@ -15,7 +15,9 @@ import {
   X,
 } from "lucide-react";
 import WeightScalePrimaryHeader from "@/features/production-line/components/WeightScalePrimaryHeader";
+import { createBarcodeScanQueue } from "@/features/production-line/lib/barcodeScanQueue";
 import {
+  cancelScaleReceiptByBarcodeRequest,
   cancelScaleReceiptRequest,
   fetchCancelableScaleReceipts,
 } from "@/features/production-line/services/scaleClient";
@@ -65,6 +67,7 @@ function normalizeRows(rows) {
         lotNo: String(row?.lotNo || "").trim() || "-",
         netWeightKg: Number(row?.netWeightKg || 0),
         weighedAt: row?.weighedAt || null,
+        alreadyCancelled: row?.alreadyCancelled === true,
       };
     })
     .filter(Boolean);
@@ -159,6 +162,10 @@ export default function WeightScaleCancelPageClient({
   const scannerRegionIdRef = useRef(`weight-cancel-camera-${Math.random().toString(16).slice(2)}`);
   const cameraScannerRef = useRef(null);
   const isSubmittingRef = useRef(false);
+  const scanQueueRef = useRef(null);
+  if (!scanQueueRef.current) {
+    scanQueueRef.current = createBarcodeScanQueue();
+  }
 
   const [barcode, setBarcode] = useState("");
   const [feedback, setFeedback] = useState("");
@@ -177,6 +184,7 @@ export default function WeightScaleCancelPageClient({
   const [pickerFeedback, setPickerFeedback] = useState("");
   const [pickerErrorMessage, setPickerErrorMessage] = useState("");
   const [activeReceiptId, setActiveReceiptId] = useState("");
+  const [isBarcodeSubmitting, setIsBarcodeSubmitting] = useState(false);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [isStartingCamera, setIsStartingCamera] = useState(false);
   const [cameraDevices, setCameraDevices] = useState([]);
@@ -217,8 +225,8 @@ export default function WeightScaleCancelPageClient({
   }, []);
 
   useEffect(() => {
-    isSubmittingRef.current = isPending;
-  }, [isPending]);
+    isSubmittingRef.current = isPending || isBarcodeSubmitting;
+  }, [isBarcodeSubmitting, isPending]);
 
   useEffect(() => {
     if (!toast) {
@@ -333,109 +341,125 @@ export default function WeightScaleCancelPageClient({
   );
 
   const completeCancel = useCallback(
-    (row, successPrefix = "ยกเลิกชั่ง") => {
-      if (!row?.receiptId) {
-        return;
+    (row, successPrefix = "ยกเลิกชั่ง", cancelledReceipt = null) => {
+      const resolvedRow = cancelledReceipt
+        ? normalizeRows([cancelledReceipt])[0]
+        : row;
+      if (!resolvedRow?.receiptId) {
+        return Promise.resolve();
       }
 
-      setActiveReceiptId(row.receiptId);
+      setActiveReceiptId(resolvedRow.receiptId);
       setFeedback("");
       setErrorMessage("");
       setPickerFeedback("");
       setPickerErrorMessage("");
 
-      startTransition(async () => {
-        try {
-          await cancelScaleReceiptRequest(row.receiptId, {
-            voidReason: "ยกเลิกจากหน้ายกเลิกชั่งผลิตภัณฑ์",
-          });
+      return new Promise((resolve) => {
+        startTransition(async () => {
+          try {
+            const cancellationResult =
+              cancelledReceipt ||
+              (await cancelScaleReceiptRequest(resolvedRow.receiptId, {
+                voidReason: "ยกเลิกจากหน้ายกเลิกชั่งผลิตภัณฑ์",
+              }));
 
-          const refreshPayload = await fetchCancelableScaleReceipts(
-            buildCancelableFilters(
-              {
-                ...pickerFilters,
-                page: pickerPagination.page,
-                limit: PAGE_LIMIT,
-              },
-              scope?.departmentId
-            )
-          );
+            const refreshPayload = await fetchCancelableScaleReceipts(
+              buildCancelableFilters(
+                {
+                  ...pickerFilters,
+                  page: pickerPagination.page,
+                  limit: PAGE_LIMIT,
+                },
+                scope?.departmentId
+              )
+            );
 
-          applyPickerPayload(refreshPayload);
-          setPickerFilters({
-            ...normalizeFilters(refreshPayload?.filters, todayReceiptDate),
-            page: refreshPayload?.pagination?.page || 1,
-            limit: PAGE_LIMIT,
-          });
+            applyPickerPayload(refreshPayload);
+            setPickerFilters({
+              ...normalizeFilters(refreshPayload?.filters, todayReceiptDate),
+              page: refreshPayload?.pagination?.page || 1,
+              limit: PAGE_LIMIT,
+            });
 
-          const cancelledRow = {
-            receiptId: row.receiptId,
-            barcode: row.barcode,
-            productCode: row.productCode,
-            productName: row.productName,
-            lotNo: row.lotNo,
-            netWeightKg: row.netWeightKg,
-            weighedAt: row.weighedAt,
-          };
+            const cancelledRow =
+              normalizeRows([cancellationResult])[0] || resolvedRow;
 
-          setSessionCancelledRows((prev) => {
-            if (prev.some((r) => r.receiptId === cancelledRow.receiptId)) {
-              return prev;
-            }
-            return [cancelledRow, ...prev];
-          });
+            setSessionCancelledRows((prev) => {
+              if (prev.some((r) => r.receiptId === cancelledRow.receiptId)) {
+                return prev;
+              }
+              return [cancelledRow, ...prev];
+            });
 
-          const voidedPayload = await fetchCancelableScaleReceipts({
-            departmentId: scope?.departmentId,
-            status: "voided",
-            page: 1,
-            limit: PAGE_LIMIT,
-          });
+            const voidedPayload = await fetchCancelableScaleReceipts({
+              departmentId: scope?.departmentId,
+              status: "voided",
+              page: 1,
+              limit: PAGE_LIMIT,
+            });
 
-          const normalized = normalizeRows(voidedPayload?.receipts);
-          const updatedSession = [
-            cancelledRow,
-            ...sessionCancelledRows.filter((r) => r.receiptId !== cancelledRow.receiptId),
-          ];
+            const normalized = normalizeRows(voidedPayload?.receipts);
+            const updatedSession = [
+              cancelledRow,
+              ...sessionCancelledRows.filter(
+                (r) => r.receiptId !== cancelledRow.receiptId
+              ),
+            ];
 
-          let merged = [...normalized];
-          updatedSession.forEach((sessionRow) => {
-            if (!merged.some((r) => r.receiptId === sessionRow.receiptId)) {
-              merged.unshift(sessionRow);
-            }
-          });
+            const merged = [...normalized];
+            updatedSession.forEach((sessionRow) => {
+              if (!merged.some((r) => r.receiptId === sessionRow.receiptId)) {
+                merged.unshift(sessionRow);
+              }
+            });
 
-          setVoidedRows(merged);
+            setVoidedRows(merged);
 
-          const extraRows = updatedSession.filter(
-            (sr) => !normalized.some((nr) => nr.receiptId === sr.receiptId)
-          );
-          const extraWeight = extraRows.reduce((sum, r) => sum + r.netWeightKg, 0);
+            const extraRows = updatedSession.filter(
+              (sr) => !normalized.some((nr) => nr.receiptId === sr.receiptId)
+            );
+            const extraWeight = extraRows.reduce(
+              (sum, r) => sum + r.netWeightKg,
+              0
+            );
 
-          setVoidedSummary({
-            totalCount: Number(voidedPayload?.summary?.totalCount || 0) + extraRows.length,
-            totalNetWeightKg: Number((Number(voidedPayload?.summary?.totalNetWeightKg || 0) + extraWeight).toFixed(3)),
-          });
+            setVoidedSummary({
+              totalCount:
+                Number(voidedPayload?.summary?.totalCount || 0) +
+                extraRows.length,
+              totalNetWeightKg: Number(
+                (
+                  Number(voidedPayload?.summary?.totalNetWeightKg || 0) +
+                  extraWeight
+                ).toFixed(3)
+              ),
+            });
 
-          const successMessage = `${successPrefix}บาร์โค้ด ${row.barcode} เรียบร้อยแล้ว`;
-          setFeedback(successMessage);
-          setToast({
-            tone: "success",
-            message: successMessage,
-          });
-          setBarcode("");
-          setActiveReceiptId("");
-          barcodeInputRef.current?.focus();
-        } catch (error) {
-          const message = error?.message || "ไม่สามารถยกเลิกชั่งได้";
-          setErrorMessage(message);
-          setPickerErrorMessage(message);
-          setToast({
-            tone: "error",
-            message,
-          });
-          setActiveReceiptId("");
-        }
+            const successMessage = cancellationResult?.alreadyCancelled
+              ? `บาร์โค้ด ${cancelledRow.barcode} ถูกยกเลิกไว้แล้ว`
+              : `${successPrefix}บาร์โค้ด ${cancelledRow.barcode} เรียบร้อยแล้ว`;
+            setFeedback(successMessage);
+            setToast({
+              tone: "success",
+              message: successMessage,
+            });
+            setBarcode("");
+            setActiveReceiptId("");
+            barcodeInputRef.current?.focus();
+          } catch (error) {
+            const message = error?.message || "ไม่สามารถยกเลิกชั่งได้";
+            setErrorMessage(message);
+            setPickerErrorMessage(message);
+            setToast({
+              tone: "error",
+              message,
+            });
+            setActiveReceiptId("");
+          } finally {
+            resolve();
+          }
+        });
       });
     },
     [
@@ -488,60 +512,31 @@ export default function WeightScaleCancelPageClient({
       setFeedback("");
       setErrorMessage("");
 
-      startTransition(async () => {
+      const queued = scanQueueRef.current.enqueue(normalizedBarcode, async (queuedBarcode) => {
+        setIsBarcodeSubmitting(true);
         try {
-          const lookupFilters = normalizeFilters(pickerFilters, todayReceiptDate);
-          const payload = await fetchCancelableScaleReceipts({
-            departmentId: scope?.departmentId,
-            dateFrom: lookupFilters.dateFrom,
-            dateTo: lookupFilters.dateTo,
-            barcode: normalizedBarcode,
-            productCodes: lookupFilters.productCodes,
-            page: 1,
-            limit: PAGE_LIMIT,
+          const receipt = await cancelScaleReceiptByBarcodeRequest(queuedBarcode, {
+            voidReason: "ยกเลิกจากหน้ายกเลิกชั่งผลิตภัณฑ์",
           });
-
-          const matchedRows = normalizeRows(payload?.receipts);
-          if (!matchedRows.length) {
-            throw new Error(`ไม่พบบาร์โค้ด ${normalizedBarcode} ที่พร้อมยกเลิกชั่ง`);
-          }
-
-          if (matchedRows.length === 1) {
-            completeCancel(matchedRows[0], sourceLabel);
-            return;
-          }
-
-          applyPickerPayload(payload);
-          setPickerFilters({
-            ...normalizeFilters(payload?.filters, todayReceiptDate),
-            barcode: normalizedBarcode,
-            page: payload?.pagination?.page || 1,
-            limit: PAGE_LIMIT,
-          });
-          setIsPickerOpen(true);
-          setPickerFeedback(
-            `พบบาร์โค้ด ${normalizedBarcode} มากกว่า 1 รายการ กรุณาเลือกรายการที่ต้องการยกเลิก`
-          );
-          setPickerErrorMessage("");
+          await completeCancel(null, sourceLabel, receipt);
         } catch (error) {
-          const message = error?.message || "ไม่สามารถค้นหารายการชั่งจากบาร์โค้ดได้";
+          const message = error?.message || "ไม่สามารถยกเลิกชั่งจากบาร์โค้ดได้";
           setErrorMessage(message);
           setFeedback("");
           setToast({
             tone: "error",
             message,
           });
+        } finally {
+          setIsBarcodeSubmitting(false);
         }
       });
+
+      if (!queued.accepted) {
+        setFeedback(`กำลังตรวจสอบบาร์โค้ด ${normalizedBarcode} กรุณารอสักครู่`);
+      }
     },
-    [
-      applyPickerPayload,
-      completeCancel,
-      pickerFilters,
-      scope?.departmentId,
-      startTransition,
-      todayReceiptDate,
-    ]
+    [completeCancel]
   );
 
   const stopCameraScanner = useCallback(async () => {
@@ -752,9 +747,9 @@ export default function WeightScaleCancelPageClient({
       />
 
       {isCameraOpen ? (
-        <div className="fixed inset-0 z-[220] flex items-center justify-center bg-[#102C57]/80 px-4 py-6 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[220] flex items-center justify-center bg-[var(--surface-navy,#102C57)]/80 px-4 py-6 backdrop-blur-sm">
           <div className="relative flex w-full max-w-3xl flex-col overflow-hidden border border-[#d9c27a] bg-white shadow-[0_24px_70px_rgba(8,17,29,0.35)]">
-            <div className="flex items-start justify-between gap-4 border-b border-[#d7dde5] bg-[#102C57] px-4 py-4 text-white sm:px-5">
+            <div className="flex items-start justify-between gap-4 border-b border-[#d7dde5] bg-[var(--surface-navy,#102C57)] px-4 py-4 text-white sm:px-5">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.2em] text-[#d4af37]">
                   Camera Scanner
@@ -788,7 +783,7 @@ export default function WeightScaleCancelPageClient({
             </div>
 
             <div className="bg-[#f8fafc] p-4 sm:p-5">
-              <div className="overflow-hidden border border-[#d9c27a] bg-[#102C57]">
+              <div className="overflow-hidden border border-[#d9c27a] bg-[var(--surface-navy,#102C57)]">
                 <div
                   id={scannerRegionIdRef.current}
                   className="mx-auto aspect-[4/3] w-full max-w-[34rem] overflow-hidden bg-black"
@@ -807,9 +802,9 @@ export default function WeightScaleCancelPageClient({
       ) : null}
 
       {isPickerOpen ? (
-        <div className="fixed inset-0 z-[210] flex items-center justify-center bg-[#102C57]/78 px-3 py-4 backdrop-blur-sm sm:px-4 sm:py-6">
+        <div className="fixed inset-0 z-[210] flex items-center justify-center bg-[var(--surface-navy,#102C57)]/78 px-3 py-4 backdrop-blur-sm sm:px-4 sm:py-6">
           <div className="flex max-h-[92vh] w-full max-w-7xl flex-col overflow-hidden border border-[#d9c27a] bg-white shadow-[0_24px_70px_rgba(8,17,29,0.35)]">
-            <div className="flex items-start justify-between gap-4 border-b border-[#d7dde5] bg-[#102C57] px-4 py-4 text-white sm:px-5">
+            <div className="flex items-start justify-between gap-4 border-b border-[#d7dde5] bg-[var(--surface-navy,#102C57)] px-4 py-4 text-white sm:px-5">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.2em] text-[#d4af37]">
                   เลือกรายการย้อนหลัง
@@ -889,7 +884,7 @@ export default function WeightScaleCancelPageClient({
                       type="button"
                       onClick={handlePickerSearch}
                       disabled={isPending}
-                      className="inline-flex h-12 flex-1 items-center justify-center gap-2 border border-[#d4af37] bg-[#102C57] px-4 text-sm font-black uppercase tracking-[0.12em] text-[#fff7df] transition hover:bg-[#173b67] disabled:cursor-not-allowed disabled:opacity-60"
+                      className="inline-flex h-12 flex-1 items-center justify-center gap-2 border border-[#d4af37] bg-[var(--surface-navy,#102C57)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[#fff7df] transition hover:bg-[#173b67] disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {isPending ? (
                         <RefreshCw size={16} className="animate-spin" />
@@ -1126,7 +1121,7 @@ export default function WeightScaleCancelPageClient({
                       || !pickerPagination.totalPages
                       || pickerPagination.page >= pickerPagination.totalPages
                     }
-                    className="inline-flex h-10 items-center justify-center border border-[#102C57] bg-[#102C57] px-4 text-[11px] font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#173b67] disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex h-10 items-center justify-center border border-[#102C57] bg-[var(--surface-navy,#102C57)] px-4 text-[11px] font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#173b67] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     ถัดไป
                   </button>
@@ -1226,7 +1221,7 @@ export default function WeightScaleCancelPageClient({
                 <button
                   type="button"
                   onClick={() => void handleOpenCamera()}
-                  className="flex items-center justify-center gap-2 border-2 border-[#102C57] px-4 py-4 text-[11px] font-black uppercase tracking-[0.18em] text-[#102C57] transition hover:bg-[#102C57] hover:text-white"
+                  className="flex items-center justify-center gap-2 border-2 border-[#102C57] px-4 py-4 text-[11px] font-black uppercase tracking-[0.18em] text-[#102C57] transition hover:bg-[var(--surface-navy,#102C57)] hover:text-white"
                 >
                   <Camera size={16} />
                   สแกนด้วยกล้อง
@@ -1242,7 +1237,7 @@ export default function WeightScaleCancelPageClient({
               </div>
             </div>
 
-            <div className="bg-[#102C57] px-4 py-8 text-center sm:px-10 lg:py-10">
+            <div className="bg-[var(--surface-navy,#102C57)] px-4 py-8 text-center sm:px-10 lg:py-10">
               <div className="mx-auto max-w-4xl">
                 <div className="flex items-center justify-center gap-3">
                   <div className="flex items-center gap-2 border-2 border-[#d4af37]/35 px-4 py-2 text-[10px] font-black uppercase tracking-[0.24em] text-[#f3d67a]">
@@ -1256,6 +1251,7 @@ export default function WeightScaleCancelPageClient({
                   <input
                     ref={barcodeInputRef}
                     value={barcode}
+                    disabled={isPending || isBarcodeSubmitting}
                     onChange={(event) => setBarcode(event.target.value)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
@@ -1291,7 +1287,7 @@ export default function WeightScaleCancelPageClient({
                       onClick={() => setActiveTab("cancelable")}
                       className={`inline-flex h-10 items-center gap-2 border px-4 text-xs font-black uppercase tracking-[0.12em] transition ${
                         activeTab === "cancelable"
-                          ? "border-[#d4af37] bg-[#102C57] text-[#fff7df]"
+                          ? "border-[#d4af37] bg-[var(--surface-navy,#102C57)] text-[#fff7df]"
                           : "border-[#d7dde5] bg-white text-[#102C57] hover:border-[#d4af37]"
                       }`}
                     >
@@ -1303,7 +1299,7 @@ export default function WeightScaleCancelPageClient({
                       onClick={() => setActiveTab("voided")}
                       className={`inline-flex h-10 items-center gap-2 border px-4 text-xs font-black uppercase tracking-[0.12em] transition ${
                         activeTab === "voided"
-                          ? "border-[#d4af37] bg-[#102C57] text-[#fff7df]"
+                          ? "border-[#d4af37] bg-[var(--surface-navy,#102C57)] text-[#fff7df]"
                           : "border-[#d7dde5] bg-white text-[#102C57] hover:border-[#d4af37]"
                       }`}
                     >

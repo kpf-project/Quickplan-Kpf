@@ -1,9 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { CalendarDays, Eye, Loader2, Printer, RefreshCcw, Search } from "lucide-react";
 import WipBalanceReportClient from "./WipBalanceReportClient";
 import FgPackingReportClient from "./FgPackingReportClient";
+import { ReportFilterBar } from "@/components/print";
+import PackingHistoryTable from "@/features/production-line/components/PackingHistoryTable";
 
 function formatDate(value) {
   if (!value) return "-";
@@ -36,11 +39,14 @@ function MetricCard({ label, value, tone = "navy" }) {
   );
 }
 
-export default function FgWipReportTab({ productionDate }) {
-  const [subTab, setSubTab] = useState("daily");
+export default function FgWipReportTab({ productionDate, initialSubTab = "daily" }) {
+  const searchParams = useSearchParams();
+  const isReportCenter = searchParams?.get("reportCenter") === "1";
+  const [subTab, setSubTab] = useState(initialSubTab);
   const [searchDate, setSearchDate] = useState(productionDate);
   const [reportDate, setReportDate] = useState(productionDate);
   const [records, setRecords] = useState([]);
+  const [packingRecords, setPackingRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -54,7 +60,9 @@ export default function FgWipReportTab({ productionDate }) {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error || "โหลดรายงานไม่สำเร็จ");
       setRecords(payload?.data || []);
+      setPackingRecords(payload?.packingDocuments || []);
     } catch (err) {
+      setRecords([]); setPackingRecords([]);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -92,7 +100,7 @@ export default function FgWipReportTab({ productionDate }) {
   };
 
   const handleSearch = (event) => {
-    event.preventDefault();
+    event?.preventDefault();
     if (!searchDate || loading) return;
     if (searchDate === reportDate) {
       void loadData();
@@ -102,43 +110,45 @@ export default function FgWipReportTab({ productionDate }) {
   };
 
   return (
-    <div className="mx-auto max-w-[1550px] p-4 lg:p-6">
+    <div className={`mx-auto max-w-[1550px] p-4 lg:p-6 ${isReportCenter ? "pt-2 lg:pt-3" : ""}`}>
       {/* Sub-tab selection (print-hidden) */}
-      <div className="print-hidden mb-6 flex border-b border-gray-200">
-        <button
-          type="button"
-          onClick={() => setSubTab("daily")}
-          className={`px-6 py-3 font-bold text-sm border-b-2 transition ${
-            subTab === "daily"
-              ? "border-[#102C57] text-[#102C57]"
-              : "border-transparent text-slate-500 hover:text-slate-700"
-          }`}
-        >
-          รายงานบันทึกประจำวัน
-        </button>
-        <button
-          type="button"
-          onClick={() => setSubTab("wip-balance")}
-          className={`px-6 py-3 font-bold text-sm border-b-2 transition ${
-            subTab === "wip-balance"
-              ? "border-[#102C57] text-[#102C57]"
-              : "border-transparent text-slate-500 hover:text-slate-700"
-          }`}
-        >
-          รายงานสต็อก WIP ค้างไลน์สะสม
-        </button>
-        <button
-          type="button"
-          onClick={() => setSubTab("packing")}
-          className={`px-6 py-3 font-bold text-sm border-b-2 transition ${
-            subTab === "packing"
-              ? "border-[#102C57] text-[#102C57]"
-              : "border-transparent text-slate-500 hover:text-slate-700"
-          }`}
-        >
-          รายงานการบรรจุ
-        </button>
-      </div>
+      {!isReportCenter && (
+        <div className="print-hidden mb-6 flex border-b border-gray-200">
+          <button
+            type="button"
+            onClick={() => setSubTab("daily")}
+            className={`px-6 py-3 font-bold text-sm border-b-2 transition ${
+              subTab === "daily"
+                ? "border-[#102C57] text-[#102C57]"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            รายงานบันทึกประจำวัน
+          </button>
+          <button
+            type="button"
+            onClick={() => setSubTab("wip-balance")}
+            className={`px-6 py-3 font-bold text-sm border-b-2 transition ${
+              subTab === "wip-balance"
+                ? "border-[#102C57] text-[#102C57]"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            รายงานสต็อก WIP ค้างไลน์สะสม
+          </button>
+          <button
+            type="button"
+            onClick={() => setSubTab("packing")}
+            className={`px-6 py-3 font-bold text-sm border-b-2 transition ${
+              subTab === "packing"
+                ? "border-[#102C57] text-[#102C57]"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            รายงานการบรรจุ
+          </button>
+        </div>
+      )}
 
       {subTab === "packing" ? (
         <FgPackingReportClient productionDate={productionDate} />
@@ -311,48 +321,21 @@ export default function FgWipReportTab({ productionDate }) {
             เลือกดูและพิมพ์รายงานด้วยความกว้างเต็มขนาด A4 แนวนอน
           </p>
         </div>
-        <form onSubmit={handleSearch} className="flex flex-wrap items-end gap-2">
-          <label className="grid gap-1 text-xs font-bold text-[#061f43]">
-            <span className="flex items-center gap-1.5">
-              <CalendarDays size={14} className="text-[#d9a514]" />
-              วันที่รายงาน
-            </span>
-            <input
-              type="date"
-              value={searchDate}
-              onChange={(event) => setSearchDate(event.target.value)}
-              className="h-10 rounded border border-[#9eacbd] bg-white px-3 text-sm font-semibold text-[#061f43] outline-none focus:border-[#d9a514] focus:ring-2 focus:ring-[#d9a514]/20"
-              aria-label="เลือกวันที่รายงาน"
-              required
-            />
-          </label>
-          <button
-            type="submit"
-            disabled={loading || !searchDate}
-            className="flex h-10 items-center justify-center gap-2 rounded bg-[#d9a514] px-4 font-bold text-[#061f43] hover:bg-[#e3b72c] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {loading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
-            ค้นหา
-          </button>
-          <button
-            type="button"
-            onClick={loadData}
-            disabled={loading}
-            className="flex h-10 items-center justify-center gap-2 rounded border border-[#061f43] px-4 font-semibold text-[#061f43] hover:bg-[#edf2f7] disabled:opacity-50 cursor-pointer"
-          >
-            {loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCcw size={15} />}
-            รีเฟรช
-          </button>
-          <button
-            type="button"
-            onClick={handlePrint}
-            disabled={loading || records.length === 0}
-            className="flex h-10 items-center justify-center gap-2 rounded bg-[#061f43] px-4 font-semibold text-white hover:bg-[#0c2e5c] disabled:opacity-50 cursor-pointer"
-          >
-            <Printer size={16} className="text-[#d9a514]" />
-            พิมพ์รายงาน (A4 แนวนอน)
-          </button>
-        </form>
+        <div className="w-full lg:w-auto">
+          <ReportFilterBar
+            dateMode="single"
+            date={searchDate}
+            onDateChange={setSearchDate}
+            dateLabel="วันที่รายงาน"
+            isLoading={loading}
+            onSearch={handleSearch}
+            onReset={loadData}
+            resetButtonLabel="รีเฟรช"
+            onPrint={handlePrint}
+            printButtonLabel="พิมพ์ A4 แนวนอน"
+            className="!mb-0 !p-2 border-0 bg-transparent shadow-none"
+          />
+        </div>
       </div>
 
       {error ? (
@@ -482,6 +465,7 @@ export default function FgWipReportTab({ productionDate }) {
             )}
           </table>
         </div>
+        {packingRecords.length > 0 && <div className="mt-4"><PackingHistoryTable title="รายการจากหน้าบรรจุหลายหน่วย (แสดงตามหน่วยจริง ไม่รวมในยอดปี๊บด้านบน)" records={packingRecords} /></div>}
       </div>
       </div>
       )}

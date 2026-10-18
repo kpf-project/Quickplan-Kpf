@@ -4,7 +4,7 @@ export default function StockBalanceLoading() {
   return (
     <div className="min-h-screen bg-[#f4f6f9] pb-12">
       {/* Header Skeleton */}
-      <div className="bg-[#102C57] text-white shadow-md">
+      <div className="bg-[var(--surface-navy,#102C57)] text-white shadow-md">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3">
             <div className="h-8 w-8 animate-pulse rounded bg-white/20" />

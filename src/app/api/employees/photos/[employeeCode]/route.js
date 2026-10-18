@@ -1,13 +1,8 @@
 import { ApiError, getSupabaseAdmin, jsonError } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 
 export const dynamic = "force-dynamic";
 
-const VIEW_PERMISSIONS = [
-  "admin-employees",
-  "production-line-attendance-view",
-  "production-line-attendance-manage",
-];
 const MAX_IMAGE_DATA_LENGTH = 750_000;
 const IMAGE_DATA_PATTERN = /^data:image\/(webp|jpeg|png);base64,/i;
 
@@ -17,7 +12,7 @@ function normalizeEmployeeCode(value) {
 
 export async function GET(request, { params }) {
   try {
-    await requirePermissionKeys(request, VIEW_PERMISSIONS);
+    await requireTaskPermission(request, "hr-employee-photos-view");
     const { employeeCode: rawEmployeeCode } = await params;
     const employeeCode = normalizeEmployeeCode(rawEmployeeCode);
     const { data, error } = await getSupabaseAdmin()
@@ -44,7 +39,7 @@ export async function GET(request, { params }) {
 
 export async function PUT(request, { params }) {
   try {
-    const permission = await requirePermissionKeys(request, ["admin-employees"]);
+    const permission = await requireTaskPermission(request, "hr-employee-photos-upload");
     const { employeeCode: rawEmployeeCode } = await params;
     const employeeCode = normalizeEmployeeCode(rawEmployeeCode);
     const body = await request.json();
@@ -68,7 +63,7 @@ export async function PUT(request, { params }) {
 
 export async function DELETE(request, { params }) {
   try {
-    await requirePermissionKeys(request, ["admin-employees"]);
+    await requireTaskPermission(request, "hr-employee-photos-delete");
     const { employeeCode: rawEmployeeCode } = await params;
     const employeeCode = normalizeEmployeeCode(rawEmployeeCode);
     const { error } = await getSupabaseAdmin().from("employee_photos").delete().eq("employee_code", employeeCode);

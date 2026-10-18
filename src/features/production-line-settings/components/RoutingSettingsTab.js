@@ -817,7 +817,7 @@ export default function RoutingSettingsTab({ canManage = false }) {
       {/* MAIN UNIFIED FULL-WIDTH CARD */}
       <section className="border-y md:border border-[#d2d2d2] bg-white rounded-none md:rounded-[2px] flex flex-col h-full lg:h-[calc(100vh-180px)] overflow-hidden">
         {/* HEADER BLOCK */}
-        <div className="border-b border-[#d2d2d2] bg-[#102C57] px-4 py-3.5 text-white flex flex-col md:flex-row md:items-center md:justify-between gap-3 shrink-0">
+        <div className="border-b border-[#d2d2d2] bg-[var(--surface-navy,#102C57)] px-4 py-3.5 text-white flex flex-col md:flex-row md:items-center md:justify-between gap-3 shrink-0">
           <div>
             <div className="text-xs font-bold uppercase tracking-[0.16em] text-[#d4af37]">
               Routing Master
@@ -1001,7 +1001,7 @@ export default function RoutingSettingsTab({ canManage = false }) {
                     setCloneModeActive(false);
                   }}
                   disabled={!sourceFgSkuCode}
-                  className="inline-flex h-8 items-center bg-[#102C57] text-[#d4af37] px-3 text-sm font-extrabold hover:bg-[#0b1f3f] disabled:opacity-50 transition-all rounded-[2px]"
+                  className="inline-flex h-8 items-center bg-[var(--surface-navy,#102C57)] text-[#d4af37] px-3 text-sm font-extrabold hover:bg-[#0b1f3f] disabled:opacity-50 transition-all rounded-[2px]"
                 >
                   ตกลง (Clone)
                 </button>
@@ -1023,7 +1023,7 @@ export default function RoutingSettingsTab({ canManage = false }) {
 
           {/* BULK ACTION BAR */}
           {selectedRowKeys.size > 0 && (
-            <div className="bg-[#102C57] text-[#d4af37] px-4 py-3 flex flex-wrap items-center justify-between gap-3 border-b border-[#d2d2d2] rounded-[2px] mx-4 my-2">
+            <div className="bg-[var(--surface-navy,#102C57)] text-[#d4af37] px-4 py-3 flex flex-wrap items-center justify-between gap-3 border-b border-[#d2d2d2] rounded-[2px] mx-4 my-2">
               <div className="flex items-center gap-2">
                 <span className="text-[12px] bg-[#d4af37] text-[#102C57] px-2 py-0.5 rounded-full font-extrabold">
                   {selectedRowKeys.size} รายการ
@@ -1041,7 +1041,7 @@ export default function RoutingSettingsTab({ canManage = false }) {
                       event.target.value = "";
                     }
                   }}
-                  className="h-8 border border-[#d4af37] bg-[#102C57] text-white px-2 text-xs font-bold outline-none rounded-[2px] cursor-pointer"
+                  className="h-8 border border-[#d4af37] bg-[var(--surface-navy,#102C57)] text-white px-2 text-xs font-bold outline-none rounded-[2px] cursor-pointer"
                 >
                   <option value="" className="bg-white text-slate-800">เลือกห้องผลิต...</option>
                   {workCentersByDepartment.map((wc) => (
@@ -1059,7 +1059,7 @@ export default function RoutingSettingsTab({ canManage = false }) {
                       event.target.value = "";
                     }
                   }}
-                  className="h-8 border border-[#d4af37] bg-[#102C57] text-white px-2 text-xs font-bold outline-none rounded-[2px] cursor-pointer"
+                  className="h-8 border border-[#d4af37] bg-[var(--surface-navy,#102C57)] text-white px-2 text-xs font-bold outline-none rounded-[2px] cursor-pointer"
                 >
                   <option value="" className="bg-white text-slate-800">เลือกโหมดแยกใบ...</option>
                   <option value="merge_all" className="bg-white text-slate-800">รวมทุกประเภท</option>
@@ -1074,7 +1074,7 @@ export default function RoutingSettingsTab({ canManage = false }) {
                       event.target.value = "";
                     }
                   }}
-                  className="h-8 border border-[#d4af37] bg-[#102C57] text-white px-2 text-xs font-bold outline-none rounded-[2px] cursor-pointer"
+                  className="h-8 border border-[#d4af37] bg-[var(--surface-navy,#102C57)] text-white px-2 text-xs font-bold outline-none rounded-[2px] cursor-pointer"
                 >
                   <option value="" className="bg-white text-slate-800">เลือกการใช้งาน...</option>
                   {USAGE_OPTIONS.map((opt) => (
@@ -1092,7 +1092,7 @@ export default function RoutingSettingsTab({ canManage = false }) {
                       event.target.value = "";
                     }
                   }}
-                  className="h-8 border border-[#d4af37] bg-[#102C57] text-white px-2 text-xs font-bold outline-none rounded-[2px] cursor-pointer"
+                  className="h-8 border border-[#d4af37] bg-[var(--surface-navy,#102C57)] text-white px-2 text-xs font-bold outline-none rounded-[2px] cursor-pointer"
                 >
                   <option value="" className="bg-white text-slate-800">เลือกผู้รับผิดชอบเบิก...</option>
                   {departments.map((dept) => (

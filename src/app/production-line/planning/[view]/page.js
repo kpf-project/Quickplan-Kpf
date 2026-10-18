@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import DynamicProductionPlanning from "@/components/DynamicProductionPlanning";
 
-const ALLOWED_VIEWS = new Set(["plan", "report", "expired"]);
+const ALLOWED_VIEWS = new Set(["plan", "report"]);
 
 export default async function ProductionPlanningViewPage({ params, searchParams }) {
   const resolvedParams = await params;

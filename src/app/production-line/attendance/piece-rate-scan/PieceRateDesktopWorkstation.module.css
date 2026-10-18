@@ -7,6 +7,10 @@
 .settingsButton:hover { border-color:#f2c94c; background:rgba(242,201,76,.12); transform:rotate(12deg); }
 .title { font-size:21px; font-weight:800; } .subtitle { font-size:13px; color:#cbd9ea; }
 .clock { font-size:18px; letter-spacing:.04em; color:#e8eef7; }
+.workDate { height:40px; display:flex; align-items:center; gap:7px; padding:0 10px; border:1px solid rgba(255,255,255,.32); border-radius:7px; background:rgba(255,255,255,.06); color:#e8eef7; font-size:11px; font-weight:900; white-space:nowrap; }
+.workDate svg { width:16px; height:16px; color:#f2c94c; }
+.workDate input { width:118px; border:0; outline:0; background:transparent; color:white; font:inherit; color-scheme:dark; }
+.historicalDate { border-color:#f2c94c; background:rgba(242,201,76,.16); color:#f6cf55; }
 .workflowSteps { display:grid; grid-template-columns:auto minmax(60px,1fr) auto minmax(60px,1fr) auto; align-items:center; gap:10px; min-width:0; }
 .workflowStep { display:flex; align-items:center; gap:7px; color:#7f93ad; font-size:12px; font-weight:900; white-space:nowrap; transition:color .25s ease; }
 .stepCircle { position:relative; width:34px; height:34px; flex:none; display:grid; place-items:center; border:2px solid #71859f; border-radius:50%; color:#91a3b8; background:#08284f; transition:border-color .25s ease, color .25s ease, background-color .25s ease, box-shadow .25s ease; }
@@ -92,6 +96,7 @@
   .unit { font-size: 20px !important; margin-left: 6px !important; }
   .topbar { flex-direction: column; align-items: flex-start !important; gap: 8px; }
   .topbarTools { width: 100%; justify-content: space-between; }
+  .workDate span { display:none; }
   .workflowSteps { grid-template-columns:auto 1fr auto 1fr auto; gap:5px; overflow:hidden; }
   .workflowStep { gap:4px; font-size:10px; }
   .stepCircle { width:30px; height:30px; }

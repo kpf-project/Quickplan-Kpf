@@ -1,7 +1,14 @@
 "use client";
 
-import { useState, useCallback, useMemo, memo, useEffect, useRef } from "react";
-import { AlertTriangle, ArrowRight, Plus, Trash2, Search, X } from "lucide-react";
+import { useState, useCallback, useMemo, memo, useRef } from "react";
+import { Plus, Trash2, X } from "lucide-react";
+import SkuPickerModal from "./PlanningSkuPicker";
+import { columnWidth, tableWidth } from "../services/scheduleColumnLayout";
+import presentation from "./ScheduleTablePresentation.module.css";
+import { highlightStyle } from "../services/scheduleHighlightColors";
+import { DATE_COLUMN_ID } from "@/lib/scheduleDateLayout";
+import { scheduleColumnsWithFormula, formulaCellCode, formulaCellPatch } from "@/lib/scheduleFormulaLayout";
+import { applyColumnColors } from "@/lib/scheduleColumnColors";
 
 const WEEK_DAYS = [
   { key: "mon", label: "\u0e08.", date: "" },
@@ -31,9 +38,7 @@ const GROUP_HEADER_CLS = {
 };
 
 function getColumnWidthStyle(col) {
-  if (col?.width) return { width: col.width };
-  if (col?.col_type === "time") return { width: 150 };
-  return undefined;
+  return { width: columnWidth(col) };
 }
 
 function formatShiftCellLabel(shift) {
@@ -96,8 +101,8 @@ function buildHeaderRows(columns) {
           candidate.group_label === col.group_label &&
           candidate.group_order === col.group_order
       );
-      const color = groupCols.find((candidate) => candidate.highlight_color)?.highlight_color ?? null;
-      row1.push({ type: "group", label: col.group_label, cols: groupCols, color });
+      const color = groupCols.find((candidate) => candidate.header_highlight_color)?.header_highlight_color ?? null;
+      row1.push({ type: "group", label: col.group_label, cols: groupCols, color, customColor: groupCols.some(candidate => candidate.header_color_explicit) });
     }
     row2.push(col);
   }
@@ -105,257 +110,6 @@ function buildHeaderRows(columns) {
   return { hasGroups: true, row1, row2 };
 }
 
-function SkuPickerModal({ skuMap, currentValue, onSelect, onClose }) {
-  const [q, setQ] = useState("");
-  const [bomFilter, setBomFilter] = useState("all");
-  const [blockedItem, setBlockedItem] = useState(null);
-  const [selectedFormulas, setSelectedFormulas] = useState(new Map());
-  const inputRef = useRef(null);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  const list = useMemo(() => {
-    const entries = Array.from(skuMap.entries());
-    return entries.filter(([name, item]) => {
-      if (bomFilter === "has_bom" && !item.hasBom) return false;
-      if (bomFilter === "no_bom" && item.hasBom) return false;
-      if (!q.trim()) return true;
-      const lower = q.toLowerCase();
-      return name.toLowerCase().includes(lower) || item.skuCode.toLowerCase().includes(lower);
-    });
-  }, [q, skuMap, bomFilter]);
-
-  function handleSelect(name, item, chosenFormula = null) {
-    if (!item?.hasBom) {
-      setBlockedItem({ name, item });
-      return;
-    }
-    const formulaOptions = item.formulaOptions || [];
-    const selectedFormulaCode = selectedFormulas.get(item.skuCode) || formulaOptions[0]?.formula_code || "";
-    const formula = chosenFormula || formulaOptions.find(f => f.formula_code === selectedFormulaCode) || formulaOptions[0] || null;
-    onSelect(name, item.brand, formula);
-    onClose();
-  }
-
-  const blockedSkuCode = String(blockedItem?.item?.skuCode || "").trim();
-  const bomHref = blockedSkuCode
-    ? `/production-line/bom?sku=${encodeURIComponent(blockedSkuCode)}`
-    : "/production-line/bom";
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#0B192C]/60 backdrop-blur-[2px]"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="mx-4 flex max-h-[78vh] w-full max-w-3xl flex-col rounded-[2px] border border-[#D4AF37]/45 bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-[#D4AF37]/35 bg-[#0B192C] px-4 py-3 rounded-t-[2px]">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-[#D4AF37]">
-            เลือกสินค้า (SELECT PRODUCT)
-          </h3>
-          <button onClick={onClose} className="rounded-[2px] p-0.5 text-slate-400 hover:text-[#D4AF37]">
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="space-y-2 border-b border-[#102C57]/10 px-4 py-2.5">
-          <div className="flex items-center gap-2 rounded-[2px] border border-slate-200 bg-slate-50 px-2.5 py-1.5 focus-within:border-[#D4AF37] focus-within:ring-1 focus-within:ring-[#D4AF37]/35">
-            <Search size={13} className="shrink-0 text-slate-400" />
-            <input
-              ref={inputRef}
-              className="flex-1 bg-transparent text-xs text-slate-700 placeholder-slate-400 focus:outline-none"
-              placeholder="ค้นหาชื่อสินค้า หรือ รหัสสินค้า..."
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-            />
-            {q ? (
-              <button onClick={() => setQ("")} className="text-slate-400 hover:text-slate-600">
-                <X size={12} />
-              </button>
-            ) : null}
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            {[
-              { value: "all", label: "ทุกสถานะ" },
-              { value: "has_bom", label: "มีสูตร BOM" },
-              { value: "no_bom", label: "ยังไม่มี BOM" },
-            ].map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => setBomFilter(opt.value)}
-                className={`rounded-[2px] px-3 py-0.5 text-[10px] uppercase tracking-wider font-bold transition-colors ${
-                  bomFilter === opt.value
-                    ? opt.value === "no_bom"
-                      ? "bg-[#D4AF37] text-[#0B192C] font-black border border-[#D4AF37]"
-                      : "bg-[#0B192C] text-[#D4AF37] border border-[#0B192C]"
-                    : "border border-slate-200 text-slate-500 hover:border-[#D4AF37] hover:text-[#D4AF37] bg-white"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-            <span className="ml-auto text-[10px] uppercase tracking-wider font-semibold text-slate-400">
-              {list.length} รายการ
-              {q || bomFilter !== "all" ? ` (จาก ${skuMap.size})` : ""}
-            </span>
-          </div>
-
-          {blockedItem ? (
-            <div className="rounded-[2px] border border-[#D4AF37]/70 bg-slate-50 px-3 py-2 text-[#0B192C]">
-              <div className="flex items-start gap-2">
-                <AlertTriangle size={16} className="mt-0.5 shrink-0 text-[#D4AF37]" />
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-bold uppercase tracking-wider text-[#0B192C]">
-                    สินค้านี้ยังไม่มี BOM ต้องผูกสูตรก่อนนำไปวางแผน
-                  </div>
-                  <div className="mt-0.5 font-mono text-[10px] text-[#0B192C]/75">
-                    {blockedSkuCode || "-"} {blockedItem.name || ""}
-                  </div>
-                </div>
-                <a
-                  href={bomHref}
-                  className="inline-flex shrink-0 items-center gap-1 rounded-[2px] border border-[#D4AF37] bg-white px-2.5 py-1 text-[10px] uppercase tracking-wider font-bold text-[#0B192C] hover:bg-[#D4AF37] hover:text-[#0B192C] transition-colors"
-                >
-                  ไปหน้า BOM
-                  <ArrowRight size={12} />
-                </a>
-              </div>
-            </div>
-          ) : null}
-        </div>
-
-        <div className="grid grid-cols-[120px_1fr_120px_60px_60px_90px] gap-0 border-b border-[#D4AF37]/25 bg-slate-50 px-4 py-2 text-[10px] font-black uppercase tracking-wider text-[#0B192C]">
-          <span>รหัสสินค้า (SKU)</span>
-          <span>ชื่อสินค้า (NAME)</span>
-          <span>สูตรผลิต (BOM)</span>
-          <span>หน่วย (UOM)</span>
-          <span>ประเภท (TYPE)</span>
-          <span>BOM STATUS</span>
-        </div>
-
-        <div className="flex-1 overflow-y-auto">
-          {list.length === 0 ? (
-            <div className="py-10 text-center text-sm text-slate-400">
-              {"ไม่มีสินค้า"}
-            </div>
-          ) : (
-            list.map(([name, item]) => {
-              const formulaOptions = item.formulaOptions || [];
-              const rawOptions = formulaOptions || [];
-              // Deduplicate options in modal just in case
-              const seen = new Set();
-              const uniqueFormulas = [];
-              rawOptions.forEach(opt => {
-                const code = String(opt.formula_code || "DEFAULT").trim().toUpperCase();
-                if (!seen.has(code)) {
-                  seen.add(code);
-                  uniqueFormulas.push(opt);
-                }
-              });
-
-              const selectedFormulaCode = selectedFormulas.get(item.skuCode) || uniqueFormulas[0]?.formula_code || "";
-              const currentFormula = uniqueFormulas.find(f => f.formula_code === selectedFormulaCode) || uniqueFormulas[0] || null;
-
-              return (
-                <div
-                  key={name}
-                  className={`grid w-full grid-cols-[120px_1fr_120px_60px_60px_90px] items-center gap-0 border-b border-slate-100 px-4 py-2.5 text-left transition-colors ${
-                    currentValue === name ? "bg-[#102C57]/10 border-l-2 border-[#D4AF37]" : "hover:bg-[#0B192C]/5"
-                  }`}
-                >
-                  <button
-                    onClick={() => {
-                      handleSelect(name, item, currentFormula);
-                    }}
-                    className="text-left font-mono text-[11px] font-semibold text-[#0B192C] truncate pr-2 h-full hover:text-[#D4AF37] transition-colors duration-150 animate-none"
-                  >
-                    {item.skuCode || "\u2014"}
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      handleSelect(name, item, currentFormula);
-                    }}
-                    className="text-left text-xs font-semibold text-slate-800 truncate w-full pr-2 h-full hover:text-[#D4AF37] transition-colors duration-150 animate-none"
-                    title={name}
-                  >
-                    {name}
-                  </button>
-
-                  <div className="px-1" onClick={(e) => e.stopPropagation()}>
-                    {item.hasBom && uniqueFormulas.length > 0 ? (
-                      <select
-                        className="w-full rounded-[2px] border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] font-bold text-[#0B192C] outline-none focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37]/35"
-                        value={selectedFormulaCode}
-                        onChange={(e) => {
-                          const nextMap = new Map(selectedFormulas);
-                          nextMap.set(item.skuCode, e.target.value);
-                          setSelectedFormulas(nextMap);
-                        }}
-                      >
-                        {uniqueFormulas.map((formula) => (
-                          <option key={formula.formula_code} value={formula.formula_code}>
-                            {formula.formula_name || formula.formula_code}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span className="text-[11px] text-slate-400">—</span>
-                    )}
-                  </div>
-
-                  <span className="text-[11px] font-medium text-slate-600">{item.unit || "\u2014"}</span>
-
-                  <span>
-                    <span className={`inline-block rounded-[2px] border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${
-                      item.itemType === "WIP"
-                        ? "border-[#D4AF37] bg-[#102C57]/5 text-[#0B192C]"
-                        : "border-[#0B192C]/20 bg-[#0B192C]/5 text-[#0B192C]"
-                    }`}
-                    >
-                      {item.itemType || "FG"}
-                    </span>
-                  </span>
-
-                  <span>
-                    {item.hasBom ? (
-                      <span className="inline-block rounded-[2px] border border-[#0B192C]/20 bg-white px-1.5 py-0.5 text-[9px] font-bold text-[#0B192C] uppercase tracking-wider">
-                        มีสูตร
-                      </span>
-                    ) : (
-                      <span className="inline-block rounded-[2px] border border-[#D4AF37] bg-white px-1.5 py-0.5 text-[9px] font-bold text-[#D4AF37] uppercase tracking-wider">
-                        ยังไม่มี
-                      </span>
-                    )}
-                  </span>
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        {currentValue ? (
-          <div className="border-t border-slate-100 px-4 py-2">
-            <button
-              onClick={() => {
-                onSelect(null, null);
-                onClose();
-              }}
-              className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 transition-colors hover:text-red-500"
-            >
-              {"\u0e25\u0e49\u0e32\u0e07\u0e04\u0e48\u0e32"}
-            </button>
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
 
 const NumCell = memo(function NumCell({ value, onChange, highlight, placeholder = "\u2014" }) {
   const [editing, setEditing] = useState(false);
@@ -364,7 +118,7 @@ const NumCell = memo(function NumCell({ value, onChange, highlight, placeholder 
 
   if (editing) {
     return (
-      <td className={`border border-slate-300 p-0 ${hCls}`}>
+      <td style={highlightStyle(highlight)} className={`border border-slate-300 p-0 ${hCls}`}>
         <input
           autoFocus
           type="number"
@@ -392,7 +146,11 @@ const NumCell = memo(function NumCell({ value, onChange, highlight, placeholder 
 
   return (
     <td
-      className={`cursor-pointer border border-slate-300 px-1.5 py-1.5 text-center text-sm align-top hover:bg-slate-50 ${hCls}`}
+      style={highlightStyle(highlight)} className={`cursor-pointer border border-slate-300 px-1.5 py-1.5 text-center text-sm align-top hover:bg-slate-50 ${hCls}`}
+      tabIndex={0}
+      role="button"
+      aria-label="แก้ไขจำนวน"
+      onKeyDown={event => { if (["Enter", " "].includes(event.key)) { event.preventDefault(); setDraft(value != null ? String(value) : ""); setEditing(true); } }}
       onClick={() => {
         setDraft(value != null ? String(value) : "");
         setEditing(true);
@@ -420,7 +178,7 @@ const TextCell = memo(function TextCell({
 
   if (editing) {
     return (
-      <td className={`border border-slate-300 p-0 ${hCls} ${className}`}>
+      <td style={highlightStyle(highlight)} className={`border border-slate-300 p-0 ${hCls} ${className}`}>
         <input
           autoFocus
           className="w-full bg-blue-50 px-1.5 py-1.5 text-sm focus:outline-none"
@@ -444,7 +202,11 @@ const TextCell = memo(function TextCell({
 
   return (
     <td
-      className={`cursor-pointer border border-slate-300 px-1.5 py-1.5 text-sm align-top whitespace-normal break-words leading-tight hover:bg-slate-50 ${hCls} ${className}`}
+      style={highlightStyle(highlight)} className={`cursor-pointer border border-slate-300 px-1.5 py-1.5 text-sm align-top whitespace-normal break-words leading-tight hover:bg-slate-50 ${hCls} ${className}`}
+      tabIndex={0}
+      role="button"
+      aria-label="แก้ไขข้อความ"
+      onKeyDown={event => { if (["Enter", " "].includes(event.key)) { event.preventDefault(); setDraft(value || ""); setEditing(true); } }}
       onClick={() => {
         setDraft(value || "");
         setEditing(true);
@@ -455,68 +217,30 @@ const TextCell = memo(function TextCell({
   );
 });
 
-const SkuPickerCell = memo(function SkuPickerCell({ value, rowData, onChange, onUpdate, skuMap, readOnly = false }) {
+const SkuPickerCell = memo(function SkuPickerCell({ value, onChange, skuMap, readOnly = false, highlight, aiProduct, label }) {
   const [modalOpen, setModalOpen] = useState(false);
-
-  const matchedProduct = value ? skuMap.get(value) : null;
-  const formulaOptions = useMemo(() => {
-    const rawOptions = matchedProduct?.formulaOptions || [];
-    const seen = new Set();
-    const unique = [];
-    rawOptions.forEach(opt => {
-      const code = String(opt.formula_code || "DEFAULT").trim().toUpperCase();
-      if (!seen.has(code)) {
-        seen.add(code);
-        unique.push(opt);
-      }
-    });
-    return unique;
-  }, [matchedProduct]);
+  const sourceText = aiProduct ? [aiProduct.sourceBrand, aiProduct.sourceProduct, aiProduct.sourceSize].filter(Boolean).join(" · ") : "";
+  const missing = Boolean(aiProduct && !value);
 
   return (
-    <td className="border border-slate-300 px-1 py-0.5 align-top">
+    <td style={highlightStyle(highlight)} className="border border-slate-300 px-1 py-0.5 align-top">
       <button
         onClick={() => {
           if (readOnly) return;
           setModalOpen(true);
         }}
         disabled={readOnly}
+        style={missing ? { color: "#B45309", textDecoration: "underline", textUnderlineOffset: "3px" } : undefined}
         className={`w-full rounded px-1.5 py-1 text-left text-sm leading-tight whitespace-normal break-words transition-colors ${
           readOnly ? "" : "hover:bg-slate-50"
         } ${value ? "text-slate-800" : "text-slate-300"}`}
       >
-        {value || "เลือกสินค้า..."}
+        {value || (missing ? `${label}: ไม่พบสินค้าหรือสูตรที่ตรงกับ “${aiProduct.sourceProduct || "ไม่ทราบ"}”` : "เลือกสินค้า...")}
       </button>
-
-      {value && formulaOptions.length > 0 && (
-        <div className="mt-1" onClick={(e) => e.stopPropagation()}>
-          <select
-            disabled={readOnly}
-            className="w-full rounded border border-slate-200 bg-white px-1.5 py-1 text-[11px] font-semibold text-[#102C57] outline-none focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37]/40"
-            value={rowData?.formulaCode || rowData?.formula_code || "DEFAULT"}
-            onChange={(e) => {
-              const selectedCode = e.target.value;
-              const formula = formulaOptions.find(f => f.formula_code === selectedCode);
-              onUpdate({
-                formulaCode: formula?.formula_code || "DEFAULT",
-                formulaName: formula?.formula_name || "Default BOM",
-                bomVersionId: formula?.bom_version_id || null,
-                formula_code: formula?.formula_code || "DEFAULT",
-                formula_name: formula?.formula_name || "Default BOM",
-                bom_version_id: formula?.bom_version_id || null,
-              });
-            }}
-          >
-            {formulaOptions.map((formula) => {
-              return (
-                <option key={formula.formula_code} value={formula.formula_code}>
-                  {formula.formula_name || formula.formula_code} ({formula.formula_code})
-                </option>
-              );
-            })}
-          </select>
-        </div>
-      )}
+      {sourceText ? <details className="px-1.5 pb-1 text-xs leading-tight" style={{ color: "#526B8A" }}>
+        <summary className="cursor-pointer list-none underline underline-offset-[3px]" title="กดดูข้อความต้นฉบับเต็ม">จากใบ: {sourceText}</summary>
+        <p className="mt-1 whitespace-pre-wrap break-words">{sourceText}{aiProduct.sourceFormula ? ` · สูตร: ${aiProduct.sourceFormula}` : ""}</p>
+      </details> : null}
 
       {modalOpen && !readOnly ? (
         <SkuPickerModal
@@ -530,10 +254,17 @@ const SkuPickerCell = memo(function SkuPickerCell({ value, rowData, onChange, on
   );
 });
 
-const BrandAutoCell = memo(function BrandAutoCell({ value }) {
+function brandTextColor(value) {
+  const brand = String(value || "").trim();
+  if (/ระฆังทอง/.test(brand)) return "#102C57";
+  if (/แม่มะลิ|แม่มัลิ|\bKPF\b/i.test(brand)) return "#EF1717";
+  return undefined;
+}
+
+const BrandAutoCell = memo(function BrandAutoCell({ value, highlight }) {
   return (
-    <td className="border border-slate-300 px-1.5 py-1.5 text-center align-top">
-      <span className="inline-block max-w-full break-words rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-500">
+    <td style={highlightStyle(highlight)} className="border border-slate-300 px-1.5 py-1.5 text-center align-top">
+      <span style={{ color: brandTextColor(value) }} className="inline-block max-w-full break-words rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-500">
         {value || "\u2014"}
       </span>
     </td>
@@ -551,7 +282,7 @@ const ShiftCell = memo(function ShiftCell({ col, value, onChange, sectionShifts 
   const selectedValue = String(matchedOption?.shiftId || matchedOption?.id || selectedText || "");
 
   return (
-    <td className="border border-slate-300 px-1 py-0.5 align-top">
+    <td style={highlightStyle(col.highlight_color)} className="border border-slate-300 px-1 py-0.5 align-top">
       <select
         className="w-full rounded border border-slate-200 bg-white px-1.5 py-1 text-xs font-semibold text-[#102C57] outline-none focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37]/40"
         value={selectedValue}
@@ -565,6 +296,7 @@ const ShiftCell = memo(function ShiftCell({ col, value, onChange, sectionShifts 
         }}
       >
         <option value="">เลือกกะ</option>
+        {!matchedOption && selectedText ? <option value={selectedText}>{selectedText}</option> : null}
         {options.map((shift) => {
           const valueKey = String(shift?.shiftId || shift?.id || formatShiftCellLabel(shift));
           return (
@@ -581,9 +313,21 @@ const ShiftCell = memo(function ShiftCell({ col, value, onChange, sectionShifts 
   );
 });
 
-function renderCell(col, rowData, onUpdateCells, skuMap, readOnly = false, sectionShifts = []) {
+function renderCell(col, rowData, onUpdateCells, skuMap, readOnly = false, sectionShifts = [], aiProduct) {
   const value = rowData[col.key] ?? null;
   const hCls = HIGHLIGHT_CLS[col.highlight_color] ?? "";
+
+  if (col.col_type === "formula") {
+    const code = formulaCellCode(rowData);
+    const label = code === "DEFAULT" ? "หลัก" : code || "—";
+    const options = [...new Map((skuMap.get(rowData[col.sku_key])?.formulaOptions || []).map(formula => [formula.formula_code, formula])).values()];
+    return <td key={col.id} style={highlightStyle(col.highlight_color)} className={`border border-slate-300 px-1.5 py-1.5 text-center align-top text-sm ${hCls}`}>
+      {readOnly || !options.length ? <span title={rowData.formulaName || rowData.formula_name || code}>{label}</span> : <><span className="hidden print:inline">{label}</span><select title={rowData.formulaName || rowData.formula_name || code} aria-label={`สูตรผลิต ${rowData[col.sku_key] || ""}`} className="w-full text-blue-600 underline underline-offset-2 text-sm print:hidden" value={code} onChange={event => { const formula = options.find(item => item.formula_code === event.target.value); if (formula) onUpdateCells(formulaCellPatch(formula)); }}>
+        {!options.some(item => item.formula_code === code) && <option value={code}>{label}</option>}
+        {options.map(item => <option key={item.formula_code} title={item.formula_name || item.formula_code} value={item.formula_code}>{item.formula_code === "DEFAULT" ? "หลัก" : item.formula_code}</option>)}
+      </select></>}
+    </td>;
+  }
 
   if (readOnly) {
     let displayValue = value;
@@ -603,9 +347,10 @@ function renderCell(col, rowData, onUpdateCells, skuMap, readOnly = false, secti
     return (
       <td
         key={col.id}
+        style={highlightStyle(col.highlight_color)}
         className={`border border-slate-300 px-1.5 py-1.5 text-sm text-slate-700 align-top whitespace-normal break-words ${hCls} ${alignClass}`}
       >
-        {displayValue}
+        {col.col_type === "brand_auto" ? <span style={{ color: brandTextColor(value) }}>{displayValue}</span> : displayValue}
       </td>
     );
   }
@@ -622,7 +367,7 @@ function renderCell(col, rowData, onUpdateCells, skuMap, readOnly = false, secti
       );
 
     case "brand_auto":
-      return <BrandAutoCell key={col.id} value={value} />;
+      return <BrandAutoCell key={col.id} value={value} highlight={col.highlight_color} />;
 
     case "shift":
       return (
@@ -639,8 +384,10 @@ function renderCell(col, rowData, onUpdateCells, skuMap, readOnly = false, secti
       return (
         <SkuPickerCell
           key={col.id}
+          aiProduct={aiProduct}
+          label={col.label}
+          highlight={col.highlight_color}
           value={value}
-          rowData={rowData}
           onChange={(skuName, brand, chosenFormula) => {
             const patch = { [col.key]: skuName };
             if (col.auto_fill_field) patch[col.auto_fill_field] = brand;
@@ -666,7 +413,6 @@ function renderCell(col, rowData, onUpdateCells, skuMap, readOnly = false, secti
             }
             onUpdateCells(patch);
           }}
-          onUpdate={onUpdateCells}
           skuMap={skuMap}
           readOnly={readOnly}
         />
@@ -679,6 +425,7 @@ function renderCell(col, rowData, onUpdateCells, skuMap, readOnly = false, secti
           value={value}
           onChange={(nextValue) => onUpdateCells({ [col.key]: nextValue })}
           placeholder="07:00-17:00"
+          highlight={col.highlight_color}
           className="text-center whitespace-nowrap"
         />
       );
@@ -690,6 +437,7 @@ function renderCell(col, rowData, onUpdateCells, skuMap, readOnly = false, secti
           value={value}
           onChange={(nextValue) => onUpdateCells({ [col.key]: nextValue })}
           placeholder="\u2014"
+          highlight={col.highlight_color}
         />
       );
   }
@@ -704,6 +452,9 @@ const TableRow = memo(function TableRow({
   skuMap,
   sectionShifts,
   readOnly = false,
+  showDate = true,
+  dateRowSpan = 1,
+  dateLayout,
 }) {
   const onUpdateCells = useCallback(
     (patch) => {
@@ -720,10 +471,10 @@ const TableRow = memo(function TableRow({
 
   return (
     <tr className="group hover:bg-slate-50/60">
-      <td className="w-40 border border-slate-300 px-1.5 py-1.5 text-sm font-medium text-slate-600 align-top leading-tight">
-        {day.label} {day.date}
-      </td>
-      {columns.map((col) => renderCell(col, row.row_data, onUpdateCells, skuMap, readOnly, sectionShifts))}
+      {showDate && <td style={highlightStyle(dateLayout?.bodyColor)} rowSpan={dateRowSpan} className="w-40 border border-slate-300 px-3 py-2 text-sm font-medium text-slate-900 align-top leading-tight bg-slate-50/50">
+        <strong className="block">{day.date}</strong><span className="mt-1 block">{day.label}</span>
+      </td>}
+      {columns.map((col) => renderCell(col, row.row_data, onUpdateCells, skuMap, readOnly, sectionShifts, row.aiProducts?.find(product => product.columnKey === col.key)))}
       {!readOnly ? (
         <td className="w-7 border border-slate-300 text-center">
           <button
@@ -733,7 +484,7 @@ const TableRow = memo(function TableRow({
             <Trash2 size={11} />
           </button>
         </td>
-      ) : null}
+      ) : <td aria-hidden="true" className="w-7 border border-slate-300" />}
     </tr>
   );
 });
@@ -794,15 +545,34 @@ function AddDayFooter({ colSpan, days, onAdd }) {
   );
 }
 
+function ColumnHeading({ column, onSelect, onResize, selected }) {
+  const drag = useRef(null);
+  if (!onSelect && !onResize) return column.label;
+  return <div className="relative flex min-h-6 items-center justify-center" style={selected ? { outline: "2px solid #0866d6", outlineOffset: 4 } : undefined}>
+    <button type="button" className="w-full text-inherit" onClick={() => onSelect?.(column.id)}>{column.label}</button>
+    {onResize && <span role="separator" aria-label={`ความกว้าง ${column.label}`} aria-orientation="vertical" aria-valuenow={columnWidth(column)} tabIndex={0}
+      className="absolute -right-2 top-[-8px] bottom-[-8px] z-10 w-3 cursor-col-resize touch-none border-r border-blue-300 hover:bg-blue-200"
+      onPointerDown={event => { event.preventDefault(); event.stopPropagation(); drag.current = { x: event.clientX, width: columnWidth(column) }; event.currentTarget.setPointerCapture(event.pointerId); onSelect?.(column.id); }}
+      onPointerMove={event => { if (drag.current) onResize(column.id, Math.max(48, Math.min(1200, Math.round(drag.current.width + event.clientX - drag.current.x)))); }}
+      onPointerUp={event => { drag.current = null; event.currentTarget.releasePointerCapture(event.pointerId); }} onPointerCancel={() => { drag.current = null; }}
+      onKeyDown={event => { if (["ArrowLeft", "ArrowRight"].includes(event.key)) { event.preventDefault(); onResize(column.id, Math.max(48, Math.min(1200, columnWidth(column) + (event.key === "ArrowRight" ? 8 : -8)))); } }} />}
+  </div>;
+}
+
 const TableHeader = memo(function TableHeader({
+  dateLayout,
   headerRows,
   showActions = true,
   headerVariant = "default",
+  showDate = true,
+  onColumnSelect,
+  onColumnResize,
+  selectedColumnId,
 }) {
   const { hasGroups, row1, row2 } = headerRows;
   const isNavy = headerVariant === "navy";
   const headerRowClass = isNavy
-    ? "bg-[#102C57] text-[12px] font-semibold text-white"
+    ? "bg-[var(--surface-navy,#102C57)] text-[12px] font-semibold text-white"
     : "bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-700";
   const mainHeaderCellClass = isNavy
     ? "border border-[#0b2040] px-1.5 py-2 text-left align-top whitespace-normal break-words leading-tight"
@@ -812,37 +582,38 @@ const TableHeader = memo(function TableHeader({
   return (
     <thead>
       <tr className={headerRowClass}>
-        <th rowSpan={hasGroups ? 2 : 1} className={mainHeaderCellClass}>
-          {"\u0e27\u0e31\u0e19\u0e17\u0e35\u0e48"}
-        </th>
+        {showDate && <th style={highlightStyle(dateLayout?.headerColor)} rowSpan={hasGroups ? 2 : 1} className={mainHeaderCellClass}>
+          <ColumnHeading column={{ id: DATE_COLUMN_ID, label: "วันที่", width: dateLayout?.width || 160 }} onSelect={onColumnSelect} onResize={onColumnResize} selected={selectedColumnId === DATE_COLUMN_ID} />
+        </th>}
 
         {row1.map((item, index) => {
           if (item.type === "col") {
             const col = item.col;
             const widthStyle = getColumnWidthStyle(col);
             const highlightClass =
-              !isNavy && col.highlight_color ? GROUP_HEADER_CLS[col.highlight_color] ?? "" : "";
+              (!isNavy || col.header_color_explicit) && col.header_highlight_color ? GROUP_HEADER_CLS[col.header_highlight_color] ?? "" : "";
 
             return (
               <th
                 key={col.id}
                 rowSpan={item.rowspan ?? 1}
-                style={widthStyle}
+                style={{ ...widthStyle, ...(!isNavy || col.header_color_explicit ? highlightStyle(col.header_highlight_color) : undefined) }}
                 className={`${borderClass} px-1.5 py-2 text-center align-top whitespace-normal break-words leading-tight ${highlightClass}`}
               >
-                {col.label}
+                <ColumnHeading column={col} onSelect={onColumnSelect} onResize={onColumnResize} selected={selectedColumnId === col.id} />
               </th>
             );
           }
 
           const groupClass = isNavy
-            ? "bg-[#102C57] text-white"
+            ? "bg-[var(--surface-navy,#102C57)] text-white"
             : GROUP_HEADER_CLS[item.color] ?? "bg-slate-100 text-slate-600";
 
           return (
             <th
               key={`group-${index}`}
               colSpan={item.cols.length}
+              style={!isNavy || item.customColor ? highlightStyle(item.color) : undefined}
               className={`${borderClass} px-1.5 py-1.5 text-center align-top whitespace-normal break-words leading-tight ${groupClass}`}
             >
               {item.label}
@@ -857,22 +628,22 @@ const TableHeader = memo(function TableHeader({
         <tr
           className={
             isNavy
-              ? "bg-[#102C57] text-[12px] font-semibold text-white"
+              ? "bg-[var(--surface-navy,#102C57)] text-[12px] font-semibold text-white"
               : "bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-600"
           }
         >
           {row2.map((col) => {
             const highlightClass =
-              !isNavy && col.highlight_color ? HIGHLIGHT_CLS[col.highlight_color] ?? "" : "";
+              (!isNavy || col.header_color_explicit) && col.header_highlight_color ? HIGHLIGHT_CLS[col.header_highlight_color] ?? "" : "";
             const widthStyle = getColumnWidthStyle(col);
 
             return (
               <th
                 key={col.id}
-                style={widthStyle}
+                style={{ ...widthStyle, ...(!isNavy || col.header_color_explicit ? highlightStyle(col.header_highlight_color) : undefined) }}
                 className={`${borderClass} px-1.5 py-1.5 text-center align-top whitespace-normal break-words leading-tight ${highlightClass}`}
               >
-                {col.label}
+                <ColumnHeading column={col} onSelect={onColumnSelect} onResize={onColumnResize} selected={selectedColumnId === col.id} />
               </th>
             );
           })}
@@ -894,10 +665,13 @@ export default function GenericScheduleTable({
   headerVariant = "default",
   hideDayGroupHeader = false,
   sectionShifts = [],
+  onColumnSelect,
+  onColumnResize,
+  selectedColumnId,
 }) {
   const columns = useMemo(
-    () => section.production_schedule_column_defs ?? section.columns ?? [],
-    [section.production_schedule_column_defs, section.columns]
+    () => applyColumnColors(scheduleColumnsWithFormula(section.production_schedule_column_defs ?? section.columns ?? [], section.formula_layout), section.column_colors),
+    [section.production_schedule_column_defs, section.columns, section.formula_layout, section.column_colors]
   );
 
   const skuMap = useMemo(() => {
@@ -907,22 +681,29 @@ export default function GenericScheduleTable({
   }, [skuCatalog]);
 
   const headerRows = useMemo(() => buildHeaderRows(columns), [columns]);
-  const colSpan = 1 + columns.length + (readOnly ? 0 : 1);
+  const showDate = true;
+  const dateLayout = section.date_layout || { width: 160 };
+  const colSpan = (showDate ? 1 : 0) + columns.length + 1;
   const activeDays = days ?? WEEK_DAYS;
 
   return (
-    <table className="w-full table-fixed border-collapse border border-slate-300 text-sm">
+    <table style={{ width: tableWidth(columns, showDate, true, dateLayout.width), minWidth: tableWidth(columns, showDate, true, dateLayout.width) }} className={`${presentation.table} schedule-configured-table table-fixed border-collapse border border-slate-300 text-sm`}>
       <colgroup>
-        <col className="w-40" />
+        {showDate && <col style={{ width: dateLayout.width || 160 }} />}
         {columns.map((col) => (
           <col key={col.id} style={getColumnWidthStyle(col)} />
         ))}
-        {!readOnly ? <col className="w-7" /> : null}
+        <col className="w-7" />
       </colgroup>
       <TableHeader
+        dateLayout={dateLayout}
         headerRows={headerRows}
-        showActions={!readOnly}
+        showActions={true}
         headerVariant={headerVariant}
+        showDate={showDate}
+        onColumnSelect={onColumnSelect}
+        onColumnResize={onColumnResize}
+        selectedColumnId={selectedColumnId}
       />
       <tbody>
         {activeDays.map((day) => {
@@ -934,6 +715,7 @@ export default function GenericScheduleTable({
 
           return (
             <DayRowGroup
+              dateLayout={dateLayout}
               key={day.key}
               day={day}
               rows={dayRows}
@@ -945,17 +727,19 @@ export default function GenericScheduleTable({
               onDelete={onDelete}
               onAddRow={onAddRow}
               readOnly={readOnly}
-              hideDayGroupHeader={hideDayGroupHeader}
+              hideDayGroupHeader={true}
+              showDate={showDate}
             />
           );
         })}
-        {!readOnly ? <AddDayFooter colSpan={colSpan} days={activeDays} onAdd={onAddRow} /> : null}
+        {!readOnly && onAddRow ? <AddDayFooter colSpan={colSpan} days={activeDays} onAdd={onAddRow} /> : null}
       </tbody>
     </table>
   );
 }
 
 function DayRowGroup({
+  dateLayout,
   day,
   rows,
   columns,
@@ -967,12 +751,14 @@ function DayRowGroup({
   onAddRow,
   readOnly = false,
   hideDayGroupHeader = false,
+  showDate = true,
 }) {
   return (
     <>
       {!hideDayGroupHeader ? <DayGroupHeader day={day} colSpan={colSpan} /> : null}
-      {rows.map((row) => (
+      {rows.map((row, index) => (
         <TableRow
+          dateLayout={dateLayout}
           key={row.id}
           row={row}
           day={day}
@@ -981,21 +767,11 @@ function DayRowGroup({
           sectionShifts={sectionShifts}
           onUpdate={onUpdate}
           onDelete={onDelete}
-          readOnly={readOnly}
+          readOnly={readOnly || row.readOnly === true}
+          showDate={showDate && index === 0}
+          dateRowSpan={rows.length}
         />
       ))}
-      {!readOnly ? (
-        <tr>
-          <td colSpan={colSpan} className="border border-slate-300 bg-slate-50/50 px-3 py-1">
-            <button
-              className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700"
-              onClick={() => onAddRow(day.key)}
-            >
-              <Plus size={10} /> {"\u0e40\u0e1e\u0e34\u0e48\u0e21\u0e41\u0e16\u0e27"} {day.label} {day.date}
-            </button>
-          </td>
-        </tr>
-      ) : null}
     </>
   );
 }

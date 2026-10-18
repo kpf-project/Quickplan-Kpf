@@ -140,3 +140,88 @@ test("movement report loads pre-period opening totals from one database aggregat
   assert.doesNotMatch(source, /asOfDate:\s*previousReportDate/);
   assert.match(migration, /create or replace function public\.get_production_stock_opening_as_of/);
 });
+
+test("prison LOT balance carries pre-period stock into the closing balance", async () => {
+  const { buildPrisonLotBalanceRows } = await import(
+    "../src/lib/production-prison-balance-rows.js"
+  );
+
+  const rows = buildPrisonLotBalanceRows(
+    [
+      {
+        issueDate: "2026-09-18",
+        lotNo: "1809260068-1",
+        productCode: "WKB-0068",
+        productName: "แผ่นแครกเกอร์โบตั๋นเรือนจำ",
+        quantity: 240,
+        weightKg: 2895.34,
+      },
+      {
+        issueDate: "2026-09-30",
+        lotNo: "3009260068-1",
+        productCode: "WKB-0068",
+        productName: "แผ่นแครกเกอร์โบตั๋นเรือนจำ",
+        quantity: 240,
+        weightKg: 2891.25,
+      },
+      {
+        issueDate: "2026-10-01",
+        lotNo: "3009260068-1",
+        productCode: "WKB-0068",
+        productName: "แผ่นแครกเกอร์โบตั๋นเรือนจำ",
+        quantity: 20,
+        weightKg: 240.93,
+      },
+    ],
+    [
+      {
+        issueDate: "2026-09-29",
+        lotNo: "1809260068-1",
+        productCode: "WKB-0068",
+        productName: "แผ่นแครกเกอร์โบตั๋นเรือนจำ",
+        quantity: 197,
+        weightKg: 2376.67,
+      },
+      {
+        issueDate: "2026-09-30",
+        lotNo: "1809260068-1",
+        productCode: "WKB-0068",
+        productName: "แผ่นแครกเกอร์โบตั๋นเรือนจำ",
+        quantity: 39,
+        weightKg: 470.37,
+      },
+      {
+        issueDate: "2026-10-02",
+        lotNo: "3009260068-1",
+        productCode: "WKB-0068",
+        productName: "แผ่นแครกเกอร์โบตั๋นเรือนจำ",
+        quantity: 186,
+        weightKg: 2240.87,
+      },
+    ],
+    "2026-09-30"
+  );
+
+  const carriedLot = rows.find((row) => row.lotNo === "1809260068-1");
+  assert.deepEqual(carriedLot, {
+    lotNo: "1809260068-1",
+    productCode: "WKB-0068",
+    productName: "แผ่นแครกเกอร์โบตั๋นเรือนจำ",
+    openingQuantity: 43,
+    openingWeightKg: 518.67,
+    inboundQuantity: 0,
+    inboundWeightKg: 0,
+    issueQuantity: 39,
+    issueWeightKg: 470.37,
+    balanceQuantity: 4,
+    balanceWeightKg: 48.3,
+    lastInboundDate: "2026-09-18",
+  });
+
+  const currentLot = rows.find((row) => row.lotNo === "3009260068-1");
+  assert.equal(currentLot.openingQuantity, 0);
+  assert.equal(currentLot.inboundQuantity, 260);
+  assert.equal(currentLot.issueQuantity, 186);
+  assert.equal(currentLot.balanceQuantity, 74);
+  assert.equal(currentLot.balanceWeightKg, 891.31);
+});

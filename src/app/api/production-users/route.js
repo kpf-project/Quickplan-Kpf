@@ -1,13 +1,10 @@
 import { getSupabaseAdmin, jsonError } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { normalizeParam, parsePaginationParams } from "@/lib/validation";
 
 export async function GET(request) {
   try {
-    await requirePermissionKeys(request, [
-      "production-line-settings-view",
-      "production-line-settings-manage",
-    ]);
+    await requireTaskPermission(request, "production-settings-users-view");
 
     const { searchParams } = new URL(request.url);
     const { page, pageSize } = parsePaginationParams(searchParams, { page: 1, pageSize: 20 });

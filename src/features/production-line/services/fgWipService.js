@@ -3,14 +3,10 @@ import "server-only";
 import crypto from "crypto";
 import { ApiError, getSupabaseAdmin } from "@/lib/adminApi";
 import { fetchGatewayJson } from "@/lib/gatewayClient";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { toBangkokDateKey } from "@/lib/bangkokDate";
 import { buildFgPackingReportRows } from "@/features/production-line/utils/buildFgPackingReportRows";
 
-const PERMISSIONS = [
-  "production-line-attendance-view",
-  "production-line-attendance-manage",
-];
 const FG_DEPARTMENT_CODE = "KP13";
 const FG_CATEGORY_CODES = ["04", "04-1", "04-2"];
 const TRADE_CODE_PAGE_SIZE = 500;
@@ -206,7 +202,7 @@ async function loadTradeCodes(search, allowedSkuCodes) {
 }
 
 export async function listFgProducts(request) {
-  await requirePermissionKeys(request, PERMISSIONS);
+  await requireTaskPermission(request, "production-fg-wip-view");
   const search = normalizeText(new URL(request.url).searchParams.get("search"));
   const supabaseAdmin = getSupabaseAdmin();
 
@@ -304,7 +300,7 @@ async function resolveBaseWipTradeCode(product) {
 }
 
 export async function createFgWipDocument(request, body = {}) {
-  const permission = await requirePermissionKeys(request, PERMISSIONS);
+  const permission = await requireTaskPermission(request, "production-fg-wip-write");
   const requestId = normalizeText(body.requestId) || crypto.randomUUID();
   const productionDate = toBangkokDateKey(body.productionDate || new Date());
   if (!productionDate) throw new ApiError(400, "productionDate is invalid");
@@ -432,7 +428,7 @@ async function loadWipStockRows(supabaseAdmin) {
 }
 
 export async function listAvailableWipCans(request) {
-  await requirePermissionKeys(request, PERMISSIONS);
+  await requireTaskPermission(request, "production-fg-wip-view");
   const search = normalizeText(new URL(request.url).searchParams.get("search")).toUpperCase();
   const rows = await loadWipStockRows(getSupabaseAdmin());
   return {
@@ -444,7 +440,7 @@ export async function listAvailableWipCans(request) {
 }
 
 export async function issueWipCans(request, body = {}) {
-  const permission = await requirePermissionKeys(request, PERMISSIONS);
+  const permission = await requireTaskPermission(request, "production-fg-wip-write");
   const requestId = normalizeText(body.requestId) || crypto.randomUUID();
   const sourceDocumentId = normalizeText(body.sourceDocumentId);
   const sourceMovementId = normalizeText(body.sourceMovementId);
@@ -497,7 +493,7 @@ export async function issueWipCans(request, body = {}) {
 }
 
 export async function createWipOpeningBalanceBatch(request, body = {}) {
-  const permission = await requirePermissionKeys(request, PERMISSIONS);
+  const permission = await requireTaskPermission(request, "production-fg-wip-opening-write");
   const requestId = normalizeText(body.requestId) || crypto.randomUUID();
   const openingDate = toBangkokDateKey(body.openingDate || new Date());
   const sourceItems = Array.isArray(body.items) ? body.items : [];
@@ -564,7 +560,7 @@ export async function createWipOpeningBalanceBatch(request, body = {}) {
 }
 
 export async function listFgWipWasteLogs(request) {
-  await requirePermissionKeys(request, PERMISSIONS);
+  await requireTaskPermission(request, "production-fg-wip-view");
   const url = new URL(request.url);
   const productionDate = toBangkokDateKey(url.searchParams.get("date") || new Date());
   const { data, error } = await getSupabaseAdmin()
@@ -579,7 +575,7 @@ export async function listFgWipWasteLogs(request) {
 }
 
 export async function createFgWipWasteLog(request, body = {}) {
-  const permission = await requirePermissionKeys(request, PERMISSIONS);
+  const permission = await requireTaskPermission(request, "production-fg-wip-waste-write");
   const product = await resolveSelectedProduct(body.product);
   const productionDate = toBangkokDateKey(body.productionDate || new Date());
   if (!productionDate) throw new ApiError(400, "productionDate is invalid");
@@ -664,7 +660,7 @@ export async function createFgWipWasteLog(request, body = {}) {
 }
 
 export async function cancelFgWipWasteLog(request, body = {}) {
-  const permission = await requirePermissionKeys(request, ["production-line-attendance-manage"]);
+  const permission = await requireTaskPermission(request, "production-fg-wip-waste-cancel");
   const wasteLogId = normalizeText(body.id || body.wasteLogId);
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(wasteLogId)) {
     throw new ApiError(400, "รายการของเสียไม่ถูกต้อง");
@@ -708,7 +704,7 @@ export async function cancelFgWipWasteLog(request, body = {}) {
 }
 
 export async function listFgWipDocuments(request) {
-  await requirePermissionKeys(request, PERMISSIONS);
+  await requireTaskPermission(request, "production-fg-wip-view");
   const productionDate = normalizeText(new URL(request.url).searchParams.get("productionDate"));
   const supabaseAdmin = getSupabaseAdmin();
   let query = supabaseAdmin
@@ -741,11 +737,23 @@ export async function listFgWipDocuments(request) {
     fg_real_barcode: d.fg_barcode_snapshot ? barcodeMap.get(d.fg_barcode_snapshot.toUpperCase()) || null : null,
   }));
 
-  return { data: payload };
+  const department = await supabaseAdmin.from("production_departments").select("id").eq("code", FG_DEPARTMENT_CODE).eq("is_active", true).is("deleted_at", null).maybeSingle();
+  if (department.error) throw new ApiError(500, "โหลดแผนกรายงานไม่สำเร็จ");
+  let packingDocuments = [];
+  if (department.data) {
+    let packing = supabaseAdmin.from("production_packing_documents").select("id,work_date,lot_no,product_code,product_name,payload,created_at")
+      .eq("department_id", department.data.id).order("created_at", { ascending: false }).limit(501);
+    if (productionDate) packing = packing.eq("work_date", productionDate);
+    const result = await packing;
+    if (result.error && !isMissingOptionalTableError(result.error, "production_packing_documents")) throw new ApiError(500, "โหลดประวัติบรรจุหลายหน่วยไม่สำเร็จ", result.error.message);
+    if (result.data?.length > 500) throw new ApiError(422, "รายการหลายหน่วยเกินขอบเขต กรุณาเลือกวันที่รายงาน");
+    packingDocuments = result.data || [];
+  }
+  return { data: payload, packingDocuments };
 }
 
 export async function listFgPackingReport(request) {
-  await requirePermissionKeys(request, PERMISSIONS);
+  await requireTaskPermission(request, "production-fg-wip-view");
   const productionDate = toBangkokDateKey(new URL(request.url).searchParams.get("productionDate") || new Date());
   const supabaseAdmin = getSupabaseAdmin();
 

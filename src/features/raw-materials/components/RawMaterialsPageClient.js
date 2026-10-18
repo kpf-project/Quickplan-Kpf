@@ -37,7 +37,7 @@ import {
 import LiveClock from "@/components/LiveClock";
 
 const DEFAULT_ICCAT_CODES = ["01", "02", "03", "05", "08", "10"];
-const RAW_MATERIAL_COST_CODES = ["01", "02", "05", "08", "10"];
+const RAW_MATERIAL_COST_CODES = ["01", "02", "03", "05", "08", "10"];
 const EMPTY_LOT_SUMMARY = Object.freeze({
   totalProducts: 0,
   totalBaseQty: 0,
@@ -280,15 +280,15 @@ export default function RawMaterialsPageClient({ initialView = "summary", skipDe
   const permissionState = usePermissions();
   const canViewSummary = permissionState.loaded
     ? (permissionState.isAdmin ||
-      permissionState.permissions.includes("raw-materials-summary"))
+      ["raw-materials-summary", "raw-materials-summary-view"].some((key) => permissionState.permissions.includes(key)))
     : false;
   const canViewLot = permissionState.loaded
     ? (permissionState.isAdmin ||
-      permissionState.permissions.includes("raw-materials-lot"))
+      ["raw-materials-lot", "raw-materials-lot-view"].some((key) => permissionState.permissions.includes(key)))
     : false;
   const canViewMovement = permissionState.loaded
     ? (permissionState.isAdmin ||
-      permissionState.permissions.includes("raw-materials-movement"))
+      ["raw-materials-movement", "raw-materials-movement-view"].some((key) => permissionState.permissions.includes(key)))
     : false;
 
   useEffect(() => {
@@ -2596,7 +2596,7 @@ export default function RawMaterialsPageClient({ initialView = "summary", skipDe
                 <col key={index} style={{ width: `${width}%` }} />
               ))}
             </colgroup>
-            <thead className="sticky top-0 z-30 bg-[#102C57] text-white shadow-md [&_th]:bg-[#102C57]">
+            <thead className="sticky top-0 z-30 bg-[var(--surface-navy,#102C57)] text-white shadow-md [&_th]:bg-[var(--surface-navy,#102C57)]">
               <tr className="border-t-[3px] border-[#d4af37] text-center text-xs">
                 <th colSpan={3} className="border-r border-[#526987] border-t-[3px] border-t-[#d4af37] px-1.5 py-1.5">สินค้า</th>
                 <th colSpan={7} className="border-r border-[#526987] border-t-[3px] border-t-[#d4af37] px-1.5 py-1.5">คงเหลือ</th>
@@ -2684,7 +2684,7 @@ export default function RawMaterialsPageClient({ initialView = "summary", skipDe
           </table>
         </div>
 
-        <footer className="flex h-11 shrink-0 items-center gap-3 border-t-[3px] border-[#d4af37] bg-[#102C57] px-4 text-[11px] font-semibold text-white">
+        <footer className="flex h-11 shrink-0 items-center gap-3 border-t-[3px] border-[#d4af37] bg-[var(--surface-navy,#102C57)] px-4 text-[11px] font-semibold text-white">
           <span>รวม {Number(lotSummary.totalProducts || 0).toLocaleString("th-TH")} สินค้า</span>
           <span>·</span>
           <span>{pagination.totalRecords.toLocaleString("th-TH")} รายการ</span>
@@ -2939,7 +2939,7 @@ export default function RawMaterialsPageClient({ initialView = "summary", skipDe
                   <button
                     onClick={() => updateUiState(prev => ({ ...prev, isExportOpen: !prev.isExportOpen }))}
                     disabled={uiState.exportLoading}
-                    className="w-full lg:w-auto h-9 px-5 bg-[#102C57] hover:bg-[#0b1f3f] text-white text-xs font-bold rounded-lg shadow-sm active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="w-full lg:w-auto h-9 px-5 bg-[var(--surface-navy,#102C57)] hover:bg-[#0b1f3f] text-white text-xs font-bold rounded-lg shadow-sm active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     <Download size={14} className="text-[#d4af37]" />
                     {uiState.exportLoading ? "กำลังดาวน์โหลด..." : "ดาวน์โหลด"}
@@ -3037,7 +3037,7 @@ export default function RawMaterialsPageClient({ initialView = "summary", skipDe
 
                   <table className="w-full table-fixed border-collapse text-left text-sm table-compact">
                     <thead
-                      className="bg-[#102C57] text-xs font-bold uppercase tracking-wider text-white text-center sticky top-0 z-20 shadow-md border-t-4 border-t-[#d4af37] border-b-2 border-[#102C57]"
+                      className="bg-[var(--surface-navy,#102C57)] text-xs font-bold uppercase tracking-wider text-white text-center sticky top-0 z-20 shadow-md border-t-4 border-t-[#d4af37] border-b-2 border-[#102C57]"
                       style={lotIsVirtualized ? { display: "table", tableLayout: "fixed", width: "100%" } : undefined}
                     >
                       <tr>
@@ -3196,7 +3196,7 @@ export default function RawMaterialsPageClient({ initialView = "summary", skipDe
               ) : activeView === "movement" ? (
               <table className="w-full table-fixed border-collapse text-left text-[10px] xl:text-xs table-bordered table-compact">
                 <thead
-                  className="bg-[#102C57] text-[10px] xl:text-xs uppercase tracking-wider text-white text-center sticky top-0 z-20 shadow-md"
+                  className="bg-[var(--surface-navy,#102C57)] text-[10px] xl:text-xs uppercase tracking-wider text-white text-center sticky top-0 z-20 shadow-md"
                   style={movementIsVirtualized ? { display: "table", tableLayout: "fixed", width: "100%" } : undefined}
                 >
                   <tr>
@@ -3285,7 +3285,7 @@ export default function RawMaterialsPageClient({ initialView = "summary", skipDe
             ) : (
               <table className="w-full table-fixed border-collapse text-left text-[10px] xl:text-xs table-bordered table-compact">
                 <thead
-                  className="bg-[#102C57] text-[10px] xl:text-xs uppercase tracking-wider text-white text-center sticky top-0 z-20 shadow-md"
+                  className="bg-[var(--surface-navy,#102C57)] text-[10px] xl:text-xs uppercase tracking-wider text-white text-center sticky top-0 z-20 shadow-md"
                   style={summaryRows.length > 0
                     ? {
                       display: "grid",
@@ -3531,7 +3531,7 @@ export default function RawMaterialsPageClient({ initialView = "summary", skipDe
                   <div key={`mob-move-${row.SKU_CODE}-${index}`} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col gap-2">
                     <div className="flex justify-between items-start">
                       <div>
-                        <span className="inline-block bg-[#102C57] text-white text-[10px] px-2 py-0.5 rounded font-mono mb-1">{row.SKU_CODE}</span>
+                        <span className="inline-block bg-[var(--surface-navy,#102C57)] text-white text-[10px] px-2 py-0.5 rounded font-mono mb-1">{row.SKU_CODE}</span>
                         <h3 className="text-sm font-bold text-gray-800 leading-tight">{row.SKU_NAME}</h3>
                       </div>
                     </div>
@@ -3600,7 +3600,7 @@ export default function RawMaterialsPageClient({ initialView = "summary", skipDe
                     <div key={`mob-sum-${row.SKU_CODE}-${row.ICCAT_CODE}-${index}`} className="bg-white rounded-sm p-3 border border-slate-300 flex flex-col gap-2">
                       <div className="flex justify-between items-start">
                         <div>
-                          <span className="inline-block bg-[#102C57] text-white text-[10px] px-2 py-0.5 font-mono mb-1">{row.SKU_CODE}</span>
+                          <span className="inline-block bg-[var(--surface-navy,#102C57)] text-white text-[10px] px-2 py-0.5 font-mono mb-1">{row.SKU_CODE}</span>
                           <h3 className="text-sm font-bold text-gray-800 leading-tight">{row.SKU_NAME}</h3>
                         </div>
                       </div>
@@ -3671,7 +3671,7 @@ export default function RawMaterialsPageClient({ initialView = "summary", skipDe
         isHistoryModalOpen && selectedSkuForHistory && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
             <div className="bg-white rounded-sm shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[84vh] border-t-4 border-[#d4af37]">
-              <div className="px-4 sm:px-6 py-3 bg-[#102C57] text-white flex justify-between items-center shrink-0">
+              <div className="px-4 sm:px-6 py-3 bg-[var(--surface-navy,#102C57)] text-white flex justify-between items-center shrink-0">
                 <div>
                   <h2 className="text-lg font-bold">ประวัติการสั่งซื้อ</h2>
                   <div className="text-xs text-blue-200 font-mono mt-0.5">{selectedSkuForHistory.skuCode} - {selectedSkuForHistory.skuName}</div>

@@ -1,5 +1,5 @@
 import { getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { normalizeParam } from "@/lib/validation";
 
 const COMPONENT_TYPE_MAP = {
@@ -77,10 +77,7 @@ async function findWorkCenter(supabaseAdmin, departmentId, workCenterId) {
 
 export async function GET(request) {
   try {
-    await requirePermissionKeys(request, [
-      "production-line-settings-view",
-      "production-line-settings-manage",
-    ]);
+    await requireTaskPermission(request, "production-settings-routing-components-view");
 
     const { searchParams } = new URL(request.url);
     const departmentId = normalizeText(searchParams.get("departmentId"));
@@ -183,9 +180,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const { userId } = await requirePermissionKeys(request, [
-      "production-line-settings-manage",
-    ]);
+    const { userId } = await requireTaskPermission(request, "production-settings-routing-components-create");
     const body = await readJson(request);
 
     const departmentId = normalizeText(body.departmentId);

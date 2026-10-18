@@ -20,6 +20,10 @@ You can start editing the page by modifying `app/page.js`. The page auto-updates
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## PDF report output
+
+The production input/output report renders a vector PDF on the server with Puppeteer. Preview, download, and printing use that same PDF. If the app is not reachable at `http://127.0.0.1:$PORT` from its own server process, set `KPF_INTERNAL_APP_URL` to the app's reachable HTTP(S) origin (for example, `http://127.0.0.1:3002` for a self-hosted app). The PDF renderer only allows requests to that configured origin.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

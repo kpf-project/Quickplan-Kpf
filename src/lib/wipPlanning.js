@@ -248,42 +248,53 @@ export function buildDraftPlanId({
   return `WIP-${safeMaster}-${safeDept}-${safeSku}-${safeDate}${safeShift ? `-${safeShift}` : ""}${safeWorkstream ? `-${safeWorkstream}` : ""}`;
 }
 
+const gatewayProductMetaCache = new Map();
+
 export async function loadGatewayProductMetaBySkus(skuCodes = []) {
   const skus = Array.from(new Set((skuCodes || []).map(normalizeSku).filter(Boolean)));
   if (!skus.length) return new Map();
 
-  const requests = skus.map(async (sku) => {
-    const params = new URLSearchParams();
-    params.set("search", sku);
-    params.set("page", "1");
-    params.set("pageSize", "20");
-    params.set("iccatCodes", "03,04,04-1,04-2");
-    const result = await fetchGatewayJson("/api/products", params, "static");
-    if (!result.ok) {
-      return [sku, null];
-    }
-    const rows = Array.isArray(result.data?.data) ? result.data.data : [];
-    const exactMatch = rows.find((row) => normalizeSku(row?.SKU_CODE) === sku) || null;
-    if (!exactMatch) {
-      return [sku, null];
-    }
-    const qtyPerBatchRaw = Number(exactMatch?.UTQ_QTY_1);
-    const qtyPerBatch = Number.isFinite(qtyPerBatchRaw) && qtyPerBatchRaw > 0 ? qtyPerBatchRaw : 1;
-    return [sku, {
-      isFgProduct: resolveItemTypeByCategory(exactMatch?.ICCAT_CODE) === BOM_ITEM_TYPES.FG,
-      qtyPerBatch,
-      displayUnit: String(exactMatch?.UTQ_NAME || "").trim()
-        || String(exactMatch?.UTQ_NAME_1 || "").trim()
-        || "unit",
-    }];
-  });
+  const missingSkus = skus.filter((sku) => !gatewayProductMetaCache.has(sku));
+  if (missingSkus.length) {
+    const requests = missingSkus.map(async (sku) => {
+      const params = new URLSearchParams();
+      params.set("search", sku);
+      params.set("page", "1");
+      params.set("pageSize", "20");
+      params.set("iccatCodes", "03,04,04-1,04-2");
+      const result = await fetchGatewayJson("/api/products", params, "static");
+      if (!result.ok) {
+        return;
+      }
+      const rows = Array.isArray(result.data?.data) ? result.data.data : [];
+      const exactMatch = rows.find((row) => normalizeSku(row?.SKU_CODE) === sku) || null;
+      if (!exactMatch) {
+        return;
+      }
+      const qtyPerBatchRaw = Number(exactMatch?.UTQ_QTY_1);
+      const qtyPerBatch = Number.isFinite(qtyPerBatchRaw) && qtyPerBatchRaw > 0 ? qtyPerBatchRaw : 1;
+      gatewayProductMetaCache.set(sku, {
+        isFgProduct: resolveItemTypeByCategory(exactMatch?.ICCAT_CODE) === BOM_ITEM_TYPES.FG,
+        qtyPerBatch,
+        displayUnit: String(exactMatch?.UTQ_NAME || "").trim()
+          || String(exactMatch?.UTQ_NAME_1 || "").trim()
+          || "unit",
+      });
+    });
 
-  const entries = await Promise.all(requests);
-  return new Map(entries.filter(([, value]) => value));
+    await Promise.all(requests);
+  }
+
+  const map = new Map();
+  skus.forEach((sku) => {
+    const cached = gatewayProductMetaCache.get(sku);
+    if (cached) map.set(sku, cached);
+  });
+  return map;
 }
 
-async function loadMainPlanRowsFromSchedule(supabaseAdmin, normalizedPlanNo) {
-  const plansResult = await supabaseAdmin
+async function loadMainPlanRowsFromSchedule(supabaseAdmin, normalizedPlanNo, options = {}) {
+  let plansQuery = supabaseAdmin
     .from("production_schedule_plans")
     .select(`
       id,
@@ -291,24 +302,61 @@ async function loadMainPlanRowsFromSchedule(supabaseAdmin, normalizedPlanNo) {
       week_start_date,
       period_end,
       status,
+      ${options.releasedOnly ? "published_snapshot,published_revision," : ""}
       production_departments:dept_id (
         code,
         name
       )
     `)
-    .eq("master_plan_no", normalizedPlanNo)
-    .in("status", ["draft", "published"]);
+    .eq("master_plan_no", normalizedPlanNo);
+  plansQuery = options.releasedOnly
+    ? plansQuery.not("published_snapshot", "is", null)
+    : plansQuery.in("status", ["draft", "published"]);
+  const plansResult = await plansQuery;
   if (plansResult.error) {
     throw plansResult.error;
   }
 
-  const plans = Array.isArray(plansResult.data) ? plansResult.data : [];
-  if (!plans.length) return [];
+  const rawPlans = (Array.isArray(plansResult.data) ? plansResult.data : []).map((plan) => (
+    options.releasedOnly
+      ? { ...plan, ...plan.published_snapshot.plan, published_snapshot: plan.published_snapshot }
+      : plan
+  ));
+  if (!rawPlans.length) return [];
 
+  // Group plans by dept_id to prevent double-counting when multiple plan records exist for the same department
+  const canonicalPlansByDept = new Map();
+  rawPlans.forEach((plan) => {
+    const deptId = String(plan?.dept_id || "").trim();
+    if (!deptId) return;
+    const existing = canonicalPlansByDept.get(deptId);
+    if (!existing) {
+      canonicalPlansByDept.set(deptId, plan);
+      return;
+    }
+    // Published plan always takes precedence over draft
+    if (existing.status !== "published" && plan.status === "published") {
+      canonicalPlansByDept.set(deptId, plan);
+      return;
+    }
+    if (existing.status === "published" && plan.status !== "published") {
+      return;
+    }
+    // If same status, take the newest
+    const existingTime = new Date(existing.updated_at || existing.created_at || 0).getTime();
+    const newTime = new Date(plan.updated_at || plan.created_at || 0).getTime();
+    if (newTime > existingTime) {
+      canonicalPlansByDept.set(deptId, plan);
+    }
+  });
+
+  const plans = Array.from(canonicalPlansByDept.values());
   const planIds = Array.from(new Set(plans.map((plan) => String(plan?.id || "").trim()).filter(Boolean)));
   if (!planIds.length) return [];
 
-  const scheduleRows = await fetchSupabaseRowsByChunks(
+  const scheduleRows = options.releasedOnly
+    ? plans.flatMap((plan) => plan.published_snapshot?.rows || [])
+    : await fetchSupabaseRowsByChunks(
     planIds,
     (chunk) => supabaseAdmin
       .from("production_schedule_rows")
@@ -567,20 +615,26 @@ async function loadMainPlanRowsFromSchedule(supabaseAdmin, normalizedPlanNo) {
   return fallbackRows;
 }
 
-export async function loadMainPlanRowsForMasterPlan(supabaseAdmin, masterPlanNo) {
+export async function loadMainPlanRowsForMasterPlan(supabaseAdmin, masterPlanNo, options = {}) {
   const normalizedPlanNo = normalizeMasterPlanNo(masterPlanNo);
   if (!normalizedPlanNo) return [];
   let rows = [];
 
   try {
-    rows = await loadMainPlanRowsFromSchedule(supabaseAdmin, normalizedPlanNo);
+    rows = await loadMainPlanRowsFromSchedule(supabaseAdmin, normalizedPlanNo, options);
   } catch (error) {
     if (!isMissingTableError(error)) {
       throw error;
     }
   }
 
-  if (!rows.length) {
+  if (!rows.length && options.releasedOnly) {
+    const released = await supabaseAdmin.from("production_master_plans")
+      .select("published_plan_rows").eq("master_plan_no", normalizedPlanNo).maybeSingle();
+    if (released.error) throw released.error;
+    rows = released.data?.published_plan_rows || [];
+  }
+  if (!rows.length && !options.releasedOnly) {
     const result = await supabaseAdmin
       .from("production_plan_status")
       .select(`
@@ -620,18 +674,19 @@ export async function loadMainPlanRowsForMasterPlan(supabaseAdmin, masterPlanNo)
   }
   if (!rows.length) return rows;
 
-  const productMetaBySku = await loadGatewayProductMetaBySkus(rows.map((row) => row?.sku_code));
+  const productMetaBySku = await loadProductsMetaBySkus(supabaseAdmin, rows.map((row) => row?.sku_code));
 
   return rows.map((row) => {
     const sku = normalizeSku(row?.sku_code);
     const productMeta = productMetaBySku.get(sku) || null;
     const rawUnit = String(row?.unit || "").trim();
     const plannedQty = toFiniteNumber(row?.planned_qty, 0);
+    const isFgProduct = resolveItemTypeByCategory(productMeta?.iccat_code) === BOM_ITEM_TYPES.FG;
 
     return {
       ...row,
       planned_qty: plannedQty,
-      unit: productMeta?.isFgProduct ? (productMeta.displayUnit || rawUnit || "unit") : (rawUnit || "batch"),
+      unit: isFgProduct ? (productMeta?.uom_name || rawUnit || "unit") : (rawUnit || "batch"),
     };
   });
 }

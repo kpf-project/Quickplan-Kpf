@@ -21,6 +21,7 @@ import WeightScalePrimaryHeader from "@/features/production-line/components/Weig
 import { fetchProductionPrisonIssueSummaryReport } from "@/features/production-line/services/productionPrisonClient";
 import { fetchProductionStockIssueSummaryReport } from "@/features/production-line/services/productionStockIssueClient";
 import { useUserProfile } from "@/lib/useUserProfile";
+import { ReportHeader, ReportFilterBar } from "@/components/print";
 
 const LIMIT_OPTIONS = [20, 50, 100];
 
@@ -87,6 +88,17 @@ function formatDateLabel(value) {
   return `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${buddhistYear}`;
 }
 
+function ReportCenterSummaryRow({ row, expanded, toggle, issueTypes }) {
+  return <>
+    <tr className={expanded ? "report-center-selected" : ""}>
+      <td><button type="button" aria-label={`รายละเอียด ${row.productCode} LOT ${row.lotNo}`} aria-expanded={expanded} onClick={toggle}>{expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}</button></td>
+      <td><strong className="font-medium">{row.productCode}</strong><span className="block text-[10px] text-slate-500">{formatDateLabel(row.issueDate)} · {getIssueTypeLabel(issueTypes, row.issueType)}{row.issueStatus === "voided" ? " · ยกเลิก" : ""}</span></td>
+      <td>{row.lotNo}</td><td>{formatWeight(row.totalWeightKg)}</td><td>{formatWeight(row.returnWeightKg)}</td><td>{formatWeight(row.actualWeightKg)}</td>
+    </tr>
+    {expanded && <tr><td colSpan={6}><div className="text-xs leading-6"><strong>{getProductDisplay(row)}</strong><p>จำนวนเบิก {formatQuantity(row.quantity)} · คืน {formatQuantity(row.returnQuantity)} · ใช้จริง {formatQuantity(row.actualQuantity)}</p><p>วันที่คืน: {row.returnDates.map(formatDateLabel).join(", ") || "ไม่มีรายการคืน"}</p><p>บาร์โค้ด: {row.barcodes.join(", ") || "-"}</p><p className="text-slate-500">เอกสารและรายการต้นทางดูได้ในมุมมอง “ละเอียด”</p></div></td></tr>}
+  </>;
+}
+
 function highlightText(text, search) {
   if (!search || !text) return text;
   const parts = String(text).split(new RegExp(`(${search.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')})`, 'gi'));
@@ -121,6 +133,10 @@ function normalizeRows(rows) {
       issueType: String(row?.issueType || "").trim().toUpperCase(),
       productCode: String(row?.productCode || "").trim().toUpperCase() || "-",
       productName: String(row?.productName || "").trim() || "-",
+      targetProductCode: String(row?.targetProductCode || "").trim().toUpperCase(),
+      targetProductName: String(row?.targetProductName || "").trim(),
+      destinationRoomCode: String(row?.destinationRoomCode || "").trim().toUpperCase(),
+      destinationRoomName: String(row?.destinationRoomName || "").trim(),
       quantity,
       totalWeightKg,
       returnQuantity,
@@ -130,6 +146,14 @@ function normalizeRows(rows) {
       returnDates: Array.isArray(row?.returnDates) ? row.returnDates : [],
     };
   });
+}
+
+function getProductDisplay(row) {
+  const source = `${row.productCode} - ${row.productName}`;
+  if (row.destinationRoomName) return `${source} → ${row.destinationRoomName}`;
+  return row.targetProductCode
+    ? `${source} → ${row.targetProductCode} - ${row.targetProductName || "-"}`
+    : source;
 }
 
 function normalizeSummary(summary) {
@@ -341,7 +365,7 @@ async function exportSummaryWorkbook({
 
   const groups = new Map();
   sortedRows.forEach(row => {
-    const key = `${row.productCode}|${row.issueStatus}`;
+    const key = `${row.productCode}|${row.destinationRoomCode}|${row.issueStatus}`;
     if (!groups.has(key)) {
       groups.set(key, []);
     }
@@ -351,7 +375,8 @@ async function exportSummaryWorkbook({
   let excelSequence = 1;
   groups.forEach((groupRows) => {
     const productCode = groupRows[0].productCode;
-    const statusSuffix = groupRows[0].issueStatus === "voided" ? " (ยกเลิกเบิก)" : "";
+    const statusLabel = groupRows[0].issueStatus === "voided" ? "ยกเลิกเบิก" : "";
+    const statusSuffix = statusLabel ? ` (${statusLabel})` : "";
     let productQty = 0;
     let productWeight = 0;
     let productReturnQty = 0;
@@ -365,7 +390,7 @@ async function exportSummaryWorkbook({
         sequence: excelSequence++,
         issueDateLabel: formatDateLabel(row.issueDate),
         lotNo: row.lotNo,
-        productDisplay: `${row.productCode} - ${row.productName}${row.issueStatus === "voided" ? " (ยกเลิกเบิก)" : ""}`,
+        productDisplay: `${getProductDisplay(row)}${row.issueStatus === "voided" ? " (ยกเลิกเบิก)" : ""}`,
         issueTypeLabel: getIssueTypeLabel(issueTypes, row.issueType),
         quantity: row.quantity,
         totalWeightKg: row.totalWeightKg,
@@ -388,7 +413,7 @@ async function exportSummaryWorkbook({
       sequence: "",
       issueDateLabel: "",
       lotNo: "",
-      productDisplay: `สรุปรวม ${productCode}${statusSuffix}`,
+      productDisplay: `สรุปรวม ${productCode} (${statusLabel})`,
       issueTypeLabel: reportConfig.hideIssueTypeColumn ? undefined : "",
       quantity: Number(productQty.toFixed(3)),
       totalWeightKg: Number(productWeight.toFixed(2)),
@@ -465,6 +490,7 @@ export default function ProductionStockIssueSummaryReportPageClient({
   initialFilters,
   initialPagination,
   reportConfig = {},
+  reportCenter = false,
 }) {
   const resolvedReportConfig = {
     ...DEFAULT_REPORT_CONFIG,
@@ -493,16 +519,21 @@ export default function ProductionStockIssueSummaryReportPageClient({
   const [isPending, startTransition] = useTransition();
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [expandedRow, setExpandedRow] = useState(null);
+  const loadedCenterFilters = useRef(JSON.stringify(normalizeFilters(initialFilters, initialPagination)));
 
   const filteredRows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return rows;
     return rows.filter((row) => {
       const matchLot = String(row.lotNo || "").toLowerCase().includes(q);
+      const matchTarget = `${row.targetProductCode || ""} ${row.targetProductName || ""}`
+        .toLowerCase()
+        .includes(q);
       const matchBarcode = Array.isArray(row.barcodes) && row.barcodes.some((bc) =>
         String(bc || "").toLowerCase().includes(q)
       );
-      return matchLot || matchBarcode;
+      return matchLot || matchBarcode || matchTarget;
     });
   }, [rows, searchQuery]);
 
@@ -629,7 +660,7 @@ export default function ProductionStockIssueSummaryReportPageClient({
     
     const groups = new Map();
     sorted.forEach(row => {
-      const key = `${row.productCode}|${row.issueStatus}`;
+      const key = `${row.productCode}|${row.destinationRoomCode}|${row.issueStatus}`;
       if (!groups.has(key)) {
         groups.set(key, []);
       }
@@ -660,20 +691,26 @@ export default function ProductionStockIssueSummaryReportPageClient({
         productActualWeight += row.actualWeightKg;
       });
 
-      virtualRows.push({
-        type: 'product-footer',
-        data: {
-          productCode,
-          productName: `${productName} (${statusLabel})`,
-          statusLabel,
-          quantity: Number(productQty.toFixed(3)),
-          totalWeightKg: Number(productWeight.toFixed(2)),
-          returnQuantity: Number(productReturnQty.toFixed(3)),
-          returnWeightKg: Number(productReturnWeight.toFixed(2)),
-          actualQuantity: Number(productActualQty.toFixed(3)),
-          actualWeightKg: Number(productActualWeight.toFixed(2)),
-        }
-      });
+      if (groupRows.length > 1) {
+        virtualRows.push({
+          type: 'product-footer',
+          data: {
+            productCode,
+            productName: `${productName} (${statusLabel})`,
+            targetProductCode: groupRows[0].targetProductCode,
+            destinationRoomCode: groupRows[0].destinationRoomCode,
+            destinationRoomName: groupRows[0].destinationRoomName,
+            targetProductName: groupRows[0].targetProductName,
+            statusLabel,
+            quantity: Number(productQty.toFixed(3)),
+            totalWeightKg: Number(productWeight.toFixed(2)),
+            returnQuantity: Number(productReturnQty.toFixed(3)),
+            returnWeightKg: Number(productReturnWeight.toFixed(2)),
+            actualQuantity: Number(productActualQty.toFixed(3)),
+            actualWeightKg: Number(productActualWeight.toFixed(2)),
+          }
+        });
+      }
     });
 
     // Add grand footer at the very end
@@ -698,8 +735,8 @@ export default function ProductionStockIssueSummaryReportPageClient({
     let pages = [];
     let currentPage = [];
     let currentWeight = 0;
-    const FIRST_PAGE_LIMIT = 63; 
-    const OTHER_PAGE_LIMIT = 63;
+    const FIRST_PAGE_LIMIT = 24;
+    const OTHER_PAGE_LIMIT = 24;
 
     issuePrintRows.forEach(row => {
       let rowWeight = 1;
@@ -744,6 +781,7 @@ export default function ProductionStockIssueSummaryReportPageClient({
         });
 
         applyPayload(payload);
+        loadedCenterFilters.current = JSON.stringify(nextFilters);
         setCurrentViewPage(0);
         setFeedback("อัปเดตรายงานสรุปเรียบร้อย");
       } catch (error) {
@@ -864,8 +902,110 @@ export default function ProductionStockIssueSummaryReportPageClient({
     window.print();
   };
 
+  useEffect(() => {
+    if (!reportCenter || window.parent === window) return;
+    const ready = () => window.parent.postMessage({ type: "kpf-report-ready", actions: "stock-summary" }, window.location.origin);
+    const receive = (event) => {
+      if (event.origin !== window.location.origin || event.source !== window.parent) return;
+      if (event.data?.type === "kpf-report-connect") ready();
+      if (event.data?.type !== "kpf-report-action") return;
+      if (["print", "excel"].includes(event.data.action) && (isPending || loadedCenterFilters.current !== JSON.stringify(filters))) {
+        setErrorMessage("กรุณากดใช้ตัวกรองและรอโหลดข้อมูลให้เสร็จก่อนพิมพ์หรือส่งออก");
+        return;
+      }
+      if (event.data.action === "print") handlePrintReport();
+      if (event.data.action === "excel" && !isExporting && !isPending) void handleExportReport();
+    };
+    window.addEventListener("message", receive);
+    ready();
+    return () => window.removeEventListener("message", receive);
+  });
+
   return (
-    <div className="weight-scale-report-page min-h-screen bg-[#f4f6f8] text-[#262626]">
+    <div className={`weight-scale-report-page min-h-screen bg-[#f4f6f8] text-[#262626] ${reportCenter ? "report-center-summary" : ""}`}>
+      <style>{`
+        .summary-issue-report-print-shell {
+          box-sizing: border-box;
+          width: 210mm;
+          max-width: 100%;
+          min-width: 0;
+          margin-inline: auto;
+        }
+        @media screen {
+          .summary-issue-report-print-shell { aspect-ratio: 210 / 297; }
+        }
+        .issue-summary-preview-pages { overflow-x: visible; }
+        .summary-issue-report-table th,
+        .summary-issue-report-table td,
+        .issue-summary-print-table th,
+        .issue-summary-print-table td { word-break: normal; overflow-wrap: normal; }
+        .summary-issue-report-table td[colspan],
+        .issue-summary-print-table td[colspan] { white-space: normal !important; }
+        .issue-summary-document-header > div:first-child,
+        .issue-summary-document-header > th > div:first-child {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+          gap: 6px;
+          white-space: normal !important;
+        }
+        .issue-summary-document-header > div:first-child > div:nth-child(2),
+        .issue-summary-document-header > th > div:first-child > div:nth-child(2) {
+          grid-column: 1 / -1;
+          grid-row: 2;
+          padding: 0;
+        }
+        .issue-summary-document-header h1 { font-size: 17px; line-height: 1.3; }
+        .issue-summary-document-header img { max-height: 36px; }
+      `}</style>
+      {reportCenter && <div className="report-center-summary-screen weight-scale-report-screen-only">
+        <div className="report-center-summary-meta">แหล่งข้อมูล: สต็อกฝ่ายผลิต · {scope.departmentName || "แผนกตามการตั้งค่า"} · ยอดรวมเฉพาะเบิกสำเร็จ</div>
+        <form className="report-center-summary-filters" onSubmit={(event) => { event.preventDefault(); if (filters.dateFrom && filters.dateTo && filters.dateFrom > filters.dateTo) { setErrorMessage("กรุณาเลือกช่วงวันที่ให้ถูกต้อง"); return; } loadReport(filters); }}>
+          <label>ตั้งแต่ <input aria-label="วันที่เริ่มต้นรายงาน" type="date" value={filters.dateFrom} max={filters.dateTo || undefined} onChange={(event) => handleFieldChange("dateFrom", event.target.value)} /></label>
+          <label>ถึง <input aria-label="วันที่สิ้นสุดรายงาน" type="date" value={filters.dateTo} min={filters.dateFrom || undefined} onChange={(event) => handleFieldChange("dateTo", event.target.value)} /></label>
+          <details><summary>สินค้า ({filters.productCodes.length ? `${filters.productCodes.length} รายการ` : "ทั้งหมด"})</summary><select aria-label="กรองสินค้าในรายงาน" multiple value={filters.productCodes} onChange={(event) => handleFieldChange("productCodes", Array.from(event.target.selectedOptions, (option) => option.value))}>{normalizedProductOptions.map((option) => <option key={option.code} value={option.code}>{option.code} {option.name}</option>)}</select></details>
+          <label>สถานะ <select value={filters.issueStatuses[0] || "confirmed"} onChange={(event) => handleFieldChange("issueStatuses", [event.target.value])}><option value="confirmed">เบิกสำเร็จ</option><option value="voided">ยกเลิกเบิก</option></select></label>
+          <label>ประเภท <select value={filters.issueTypes[0] || ""} onChange={(event) => handleFieldChange("issueTypes", event.target.value ? [event.target.value] : [])}><option value="">ทุกประเภท</option>{issueTypes.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+          <button type="submit" disabled={isPending}>ค้นหา</button>
+        </form>
+        {(errorMessage || feedback) && <div role={errorMessage ? "alert" : "status"} className={errorMessage ? "text-red-700 py-3" : "text-emerald-700 py-3"}>{errorMessage || feedback}</div>}
+        <div className="report-center-summary-table-wrap report-center-table-scroll" aria-busy={isPending} suppressHydrationWarning>
+          <table className="report-center-summary-table"><thead><tr><th aria-label="รายละเอียด" /><th>สินค้า / วันที่</th><th>LOT</th><th>เบิก (กก.)</th><th>คืน (กก.)</th><th>ใช้จริง (กก.)</th></tr></thead><tbody>
+            {!filteredRows.length && <tr><td colSpan={6} className="text-center py-12">{isPending ? "กำลังโหลด…" : resolvedReportConfig.emptyMessage}</td></tr>}
+            {filteredRows.map((row, index) => <ReportCenterSummaryRow key={`${row.productCode}-${row.lotNo}-${row.issueDate}-${row.issueType}-${row.destinationRoomCode}-${row.targetProductCode}-${row.issueStatus}-${index}`} row={row} expanded={expandedRow === index} toggle={() => setExpandedRow(expandedRow === index ? null : index)} issueTypes={issueTypes} />)}
+          </tbody>{filteredRows.length > 0 && <tfoot><tr><th colSpan={3}>รวมทั้งสิ้น (เฉพาะเบิกสำเร็จ)</th><th>{formatWeight(filteredSummary.totalWeightKg)}</th><th>{formatWeight(filteredSummary.totalReturnWeightKg)}</th><th>{formatWeight(filteredSummary.totalActualWeightKg)}</th></tr></tfoot>}</table>
+        </div>
+        <style>{`
+          @media screen {
+            .report-center-summary { background:white; min-height:0; color:#102f59; }
+            .report-center-summary > .weight-scale-report-screen-only:not(.report-center-summary-screen), .report-center-summary > .mx-auto { display:none; }
+            .report-center-summary-screen { padding:10px 20px 24px; font-size:13px; }
+            .report-center-summary-meta { color:#6280a2; font-size:11px; text-align:right; margin:0 0 16px; }
+            .report-center-summary-table-wrap { overflow-x:auto; }
+            .report-center-summary-table { width:100%; min-width:620px; border-collapse:collapse; }
+            .report-center-summary-table th,.report-center-summary-table td { border:1px solid #dce7f4; padding:13px 15px; }
+            .report-center-summary-table thead { background:#f8f9fa; border-bottom:2px solid #1a1c1e; color:#1a1c1e; }
+            .report-center-summary-table tfoot { background:#f8f9fa; }
+            .report-center-summary-table th { font-weight:700; }
+            .report-center-summary-table td:nth-child(n+4),.report-center-summary-table tfoot th:not(:first-child) { text-align:right; font-variant-numeric:tabular-nums; }
+            .report-center-summary-table tfoot th:first-child { text-align:left; }
+            .report-center-summary-table tfoot { font-size:15px; }
+            .report-center-summary-table .report-center-selected { background:#fff5cf; }
+            .report-center-summary-table td:first-child { width:34px;padding:8px; }
+            .report-center-summary-table button { display:grid;place-items:center;background:none;border:0;color:#436b96;padding:4px;cursor:pointer; }
+            .report-center-summary-table button:focus-visible { outline:2px solid #2c72c6; }
+            .report-center-summary-filters { display:flex;align-items:end;gap:12px;flex-wrap:wrap;background:#ffffff;padding:14px 18px;margin-bottom:16px;border:1px solid #dbe6f2;border-radius:8px;box-shadow:0 2px 8px rgba(16,44,87,0.04); }
+            .report-center-summary-filters label { display:flex;flex-direction:column;gap:5px;font-size:11px;font-weight:700;color:#102C57;text-transform:uppercase;letter-spacing:0.04em; }
+            .report-center-summary-filters input,.report-center-summary-filters select { border:1px solid #cbd5e1;padding:8px 12px;background:white;border-radius:6px;font-size:13px;color:#0f172a;outline:none;transition:border-color 0.15s ease,box-shadow 0.15s ease; }
+            .report-center-summary-filters input:focus,.report-center-summary-filters select:focus { border-color:#d4af37;box-shadow:0 0 0 3px rgba(212,175,55,0.18); }
+            .report-center-summary-filters details { position:relative;font-size:11px;font-weight:700;color:#102C57; }
+            .report-center-summary-filters summary { border:1px solid #cbd5e1;padding:8px 14px;background:white;border-radius:6px;cursor:pointer;font-size:13px;color:#0f172a;transition:border-color 0.15s ease; }
+            .report-center-summary-filters summary:hover { border-color:#d4af37; }
+            .report-center-summary-filters details select { position:absolute;left:0;top:calc(100% + 4px);z-index:20;min-width:260px;max-width:calc(100vw - 60px);min-height:160px;border-radius:6px;border:1px solid #cbd5e1;box-shadow:0 12px 28px rgba(16,44,87,0.14); }
+            .report-center-summary-filters button { background:var(--surface-navy, #102C57);color:white;border:0;padding:9px 20px;border-radius:6px;font-size:13px;font-weight:700;letter-spacing:0.03em;align-self:end;cursor:pointer;transition:background 0.15s ease; }
+            .report-center-summary-filters button:hover { background:#173b70; }
+          }
+        `}</style>
+      </div>}
       <div className="weight-scale-report-screen-only">
         <WeightScalePrimaryHeader
           eyebrow={resolvedReportConfig.eyebrow}
@@ -876,79 +1016,22 @@ export default function ProductionStockIssueSummaryReportPageClient({
 
       <div className="mx-auto max-w-[88rem] px-4 py-8 sm:px-6 lg:px-8">
         <section className="weight-scale-report-print-shell border border-[#d7dde5] border-t-2 border-t-[#d4af37] bg-white">
-          <div className="weight-scale-report-screen-only border-b border-[#d7dde5] bg-[#fcfbf7] px-6 py-5">
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_1.2fr_auto] items-end">
-              <label className="block">
-                <span className="text-[11px] font-black uppercase tracking-[0.2em] text-[#7d8795]">
-                  จากวันที่
-                </span>
-                <div className="mt-2 flex h-12 items-center gap-3 border border-[#d7dde5] bg-white px-4">
-                  <CalendarRange size={16} className="text-[#7d8795]" />
-                  <input
-                    type="date"
-                    value={filters.dateFrom}
-                    onChange={(event) => handleFieldChange("dateFrom", event.target.value)}
-                    className="w-full bg-transparent text-sm font-semibold text-[#102C57] outline-none"
-                  />
-                </div>
-              </label>
-
-              <label className="block">
-                <span className="text-[11px] font-black uppercase tracking-[0.2em] text-[#7d8795]">
-                  ถึงวันที่
-                </span>
-                <div className="mt-2 flex h-12 items-center gap-3 border border-[#d7dde5] bg-white px-4">
-                  <CalendarRange size={16} className="text-[#7d8795]" />
-                  <input
-                    type="date"
-                    value={filters.dateTo}
-                    onChange={(event) => handleFieldChange("dateTo", event.target.value)}
-                    className="w-full bg-transparent text-sm font-semibold text-[#102C57] outline-none"
-                  />
-                </div>
-              </label>
-
-              <label className="block">
-                <span className="text-[11px] font-black uppercase tracking-[0.2em] text-[#7d8795]">
-                  ค้นหา Lot / บาร์โค้ด
-                </span>
-                <div className="mt-2 flex h-12 items-center gap-3 border border-[#d7dde5] bg-white px-4">
-                  <FileSearch size={16} className="text-[#7d8795]" />
-                  <input
-                    type="text"
-                    placeholder="ระบุเลข Lot หรือ บาร์โค้ด..."
-                    value={searchQuery}
-                    onChange={(event) => setSearchQuery(event.target.value)}
-                    className="w-full bg-transparent text-sm font-semibold text-[#102C57] outline-none"
-                  />
-                  {searchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => setSearchQuery("")}
-                      className="text-[#7d8795] hover:text-[#102C57] focus:outline-none"
-                    >
-                      <X size={14} />
-                    </button>
-                  )}
-                </div>
-              </label>
-
-              <div className="flex items-end">
-                <button
-                  type="button"
-                  onClick={() => loadReport(filters)}
-                  disabled={isPending}
-                  className="inline-flex h-12 w-full items-center justify-center gap-2 border border-[#d4af37] bg-[#102C57] px-5 text-sm font-black uppercase tracking-[0.14em] text-[#fff7df] transition hover:bg-[#173b67] disabled:cursor-not-allowed disabled:opacity-60 xl:w-auto"
-                >
-                  {isPending ? (
-                    <RefreshCw size={16} className="animate-spin" />
-                  ) : (
-                    <FileSearch size={16} />
-                  )}
-                  โหลดรายงาน
-                </button>
-              </div>
-            </div>
+          <div className="weight-scale-report-screen-only border-b border-[#d7dde5] bg-[#fcfbf7] p-5">
+            <ReportFilterBar
+              dateMode="range"
+              dateFrom={filters.dateFrom}
+              dateTo={filters.dateTo}
+              onDateFromChange={(val) => handleFieldChange("dateFrom", val)}
+              onDateToChange={(val) => handleFieldChange("dateTo", val)}
+              searchQuery={searchQuery}
+              onSearchQueryChange={setSearchQuery}
+              searchPlaceholder="ระบุ Lot บาร์โค้ด หรือสินค้าปลายทาง..."
+              searchLabel="ค้นหา Lot / บาร์โค้ด / สินค้าปลายทาง"
+              isLoading={isPending}
+              onSearch={() => loadReport(filters)}
+              searchButtonLabel="โหลดรายงาน"
+              className="mb-0 border-0 bg-transparent p-0 shadow-none"
+            />
 
             <div className="mt-5 flex flex-col gap-4 border-t border-[#eef2f6] pt-5 lg:flex-row lg:items-end lg:justify-between animate-fadeIn">
               <div className="flex flex-wrap items-end gap-4">
@@ -1173,7 +1256,7 @@ export default function ProductionStockIssueSummaryReportPageClient({
                 <button
                   type="button"
                   onClick={handlePrintReport}
-                  className="weight-scale-report-screen-only inline-flex h-10 items-center justify-center gap-2 border border-[#102C57] bg-[#102C57] px-4 text-[11px] font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#173b67]"
+                  className="weight-scale-report-screen-only inline-flex h-10 items-center justify-center gap-2 border border-[#102C57] bg-[var(--surface-navy,#102C57)] px-4 text-[11px] font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#173b67]"
                 >
                   <Printer size={14} />
                   พิมพ์รายงาน
@@ -1203,7 +1286,6 @@ export default function ProductionStockIssueSummaryReportPageClient({
             ) : null}
           </div>
 
-          <p className="px-5 py-2 text-sm text-amber-800">ยอดรวมด้านล่างนับเฉพาะเบิกสำเร็จ รายการยกเลิกเบิกแสดงแยกกลุ่มและไม่รวมในยอดใช้งาน</p>
           <div className="weight-scale-report-screen-only grid gap-px border-x border-b border-[#d7dde5] bg-[#d7dde5] md:grid-cols-2 xl:grid-cols-4 shadow-sm">
             <div className="bg-white px-5 py-4 flex flex-col items-center text-center">
               <div className="flex items-center gap-2 mb-1">
@@ -1256,7 +1338,7 @@ export default function ProductionStockIssueSummaryReportPageClient({
         {/* Visual Paging Controls */}
         {reportPages.length > 1 && (
           <div className="weight-scale-report-screen-only flex justify-center mb-6">
-            <div className="flex items-center gap-4 bg-[#102C57] text-white px-6 py-2 rounded-full shadow-lg">
+            <div className="flex items-center gap-4 bg-[var(--surface-navy,#102C57)] text-white px-6 py-2 rounded-full shadow-lg">
               <button
                 type="button"
                 onClick={() => setCurrentViewPage(prev => Math.max(0, prev - 1))}
@@ -1286,62 +1368,35 @@ export default function ProductionStockIssueSummaryReportPageClient({
         )}
 
         {/* A4 Paper Sheets Rendering */}
-        <div className="weight-scale-report-screen-only issue-summary-preview-pages flex flex-col items-center gap-8 py-4">
+        <div className="weight-scale-report-screen-only issue-summary-preview-pages flex w-full flex-col items-center gap-4 py-4">
           {reportPages.length ? (
             reportPages.map((pageRows, pageIndex) => (
               <section 
                 key={pageIndex} 
-                className={`weight-scale-report-print-shell summary-issue-report-print-shell w-full max-w-[210mm] bg-white border border-black shadow-[0_20px_50px_rgba(0,0,0,0.15),0_0_0_1px_rgba(0,0,0,0.05)] print:max-w-none print:shadow-none relative ${
+                className={`weight-scale-report-print-shell summary-issue-report-print-shell bg-white border border-slate-300 shadow-sm print:max-w-none print:shadow-none relative ${
                   pageIndex === currentViewPage ? 'block' : 'hidden print:block'
                 }`}
-                style={{ minHeight: '296mm' }}
               >
-                {/* Compact Corporate Header */}
-                <div className="bg-white px-6 py-3 border-b border-black">
-                   <div className="flex justify-between items-end mb-3">
-                      <div className="flex items-center gap-3">
-                        <Image
-                          src="/brand/LOGO-KPF1.png"
-                          alt="KPF"
-                          width={40}
-                          height={40}
-                          className="h-10 w-auto object-contain"
-                        />
-                        <div className="flex flex-col">
-                          <h1 className="text-[14px] font-black text-[#102C57] leading-none uppercase">บริษัท เคพีฟู้ดส์ จำกัด</h1>
-                          <p className="text-[9px] font-bold text-[#64748b] tracking-wider">K.P. foods Co.,Ltd.</p>
-                        </div>
-                      </div>
-
-                      <div className="text-center pb-1">
-                        <h2 className="text-[18px] font-black text-[#102C57] leading-none uppercase">{resolvedReportConfig.printTitle}</h2>
-                        <p className="text-[9px] font-bold text-[#d4af37] uppercase tracking-[0.2em] mt-1">Stock Issue Summary Report</p>
-                      </div>
-
-                      <div className="text-[10px] text-[#102C57] leading-tight text-right">
-                         <p><span className="font-black text-[#64748b] uppercase text-[8px]">วันที่พิมพ์:</span> {printedAtLabel}</p>
-                         <p><span className="font-black text-[#64748b] uppercase text-[8px]">ผู้ออกรายงาน:</span> {profile.username || "System"}</p>
-                         <p><span className="font-black text-[#64748b] uppercase text-[8px]">หน้า:</span> {pageIndex + 1} / {reportPages.length}</p>
-                      </div>
-                   </div>
-
-                   <div className="grid grid-cols-3 border-t border-black pt-2">
-                      <div className="flex gap-2 items-center">
-                        <span className="text-[11px] font-black text-[#64748b] uppercase whitespace-nowrap">แผนก:</span>
-                        <span className="text-[11px] font-bold text-[#102C57]">{scope.departmentName || "-"}</span>
-                      </div>
-                      <div className="flex gap-2 items-center justify-center">
-                        <span className="text-[11px] font-black text-[#64748b] uppercase whitespace-nowrap">ช่วงวันที่:</span>
-                        <span className="text-[11px] font-bold text-[#102C57]">{reportPeriodLabel}</span>
-                      </div>
-                      <div className="flex gap-2 items-center justify-end">
-                        <span className="text-[11px] font-black text-[#64748b] uppercase whitespace-nowrap">ประเภท:</span>
-                        <span className="text-[11px] font-bold text-[#102C57] truncate pl-4">{issueTypeSummaryLabel}</span>
-                      </div>
-                   </div>
+                {/* Corporate Report Header */}
+                <div className="bg-white px-4 py-2 border-b border-slate-300">
+                  <ReportHeader
+                    className="issue-summary-document-header"
+                    title={resolvedReportConfig.printTitle}
+                    subtitle="Stock Issue Summary Report"
+                    meta={[
+                      { label: "แผนก", value: scope.departmentName || "-" },
+                      { label: "ช่วงวันที่", value: reportPeriodLabel },
+                      { label: "ประเภท", value: issueTypeSummaryLabel },
+                    ]}
+                    printedAt={printedAtLabel}
+                    printedBy={profile.username || "System"}
+                    page={pageIndex + 1}
+                    totalPages={reportPages.length}
+                    variant="block"
+                  />
                 </div>
 
-                <div className="weight-scale-report-print-body bg-white px-4 py-4 min-h-[240mm] print:border-none print:px-0">
+                <div className="weight-scale-report-print-body bg-white px-4 pt-2 pb-8 print:border-none print:px-0">
                   <div className="overflow-hidden">
                     <style dangerouslySetInnerHTML={{ __html: `
                       .summary-issue-report-table {
@@ -1351,86 +1406,60 @@ export default function ProductionStockIssueSummaryReportPageClient({
                       .summary-issue-report-table th,
                       .summary-issue-report-table td {
                         border: 1px solid #cbd5e1 !important;
-                        white-space: nowrap !important;
-                        overflow: hidden;
-                        text-overflow: clip;
+                        white-space: normal !important;
+                        overflow: visible;
                         padding-left: 2px !important;
                         padding-right: 2px !important;
-                        font-size: 11.5px !important;
+                        font-size: 10px !important;
+                        line-height: 1.35 !important;
                       }
                       .summary-issue-report-table th.border-l,
                       .summary-issue-report-table td.border-l {
                         border-left: 1px solid #94a3b8 !important;
                       }
                       .summary-issue-report-table th {
-                        letter-spacing: 0.04em !important;
+                        letter-spacing: 0 !important;
                       }
                       .summary-issue-report-table .summary-issue-product-cell {
-                        font-size: 11px !important;
+                        font-size: 10px !important;
                         white-space: normal !important;
-                        overflow-wrap: anywhere !important;
                         overflow: visible !important;
-                        text-overflow: clip !important;
-                        line-height: 1.1 !important;
+                        line-height: 1.35 !important;
                       }
                       .summary-issue-report-table .summary-issue-type-cell {
                         font-size: 10.5px !important;
                         white-space: normal !important;
-                        overflow-wrap: break-word !important;
+                        overflow-wrap: normal !important;
                         line-height: 1.1 !important;
                       }
                       .summary-issue-report-table .summary-issue-lot-cell {
-                        font-size: 11px !important;
+                        font-size: 10px !important;
                         letter-spacing: 0 !important;
                         white-space: nowrap !important;
-                        overflow: hidden !important;
-                        text-overflow: clip !important;
+                        overflow: visible !important;
                       }
                       .summary-issue-report-table .summary-issue-weight-cell {
                         font-variant-numeric: tabular-nums;
                         text-align: right !important;
-                      }
-                      @media print {
-                        .summary-issue-report-print-shell {
-                          min-height: auto !important;
-                          max-width: none !important;
-                          break-inside: avoid !important;
-                          page-break-inside: avoid !important;
-                          break-after: page !important;
-                          page-break-after: always !important;
-                        }
-                        .summary-issue-report-print-shell:last-child {
-                          break-after: auto !important;
-                          page-break-after: auto !important;
-                        }
-                        .summary-issue-report-table {
-                          table-layout: fixed !important;
-                        }
-                        .summary-issue-report-table th,
-                        .summary-issue-report-table td {
-                          font-size: 11.5px !important;
-                        }
-                        .summary-issue-report-table .summary-issue-product-cell {
-                          font-size: 11px !important;
-                        }
+                        white-space: nowrap !important;
                       }
                     ` }} />
                     <table className="weight-scale-report-print-table summary-issue-report-table table-fixed border-collapse">
                       <colgroup>
-                        <col style={{ width: "4.5%" }} />
-                        <col style={{ width: "7.5%" }} />
-                        <col style={{ width: "11%" }} />
-                        <col style={{ width: resolvedReportConfig.hideIssueTypeColumn ? "35%" : "27%" }} />
-                        {!resolvedReportConfig.hideIssueTypeColumn ? <col style={{ width: "8%" }} /> : null}
-                        <col style={{ width: "6%" }} />
+                        <col style={{ width: "3%" }} />
                         <col style={{ width: "8%" }} />
-                        <col style={{ width: "6%" }} />
-                        <col style={{ width: "8%" }} />
-                        <col style={{ width: "6%" }} />
-                        <col style={{ width: "8%" }} />
+                        <col style={{ width: "13%" }} />
+                        <col style={{ width: resolvedReportConfig.hideIssueTypeColumn ? "31%" : "24%" }} />
+                        {!resolvedReportConfig.hideIssueTypeColumn ? <col style={{ width: "7%" }} /> : null}
+                        <col style={{ width: "5.5%" }} />
+                        <col style={{ width: "9%" }} />
+                        <col style={{ width: "5.5%" }} />
+                        <col style={{ width: "9%" }} />
+                        <col style={{ width: "5.5%" }} />
+                        <col style={{ width: "10.5%" }} />
                       </colgroup>
-                      <thead className="bg-[#f1f5f9]">
-                        <tr className="border-b border-black text-[12px] font-black uppercase text-[#111111]">
+                      <thead className="bg-[#f8f9fa]">
+                        <tr className="border-b-2 border-[#1a1c1e] text-[12px] font-black uppercase text-[#1a1c1e]">
                           <th rowSpan={2} className="px-1 py-0.5 text-center">ลำดับ</th>
                           <th rowSpan={2} className="px-1 py-0.5 text-center">วันที่</th>
                           <th rowSpan={2} className="summary-issue-lot-cell px-1 py-0.5 text-center">LOT</th>
@@ -1490,7 +1519,7 @@ export default function ProductionStockIssueSummaryReportPageClient({
                                     </div>
                                   )}
                                 </td>
-                                <td className="summary-issue-product-cell px-2 py-0.5 text-left">{row.productCode} - {row.productName}{row.issueStatus === "voided" ? " (ยกเลิกเบิก)" : ""}</td>
+                                <td className="summary-issue-product-cell px-2 py-0.5 text-left">{getProductDisplay(row)}{row.issueStatus === "voided" ? " (ยกเลิกเบิก)" : ""}</td>
                                 {!resolvedReportConfig.hideIssueTypeColumn ? (
                                   <td className="summary-issue-type-cell px-1 py-0.5 text-center">{getIssueTypeLabel(issueTypes, row.issueType)}</td>
                                 ) : null}
@@ -1522,7 +1551,7 @@ export default function ProductionStockIssueSummaryReportPageClient({
                             return (
                               <tr key={vIndex} className="bg-[#f1f5f9] border-b border-black text-[12px] font-black text-[#111111]">
                                 <td colSpan={resolvedReportConfig.hideIssueTypeColumn ? 4 : 5} className="px-1.5 py-1 text-right">
-                                  สรุปรวม {data.productCode}{data.statusLabel ? ` (${data.statusLabel})` : ""}
+                                  สรุปรวม {getProductDisplay(data)}{data.statusLabel ? ` (${data.statusLabel})` : ""}
                                 </td>
                                 <td className="px-1.5 py-1 text-center font-bold">{formatQuantity(data.quantity)}</td>
                                 <td className="summary-issue-weight-cell px-1.5 py-1 font-bold">{formatWeight(data.totalWeightKg)}</td>
@@ -1563,7 +1592,7 @@ export default function ProductionStockIssueSummaryReportPageClient({
               </section>
             ))
           ) : (
-            <div className="w-full max-w-[210mm] bg-white border border-black px-4 py-12 text-center text-sm text-[#111111]">
+            <div className="summary-issue-report-print-shell bg-white border border-slate-300 px-4 py-8 text-center text-sm text-[#111111]">
                {isPending ? "กำลังโหลดข้อมูล..." : resolvedReportConfig.emptyMessage}
             </div>
           )}
@@ -1574,7 +1603,7 @@ export default function ProductionStockIssueSummaryReportPageClient({
         <style dangerouslySetInnerHTML={{ __html: `
           @page {
             size: A4 portrait;
-            margin: 7mm;
+            margin: 8mm 6mm;
           }
           @media print {
             .weight-scale-report-screen-only,
@@ -1593,8 +1622,8 @@ export default function ProductionStockIssueSummaryReportPageClient({
               width: 100% !important;
               table-layout: fixed !important;
               border-collapse: collapse !important;
-              font-size: 11.5px !important;
-              line-height: 1.1 !important;
+              font-size: 8pt !important;
+              line-height: 1.2 !important;
               color: #111827 !important;
               print-color-adjust: exact !important;
               -webkit-print-color-adjust: exact !important;
@@ -1607,18 +1636,17 @@ export default function ProductionStockIssueSummaryReportPageClient({
             }
             .issue-summary-print-table th,
             .issue-summary-print-table td {
-              border: 0.5px solid #cbd5e1 !important;
+              border: 0.5pt solid #cbd5e1 !important;
               padding: 1px 2px !important;
               vertical-align: middle !important;
-              white-space: nowrap !important;
-              overflow: hidden !important;
-              text-overflow: clip !important;
+              white-space: normal !important;
+              overflow: visible !important;
             }
             .issue-summary-print-table .print-report-header th {
               border-top: none !important;
               border-left: none !important;
               border-right: none !important;
-              border-bottom: 1px solid #cbd5e1 !important;
+              border-bottom: 0.75pt solid #cbd5e1 !important;
               padding: 0 0 5px !important;
               background: #ffffff !important;
             }
@@ -1626,16 +1654,17 @@ export default function ProductionStockIssueSummaryReportPageClient({
               border-top: none !important;
               border-left: none !important;
               border-right: none !important;
-              border-bottom: 1px solid #cbd5e1 !important;
+              border-bottom: 0.75pt solid #cbd5e1 !important;
               padding: 3px 4px !important;
               background: #ffffff !important;
             }
             .issue-summary-print-table .table-header th {
-              background: #f1f5f9 !important;
-              color: #111827 !important;
+              background: #f8f9fa !important;
+              color: #1a1c1e !important;
               font-weight: 900 !important;
               text-align: center !important;
-              font-size: 11.5px !important;
+              font-size: 10px !important;
+              border-bottom: 2px solid #1a1c1e !important;
             }
             .issue-summary-print-table .table-header th.col-issue {
               background: #eaf2ff !important;
@@ -1650,25 +1679,26 @@ export default function ProductionStockIssueSummaryReportPageClient({
               background: #f5fbf6 !important;
             }
             .issue-summary-print-table .issue-summary-product-cell {
-              font-size: 11px !important;
+              font-size: 8pt !important;
               white-space: normal !important;
-              overflow-wrap: anywhere !important;
               overflow: visible !important;
-              line-height: 1.1 !important;
+              line-height: 1.35 !important;
               text-align: left !important;
             }
             .issue-summary-print-table .issue-summary-lot-cell {
-              font-size: 11px !important;
+              font-size: 10px !important;
               letter-spacing: 0 !important;
+              white-space: nowrap !important;
             }
             .issue-summary-print-table .issue-summary-weight-cell {
               text-align: right !important;
               font-variant-numeric: tabular-nums !important;
+              white-space: nowrap !important;
             }
             .issue-summary-print-table .issue-summary-type-cell {
               font-size: 10.5px !important;
               white-space: normal !important;
-              overflow-wrap: break-word !important;
+              overflow-wrap: normal !important;
               line-height: 1.1 !important;
             }
             .issue-summary-print-table thead,
@@ -1679,8 +1709,8 @@ export default function ProductionStockIssueSummaryReportPageClient({
               page-break-inside: avoid !important;
             }
             .issue-summary-print-table tbody tr.item-row {
-              break-inside: auto !important;
-              page-break-inside: auto !important;
+              break-inside: avoid !important;
+              page-break-inside: avoid !important;
             }
             .issue-summary-print-table .product-footer-row td {
               background: #f1f5f9 !important;
@@ -1696,51 +1726,33 @@ export default function ProductionStockIssueSummaryReportPageClient({
         {issuePrintRows.length ? (
           <table className="issue-summary-print-table">
             <colgroup>
-              <col style={{ width: "4.5%" }} />
-              <col style={{ width: "7.5%" }} />
-              <col style={{ width: "11%" }} />
-              <col style={{ width: resolvedReportConfig.hideIssueTypeColumn ? "35%" : "27%" }} />
-              {!resolvedReportConfig.hideIssueTypeColumn ? <col style={{ width: "8%" }} /> : null}
-              <col style={{ width: "6%" }} />
+              <col style={{ width: "3%" }} />
               <col style={{ width: "8%" }} />
-              <col style={{ width: "6%" }} />
-              <col style={{ width: "8%" }} />
-              <col style={{ width: "6%" }} />
-              <col style={{ width: "8%" }} />
+              <col style={{ width: "13%" }} />
+              <col style={{ width: resolvedReportConfig.hideIssueTypeColumn ? "31%" : "24%" }} />
+              {!resolvedReportConfig.hideIssueTypeColumn ? <col style={{ width: "7%" }} /> : null}
+              <col style={{ width: "5.5%" }} />
+              <col style={{ width: "9%" }} />
+              <col style={{ width: "5.5%" }} />
+              <col style={{ width: "9%" }} />
+              <col style={{ width: "5.5%" }} />
+              <col style={{ width: "10.5%" }} />
             </colgroup>
             <thead>
-              <tr className="print-report-header">
-                <th colSpan={resolvedReportConfig.hideIssueTypeColumn ? 10 : 11}>
-                  <div className="flex items-end justify-between">
-                    <div className="flex items-center gap-3 text-left">
-                      <Image
-                        src="/brand/LOGO-KPF1.png"
-                        alt="KPF"
-                        width={40}
-                        height={40}
-                        className="h-10 w-auto object-contain"
-                      />
-                      <div>
-                        <div className="text-[13px] font-black text-[#102C57]">บริษัท เคพีฟู้ดส์ จำกัด</div>
-                        <div className="text-[9px] font-bold text-[#64748b]">K.P. foods Co.,Ltd.</div>
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-[17px] font-black text-[#102C57]">{resolvedReportConfig.printTitle}</div>
-                      <div className="mt-1 text-[8px] font-black uppercase tracking-[0.22em] text-[#d4af37]">Stock Issue Summary Report</div>
-                    </div>
-                    <div className="text-right text-[9px] leading-tight text-[#102C57]">
-                      <div><span className="font-black text-[#64748b]">วันที่พิมพ์:</span> {printedAtLabel}</div>
-                      <div><span className="font-black text-[#64748b]">ผู้ออกรายงาน:</span> {profile.username || "System"}</div>
-                    </div>
-                  </div>
-                </th>
-              </tr>
-              <tr className="print-report-meta">
-                <th colSpan={3} className="text-left">แผนก: <span className="font-black">{scope.departmentName || "-"}</span></th>
-                <th colSpan={resolvedReportConfig.hideIssueTypeColumn ? 4 : 5} className="text-center">ช่วงวันที่: <span className="font-black">{reportPeriodLabel}</span></th>
-                <th colSpan={3} className="text-right">ประเภท: <span className="font-black">{issueTypeSummaryLabel}</span></th>
-              </tr>
+              <ReportHeader
+                className="issue-summary-document-header"
+                title={resolvedReportConfig.printTitle}
+                subtitle="Stock Issue Summary Report"
+                meta={[
+                  { label: "แผนก", value: scope.departmentName || "-" },
+                  { label: "ช่วงวันที่", value: reportPeriodLabel },
+                  { label: "ประเภท", value: issueTypeSummaryLabel },
+                ]}
+                printedAt={printedAtLabel}
+                printedBy={profile.username || "System"}
+                variant="table-rows"
+                colSpan={resolvedReportConfig.hideIssueTypeColumn ? 10 : 11}
+              />
               <tr className="table-header">
                 <th rowSpan={2}>ลำดับ</th>
                 <th rowSpan={2}>วันที่</th>
@@ -1799,7 +1811,7 @@ export default function ProductionStockIssueSummaryReportPageClient({
                           </div>
                         )}
                       </td>
-                      <td className="issue-summary-product-cell">{row.productCode} - {row.productName}</td>
+                      <td className="issue-summary-product-cell">{getProductDisplay(row)}</td>
                       {!resolvedReportConfig.hideIssueTypeColumn ? (
                         <td className="issue-summary-type-cell">{getIssueTypeLabel(issueTypes, row.issueType)}</td>
                       ) : null}
@@ -1831,7 +1843,9 @@ export default function ProductionStockIssueSummaryReportPageClient({
                   const data = vRow.data;
                   return (
                     <tr key={vIndex} className="product-footer-row">
-                      <td colSpan={resolvedReportConfig.hideIssueTypeColumn ? 4 : 5} className="text-right">สรุปรวม {data.productCode}</td>
+                      <td colSpan={resolvedReportConfig.hideIssueTypeColumn ? 4 : 5} className="text-right">
+                        สรุปรวม {data.productCode} ({data.statusLabel})
+                      </td>
                       <td>{formatQuantity(data.quantity)}</td>
                       <td className="issue-summary-weight-cell">{formatWeight(data.totalWeightKg)}</td>
                       <td>{formatQuantity(data.returnQuantity)}</td>

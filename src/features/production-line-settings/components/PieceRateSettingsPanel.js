@@ -712,7 +712,7 @@ export default function PieceRateSettingsPanel({ canManage = false }) {
               type="button"
               onClick={openCreateProfileModal}
               disabled={!canManage || saving || loading}
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-[2px] border border-[#102C57] bg-white px-4 text-xs font-bold text-[#102C57] transition hover:bg-[#102C57]/[0.04] disabled:opacity-50"
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-[2px] border border-[#102C57] bg-white px-4 text-xs font-bold text-[#102C57] transition hover:bg-[var(--surface-navy,#102C57)]/[0.04] disabled:opacity-50"
             >
               <Plus size={14} />
               เพิ่มหัวข้อ
@@ -721,7 +721,7 @@ export default function PieceRateSettingsPanel({ canManage = false }) {
               type="button"
               onClick={handleSave}
               disabled={!canManage || saving || loading}
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-[2px] bg-[#102C57] px-4 text-xs font-bold text-white transition hover:bg-[#1b3e70] border border-[#102C57] disabled:opacity-50"
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-[2px] bg-[var(--surface-navy,#102C57)] px-4 text-xs font-bold text-white transition hover:bg-[#1b3e70] border border-[#102C57] disabled:opacity-50"
             >
               <CheckSquare size={14} />
               {saving ? "กำลังบันทึก..." : "บันทึกการตั้งค่า"}
@@ -887,7 +887,7 @@ export default function PieceRateSettingsPanel({ canManage = false }) {
                     type="button"
                     onClick={handleBulkAssignUnassigned}
                     disabled={!bulkAssignProfileId || selectedUnassigned.size === 0}
-                    className="h-9 px-4 bg-[#102C57] text-white text-xs font-bold rounded-[2px] transition hover:bg-[#1c3f71] disabled:opacity-40"
+                    className="h-9 px-4 bg-[var(--surface-navy,#102C57)] text-white text-xs font-bold rounded-[2px] transition hover:bg-[#1c3f71] disabled:opacity-40"
                   >
                     ยืนยันการผูกสินค้า
                   </button>
@@ -1032,7 +1032,7 @@ export default function PieceRateSettingsPanel({ canManage = false }) {
                     <button
                       type="button"
                       onClick={() => setIsAssignMoreOpen(!isAssignMoreOpen)}
-                      className="inline-flex h-8.5 items-center justify-center gap-1.5 rounded-[2px] bg-[#102C57] text-white px-3.5 text-xs font-bold transition hover:bg-[#1a3d6b]"
+                      className="inline-flex h-8.5 items-center justify-center gap-1.5 rounded-[2px] bg-[var(--surface-navy,#102C57)] text-white px-3.5 text-xs font-bold transition hover:bg-[#1a3d6b]"
                     >
                       <Plus size={13} />
                       {isAssignMoreOpen ? "ปิดแผงผูกสินค้า" : "ผูกสินค้าเพิ่ม"}
@@ -1127,7 +1127,7 @@ export default function PieceRateSettingsPanel({ canManage = false }) {
                         type="button"
                         onClick={handleAssignSelected}
                         disabled={selectedToAssign.size === 0}
-                        className="h-8 px-4 bg-[#102C57] text-white text-xs font-bold rounded-[2px] transition hover:bg-[#1a3a6b] disabled:opacity-40"
+                        className="h-8 px-4 bg-[var(--surface-navy,#102C57)] text-white text-xs font-bold rounded-[2px] transition hover:bg-[#1a3a6b] disabled:opacity-40"
                       >
                         ผูกสินค้าที่เลือก ({selectedToAssign.size} รายการ)
                       </button>
@@ -1224,9 +1224,9 @@ export default function PieceRateSettingsPanel({ canManage = false }) {
       </div>
 
       {isProfileModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#102C57]/40 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--surface-navy,#102C57)]/40 backdrop-blur-sm p-4">
           <div className="w-full max-w-2xl overflow-hidden rounded-[2px] border border-slate-200 bg-white text-[#181818] shadow-2xl">
-            <div className="flex items-start justify-between gap-3 border-b border-slate-200 bg-[#102C57] px-5 py-4 text-white">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-200 bg-[var(--surface-navy,#102C57)] px-5 py-4 text-white">
               <div>
                 <h4 className="text-base font-bold tracking-wider uppercase">
                   {editingProfileId ? "แก้ไขหัวข้ออัตราค่าแรง" : "เพิ่มหัวข้ออัตราค่าแรง"}
@@ -1284,7 +1284,7 @@ export default function PieceRateSettingsPanel({ canManage = false }) {
                 </select>
               </label>
 
-              <div className="rounded-[2px] border border-[#102C57]/15 bg-[#102C57]/[0.02] p-4 md:col-span-2">
+              <div className="rounded-[2px] border border-[#102C57]/15 bg-[var(--surface-navy,#102C57)]/[0.02] p-4 md:col-span-2">
                 <div className="flex items-start gap-3">
                   <div className="rounded-[2px] bg-white border border-[#102C57]/25 p-2 text-[#102C57] shadow-none">
                     <Scale size={18} />
@@ -1354,7 +1354,7 @@ export default function PieceRateSettingsPanel({ canManage = false }) {
                       type="button"
                       onClick={handleAddWeightOption}
                       disabled={!canManage || saving || loading}
-                      className="inline-flex h-8 items-center justify-center gap-1.5 rounded-[2px] border border-[#102C57] bg-white px-3 text-xs font-bold text-[#102C57] hover:bg-[#102C57]/5 transition disabled:opacity-50"
+                      className="inline-flex h-8 items-center justify-center gap-1.5 rounded-[2px] border border-[#102C57] bg-white px-3 text-xs font-bold text-[#102C57] hover:bg-[var(--surface-navy,#102C57)]/5 transition disabled:opacity-50"
                     >
                       <Plus size={13} />
                       เพิ่มรายการน้ำหนัก
@@ -1429,7 +1429,7 @@ export default function PieceRateSettingsPanel({ canManage = false }) {
                 type="button"
                 onClick={commitProfileDraft}
                 disabled={!canManage || saving || loading}
-                className="inline-flex h-9 items-center justify-center rounded-[2px] bg-[#102C57] px-4 text-xs font-bold text-white hover:bg-[#1b3e70] border border-[#102C57] transition disabled:opacity-50"
+                className="inline-flex h-9 items-center justify-center rounded-[2px] bg-[var(--surface-navy,#102C57)] px-4 text-xs font-bold text-white hover:bg-[#1b3e70] border border-[#102C57] transition disabled:opacity-50"
               >
                 {editingProfileId ? "บันทึกการแก้ไข" : "เพิ่มหัวข้อ"}
               </button>

@@ -23,6 +23,7 @@ import {
 import WeightScalePrimaryHeader from "@/features/production-line/components/WeightScalePrimaryHeader";
 import { fetchProductionStockLotBalanceSummaryReport } from "@/features/production-line/services/productionStockIssueClient";
 import { useUserProfile } from "@/lib/useUserProfile";
+import { ReportFilterBar, ReportHeader } from "@/components/print";
 
 const LIMIT_OPTIONS = [20, 50, 100];
 
@@ -475,7 +476,8 @@ export default function ProductionStockLotBalanceReportPageClient({
   const loadRows = useCallback((nextFilters) => {
     startTransition(async () => {
       if (typeof window !== "undefined") {
-        const params = new URLSearchParams();
+        const params = new URLSearchParams(window.location.search);
+        params.delete("productCodes");
         if (Array.isArray(nextFilters.productCodes)) {
           nextFilters.productCodes.forEach((code) => params.append("productCodes", code));
         }
@@ -513,207 +515,169 @@ export default function ProductionStockLotBalanceReportPageClient({
 
   return (
     <div className="weight-scale-report-page min-h-screen bg-[#f4f6f8] text-[#262626]">
-      <div className="weight-scale-report-screen-only">
+      <div className="print:hidden">
         <WeightScalePrimaryHeader
           eyebrow="รายงานสต็อกคงเหลือ"
           badge="คงเหลือราย Lot แนวตั้ง"
           title="รายงานสรุปคงเหลือราย Lot (แนวตั้ง)"
         />
+      </div>
 
-        <div className="mx-auto flex w-full max-w-none flex-col gap-8 px-3 py-8 sm:px-4 lg:px-6 2xl:px-8">
-          <section className="overflow-visible border-2 border-[#d4af37] bg-white shadow-[0_20px_40px_rgba(0,0,0,0.12)]">
-            <div className="flex flex-col gap-6 p-6 sm:p-8">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-                <div className="grid flex-1 gap-4 md:grid-cols-3">
-                  <div className="relative flex flex-col gap-2" ref={productPickerRef}>
-                    <span className="inline-flex items-center gap-2 text-sm font-black text-black">
-                      <Package size={16} />
-                      สินค้า
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setIsProductPickerOpen((current) => !current)}
-                      className="flex h-12 items-center justify-between border border-[#d7dbe3] px-4 text-left text-[14px] font-semibold text-black transition hover:border-[#d4af37]"
+      <div className="mx-auto flex w-full max-w-none flex-col gap-6 px-3 py-4 sm:px-4 lg:px-6 2xl:px-8 print:hidden">
+        <ReportFilterBar
+          dateMode="none"
+          isLoading={isPending}
+          onSearch={() => loadRows({ ...filters, page: 1 })}
+          searchButtonLabel="โหลดรายงาน"
+          onReset={() => {
+            setFilters((current) => ({
+              ...current,
+              productCodes: [],
+              page: 1,
+              limit: 20,
+            }));
+            setHideZeroBalances(true);
+          }}
+          resetButtonLabel="รีเซ็ต"
+          onPrint={() => window.print()}
+          printButtonLabel="พิมพ์รายงาน (A4)"
+          onExportExcel={() => exportWorkbook({ rows: displayedRows, scope, selectedProducts })}
+          excelButtonLabel="ส่งออก Excel"
+          extraActions={
+            <a
+              href={`/production-line/stock/balance?${new URLSearchParams([
+                ...filters.productCodes.map((code) => ["productCodes", code]),
+                ...(typeof window !== "undefined" && window.location.search.includes("reportCenter=1")
+                  ? [["reportCenter", "1"]]
+                  : []),
+              ]).toString()}`}
+              className="inline-flex h-10 items-center justify-center gap-1.5 rounded-md border border-[#cbd5e1] bg-white px-3 text-xs font-bold text-[#475569] shadow-sm transition hover:bg-slate-50"
+            >
+              <ChevronLeft size={14} />
+              กลับหน้าสรุปเดิม
+            </a>
+          }
+        >
+          {/* Product Filter Dropdown */}
+          <div className="relative block w-full sm:w-auto min-w-[220px]" ref={productPickerRef}>
+            <label className="block text-[11px] font-black uppercase tracking-wider text-[#64748b] mb-1">
+              เลือกสินค้า
+            </label>
+            <button
+              type="button"
+              onClick={() => setIsProductPickerOpen((current) => !current)}
+              className="flex h-10 w-full items-center justify-between gap-3 rounded-md border border-[#cbd5e1] bg-[#f8fafc] px-3 text-left focus:border-[#102C57] focus:bg-white focus:ring-2 focus:ring-[#102C57]/10 transition"
+            >
+              <span className="min-w-0 truncate text-[13px] font-semibold text-[#102C57]">
+                {selectedProducts.length ? `เลือกแล้ว ${selectedProducts.length} รายการ` : "ทุกสินค้าในรายงาน"}
+              </span>
+              <ChevronDown
+                size={16}
+                className={`shrink-0 text-[#94a3b8] transition ${isProductPickerOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+
+            {isProductPickerOpen ? (
+              <div className="absolute left-0 z-50 mt-1 max-h-72 w-[24rem] max-w-[calc(100vw-2rem)] overflow-auto rounded-lg border border-[#cbd5e1] bg-white shadow-[0_16px_30px_rgba(16,44,87,0.12)]">
+                {productOptions.map((product) => {
+                  const checked = filters.productCodes.includes(product.code);
+                  return (
+                    <label
+                      key={product.code}
+                      className="flex cursor-pointer items-center gap-3 border-b border-slate-100 px-3 py-2 text-xs font-semibold text-black hover:bg-[#fff8e7] transition"
                     >
-                      <span className="truncate">
-                        {selectedProducts.length ? `เลือกแล้ว ${selectedProducts.length} รายการ` : "ทุกสินค้าในรายงาน"}
-                      </span>
-                      <ChevronDown size={16} />
-                    </button>
-
-                    {isProductPickerOpen ? (
-                      <div className="absolute top-full z-50 mt-1 max-h-72 w-[44rem] max-w-[calc(100vw-2rem)] overflow-auto border border-[#d7dbe3] bg-white shadow-[0_16px_30px_rgba(16,44,87,0.12)]">
-                        {productOptions.map((product) => {
-                          const checked = filters.productCodes.includes(product.code);
-                          return (
-                            <label
-                              key={product.code}
-                              className="flex min-w-max cursor-pointer items-center gap-3 border-b border-slate-100 px-4 py-3 text-sm font-semibold text-black hover:bg-[#fff8e7]"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() =>
-                                  setFilters((current) => ({
-                                    ...current,
-                                    page: 1,
-                                    productCodes: checked
-                                      ? current.productCodes.filter((entry) => entry !== product.code)
-                                      : [...current.productCodes, product.code],
-                                  }))
-                                }
-                                className="h-4 w-4 shrink-0 border-slate-300 text-[#102C57]"
-                              />
-                              <span className="whitespace-nowrap">{`${product.code} - ${product.name}`}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <div className="flex flex-col gap-2">
-                    <span className="inline-flex items-center gap-2 text-sm font-black text-black">
-                      <Scale size={16} />
-                      ยอดคงเหลือ
-                    </span>
-                    <label className="flex h-12 cursor-pointer items-center gap-3 border border-[#d7dbe3] px-4 text-left text-[14px] font-semibold text-black transition hover:border-[#d4af37] bg-white select-none">
                       <input
                         type="checkbox"
-                        checked={hideZeroBalances}
-                        onChange={(e) => setHideZeroBalances(e.target.checked)}
-                        className="h-4 w-4 rounded border-[#d7dbe3] text-[#102C57] focus:ring-[#102C57]"
+                        checked={checked}
+                        onChange={() =>
+                          setFilters((current) => ({
+                            ...current,
+                            page: 1,
+                            productCodes: checked
+                              ? current.productCodes.filter((entry) => entry !== product.code)
+                              : [...current.productCodes, product.code],
+                          }))
+                        }
+                        className="h-4 w-4 shrink-0 rounded border-slate-300 text-[#102C57] focus:ring-[#102C57]"
                       />
-                      <span>ซ่อนยอดคงเหลือที่เป็น 0</span>
+                      <span className="truncate">{`${product.code} - ${product.name}`}</span>
                     </label>
-                  </div>
-
-                  <div className="flex items-end gap-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFilters((current) => ({
-                          ...current,
-                          productCodes: [],
-                          page: 1,
-                          limit: 20,
-                        }));
-                        setHideZeroBalances(true);
-                      }}
-                      className="inline-flex h-12 w-full items-center justify-center gap-2 border border-[#d7dbe3] px-4 text-sm font-bold text-[#102C57] transition hover:border-[#d4af37] hover:bg-[#fff8e7]"
-                    >
-                      <RefreshCw size={16} />
-                      รีเซ็ต
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => loadRows({ ...filters, page: 1 })}
-                      className="inline-flex h-12 w-full items-center justify-center gap-2 bg-[#102C57] px-4 text-sm font-bold text-white transition hover:bg-[#173b72]"
-                    >
-                      {isPending ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
-                      ค้นหา
-                    </button>
-                  </div>
-                </div>
+                  );
+                })}
               </div>
-            </div>
-          </section>
+            ) : null}
+          </div>
 
-          <section className="flex flex-col gap-4">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-[#e2e8f0] pb-6">
-              <div className="flex flex-wrap items-center gap-2.5">
-                {reportPages.length > 0 ? (
-                  <span className="inline-flex h-7 items-center bg-[#f1f5f9] px-2.5 text-xs font-bold text-[#475569]">
-                    ทั้งหมด {reportPages.length} หน้า
-                  </span>
-                ) : null}
-              </div>
+          {/* Hide Zero Balances Checkbox */}
+          <div className="flex flex-col justify-end">
+            <label className="flex h-10 cursor-pointer items-center gap-2 rounded-md border border-[#cbd5e1] bg-[#f8fafc] px-3 text-xs font-semibold text-[#102C57] hover:bg-white transition select-none">
+              <input
+                type="checkbox"
+                checked={hideZeroBalances}
+                onChange={(e) => setHideZeroBalances(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-[#102C57] focus:ring-[#102C57]"
+              />
+              <span>ซ่อนยอดคงเหลือที่เป็น 0</span>
+            </label>
+          </div>
+        </ReportFilterBar>
 
-              <div className="flex flex-wrap items-center gap-3">
-                <a
-                  href={`/production-line/stock/balance?${new URLSearchParams(
-                    filters.productCodes.map((code) => ["productCodes", code])
-                  ).toString()}`}
-                  className="inline-flex h-10 items-center justify-center gap-2 border border-[#cbd5e1] px-4 text-xs font-bold text-[#475569] transition hover:bg-slate-50"
-                >
-                  <ChevronLeft size={14} />
-                  กลับหน้าสรุปเดิม
-                </a>
-                <button
-                  type="button"
-                  onClick={() => exportWorkbook({ rows: displayedRows, scope, selectedProducts })}
-                  disabled={!displayedRows.length}
-                  className="inline-flex h-10 items-center justify-center gap-2 border border-[#d7dbe3] px-4 text-xs font-bold text-[#102C57] transition hover:border-[#d4af37] hover:bg-[#fff8e7] disabled:opacity-40"
-                >
-                  <Download size={14} />
-                  ส่งออก Excel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => window.print()}
-                  disabled={!displayedRows.length}
-                  className="inline-flex h-10 items-center justify-center gap-2 bg-[#102C57] px-4 text-xs font-bold text-white transition hover:bg-[#173b72] disabled:opacity-40"
-                >
-                  <Printer size={14} />
-                  พิมพ์รายงาน (A4)
-                </button>
-              </div>
+        <section className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-between border-b border-[#e2e8f0] pb-3">
+            <div className="flex flex-wrap items-center gap-2.5">
+              {reportPages.length > 0 ? (
+                <span className="inline-flex h-7 items-center rounded bg-[#f1f5f9] px-2.5 text-xs font-bold text-[#475569]">
+                  ทั้งหมด {reportPages.length} หน้า
+                </span>
+              ) : null}
+              {reportPages.length > 1 ? (
+                <span className="text-xs font-bold text-[#64748b]">
+                  • หน้า {currentViewPage + 1} จาก {reportPages.length}
+                </span>
+              ) : null}
             </div>
 
             {reportPages.length > 1 ? (
-              <div className="flex items-center justify-between border-b border-[#f1f5f9] pb-4">
-                <span className="text-xs font-bold text-[#64748b]">
-                  กำลังแสดงตัวอย่างหน้า {currentViewPage + 1} จาก {reportPages.length}
-                </span>
-                <div className="inline-flex gap-1">
-                  <button
-                    type="button"
-                    disabled={currentViewPage <= 0}
-                    onClick={() => setCurrentViewPage((c) => Math.max(0, c - 1))}
-                    className="flex h-8 w-8 items-center justify-center border border-[#d7dbe3] bg-white text-black transition hover:bg-[#fff8e7] disabled:opacity-40"
-                  >
-                    <ChevronLeft size={16} />
-                  </button>
-                  <button
-                    type="button"
-                    disabled={currentViewPage >= reportPages.length - 1}
-                    onClick={() => setCurrentViewPage((c) => Math.min(reportPages.length - 1, c + 1))}
-                    className="flex h-8 w-8 items-center justify-center border border-[#d7dbe3] bg-white text-black transition hover:bg-[#fff8e7] disabled:opacity-40"
-                  >
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
+              <div className="inline-flex gap-1">
+                <button
+                  type="button"
+                  disabled={currentViewPage <= 0}
+                  onClick={() => setCurrentViewPage((c) => Math.max(0, c - 1))}
+                  className="flex h-8 w-8 items-center justify-center rounded border border-[#d7dbe3] bg-white text-black transition hover:bg-[#fff8e7] disabled:opacity-40"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <button
+                  type="button"
+                  disabled={currentViewPage >= reportPages.length - 1}
+                  onClick={() => setCurrentViewPage((c) => Math.min(reportPages.length - 1, c + 1))}
+                  className="flex h-8 w-8 items-center justify-center rounded border border-[#d7dbe3] bg-white text-black transition hover:bg-[#fff8e7] disabled:opacity-40"
+                >
+                  <ChevronRight size={16} />
+                </button>
               </div>
             ) : null}
+          </div>
 
-            <div className="overflow-auto py-6 sm:px-4">
+            <div className="overflow-auto py-6 sm:px-4" suppressHydrationWarning>
               {reportPages[currentViewPage] ? (
                 <div className="lot-balance-portrait-print-shell mx-auto w-[210mm] min-h-[297mm] bg-white p-[16px] shadow-[0_4px_12px_rgba(0,0,0,0.15)] relative">
                   <div className="flex flex-col gap-4">
-                    {/* Header */}
-                    <div className="grid grid-cols-[1fr_auto_1fr] items-start border-b-2 border-black pb-3">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <Image
-                          src="/brand/LOGO-KPF1.png"
-                          alt="KPF Logo"
-                          width={48}
-                          height={48}
-                          priority
-                          className="h-12 w-12 object-contain"
-                        />
-                        <div className="leading-tight">
-                          <p className="text-[12px] font-black text-black">บริษัท เคพีฟู้ดส์ จำกัด</p>
-                          <p className="text-[9px] font-semibold text-[#475569]">K.P. foods Co.,Ltd.</p>
-                        </div>
-                      </div>
-                      <h2 className="lot-balance-report-title self-center px-4 text-center text-[14px] font-black text-black">
-                        รายงานสรุปยอดคงเหลือสินค้าแยกตาม Lot
-                      </h2>
-                      <div className="justify-self-end text-right text-[10px] text-[#475569]">
-                        <p><span className="font-bold">หน่วยงาน:</span> {scope.departmentName || "-"}</p>
-                        <p><span className="font-bold">วันที่พิมพ์:</span> {printedAtLabel}</p>
-                        <p><span className="font-bold">ผู้พิมพ์:</span> {profile.username || "-"}</p>
-                      </div>
+                    {/* Corporate Report Header */}
+                    <div className="lot-balance-report-header bg-white pb-2">
+                      <ReportHeader
+                        title="รายงานสรุปยอดคงเหลือสินค้าแยกตาม Lot"
+                        subtitle="Stock Lot Balance Summary Report"
+                        meta={[
+                          { label: "หน่วยงาน", value: scope.departmentName || "-" },
+                          { label: "ขอบเขต", value: selectedProducts.length ? selectedProducts.map((p) => p.code).join(", ") : "ทุกสินค้าในรายงาน" },
+                        ]}
+                        printedAt={printedAtLabel}
+                        printedBy={profile.username || "-"}
+                        page={currentViewPage + 1}
+                        totalPages={reportPages.length}
+                        variant="block"
+                      />
                     </div>
 
                     {/* Table */}
@@ -790,7 +754,6 @@ export default function ProductionStockLotBalanceReportPageClient({
             </div>
           </section>
         </div>
-      </div>
 
       {/* Printable Area */}
       <div className="lot-balance-portrait-print-shell weight-scale-report-print-only hidden print:block">
@@ -814,7 +777,7 @@ export default function ProductionStockLotBalanceReportPageClient({
           }
           .daily-summary-print-table th,
           .daily-summary-print-table td {
-            border: 0.5px solid #cbd5e1 !important;
+            border: 0.5pt solid #cbd5e1 !important;
             padding: 4px 6px !important;
             vertical-align: middle !important;
             white-space: nowrap !important;
@@ -835,17 +798,20 @@ export default function ProductionStockLotBalanceReportPageClient({
             color: #102C57 !important;
           }
           .daily-summary-print-table .table-header th {
-            background-color: #f1f5f9 !important;
-            color: #111111 !important;
+            background-color: #f8f9fa !important;
+            color: #1a1c1e !important;
             font-weight: 700 !important;
             font-size: 11px !important;
-            border: 0.5px solid #cbd5e1 !important;
+            border: 0.5pt solid #cbd5e1 !important;
+            border-bottom: 2px solid #1a1c1e !important;
             white-space: nowrap !important;
             word-break: keep-all !important;
             overflow: visible !important;
             text-overflow: clip !important;
           }
-          .daily-summary-print-table thead,
+          .daily-summary-print-table thead {
+            display: table-header-group !important;
+          }
           .daily-summary-print-table thead tr,
           .daily-summary-print-table .subtotal-row,
           .daily-summary-print-table .grand-total-row {
@@ -853,8 +819,8 @@ export default function ProductionStockLotBalanceReportPageClient({
             page-break-inside: avoid !important;
           }
           .daily-summary-print-table tbody tr.item-row {
-            break-inside: auto !important;
-            page-break-inside: auto !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
           }
           .daily-summary-print-table tbody tr.item-row:nth-child(even) {
             background-color: #f8fafc !important;
@@ -909,37 +875,18 @@ export default function ProductionStockLotBalanceReportPageClient({
               <col className="w-[16%]" />
             </colgroup>
             <thead>
-              <tr className="print-report-header">
-                <th colSpan={6}>
-                  <div className="grid grid-cols-[1fr_auto_1fr] items-start pb-2">
-                    <div className="flex items-center gap-3 text-left">
-                      <Image
-                        src="/brand/LOGO-KPF1.png"
-                        alt="KPF"
-                        width={40}
-                        height={40}
-                        className="h-10 w-auto object-contain"
-                      />
-                      <div>
-                        <div className="text-[13px] font-black text-[#102C57]">บริษัท เคพีฟู้ดส์ จำกัด</div>
-                        <div className="text-[9px] font-bold text-[#64748b]">K.P. foods Co.,Ltd.</div>
-                      </div>
-                    </div>
-                    <div className="lot-balance-report-title text-center">
-                      <div className="text-[17px] font-black text-[#102C57]">รายงานสรุปยอดคงเหลือสินค้าแยกตาม Lot</div>
-                      <div className="mt-1 text-[8px] font-black uppercase tracking-[0.22em] text-[#d4af37]">Stock Lot Balance Summary Report</div>
-                    </div>
-                    <div className="text-right text-[9px] leading-tight text-[#102C57]">
-                      <div><span className="font-black text-[#64748b]">วันที่พิมพ์:</span> {printedAtLabel}</div>
-                      <div><span className="font-black text-[#64748b]">ผู้ออกรายงาน:</span> {profile.username || "-"}</div>
-                    </div>
-                  </div>
-                </th>
-              </tr>
-              <tr className="print-report-meta">
-                <th colSpan={3} className="text-left">แผนก: <span className="font-black">{scope.departmentName || "-"}</span></th>
-                <th colSpan={3} className="text-right">ขอบเขต: <span className="font-black">{selectedProducts.length ? selectedProducts.map((p) => p.code).join(", ") : "ทุกสินค้าในรายงาน"}</span></th>
-              </tr>
+              <ReportHeader
+                title="รายงานสรุปยอดคงเหลือสินค้าแยกตาม Lot"
+                subtitle="Stock Lot Balance Summary Report"
+                meta={[
+                  { label: "แผนก", value: scope.departmentName || "-" },
+                  { label: "ขอบเขต", value: selectedProducts.length ? selectedProducts.map((p) => p.code).join(", ") : "ทุกสินค้าในรายงาน" },
+                ]}
+                printedAt={printedAtLabel}
+                printedBy={profile.username || "-"}
+                variant="table-rows"
+                colSpan={6}
+              />
               <tr className="table-header">
                 <th>#</th>
                 <th className="text-left">รหัสสินค้า</th>
@@ -1012,10 +959,11 @@ export default function ProductionStockLotBalanceReportPageClient({
           vertical-align: middle;
         }
         .lot-balance-portrait-report-table thead th {
-          background-color: #f1f5f9 !important;
-          color: #111111 !important;
+          background-color: #f8f9fa !important;
+          color: #1a1c1e !important;
           font-weight: bold !important;
           border-color: #cbd5e1 !important;
+          border-bottom: 2px solid #1a1c1e !important;
         }
         .lot-balance-portrait-report-table tbody tr.zebra-row:nth-child(even) {
           background-color: #f8fafc;

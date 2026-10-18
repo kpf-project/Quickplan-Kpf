@@ -1,5 +1,5 @@
 import { getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import {
   mapDeliveryPointRow,
   normalizeDeliveryPointInput,
@@ -54,9 +54,7 @@ async function findDuplicateDeliveryPoint({
 
 export async function PUT(request, { params }) {
   try {
-    const { userId } = await requirePermissionKeys(request, [
-      "production-line-settings-manage",
-    ]);
+    const { userId } = await requireTaskPermission(request, "production-settings-delivery-points-edit");
     const { id } = await params;
     const body = await readJson(request);
     const input = normalizeDeliveryPointInput(body);
@@ -111,9 +109,7 @@ export async function PUT(request, { params }) {
 
 export async function DELETE(request, { params }) {
   try {
-    const { userId } = await requirePermissionKeys(request, [
-      "production-line-settings-manage",
-    ]);
+    const { userId } = await requireTaskPermission(request, "production-settings-delivery-points-delete");
     const { id } = await params;
 
     const supabaseAdmin = getSupabaseAdmin();

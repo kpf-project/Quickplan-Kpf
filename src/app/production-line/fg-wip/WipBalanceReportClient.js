@@ -11,6 +11,7 @@ import {
   Search,
 } from "lucide-react";
 import { useUserProfile } from "@/lib/useUserProfile";
+import { ReportHeader, ReportFilterBar } from "@/components/print";
 
 function formatQuantity(value) {
   const num = Number(value || 0);
@@ -97,7 +98,7 @@ export default function WipBalanceReportClient() {
     <div className="min-h-screen bg-[#f4f6f8] text-[#262626]">
       {/* Screen Only Controls */}
       <div className="print:hidden">
-        <header className="bg-[#102C57] text-white py-5 px-6">
+        <header className="bg-[var(--surface-navy,#102C57)] text-white py-5 px-6">
           <div className="mx-auto max-w-5xl flex items-center justify-between">
             <div>
               <span className="text-[10px] font-black uppercase tracking-wider text-[#d4af37]">รายงานสต็อกสะสม</span>
@@ -115,56 +116,36 @@ export default function WipBalanceReportClient() {
         </header>
 
         <div className="mx-auto max-w-5xl px-4 py-6">
-          {/* Filters card */}
-          <div className="border border-[#d7dbe3] bg-white p-5 shadow-sm mb-6">
-            <div className="flex flex-col md:flex-row gap-4 items-end">
-              <div className="flex-1 flex flex-col gap-2">
-                <span className="text-sm font-bold text-[#102C57]">ค้นหารายการ</span>
-                <div className="relative">
-                  <Search className="absolute left-3 top-3 text-slate-400" size={18} />
-                  <input
-                    value={searchQuery}
-                    onChange={(e) => {
-                      setSearchQuery(e.target.value);
-                      setCurrentViewPage(0);
-                    }}
-                    placeholder="ค้นหารหัสสินค้า, ชื่อสินค้า, LOT หรือบาร์โค้ด"
-                    className="h-11 w-full border border-[#d7dbe3] pl-10 pr-3 outline-none focus:border-[#d4af37]"
-                  />
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchQuery("");
-                  setCurrentViewPage(0);
-                }}
-                className="h-11 border border-[#d7dbe3] px-5 font-semibold text-[#102C57] hover:bg-slate-50 flex items-center gap-2"
-              >
-                <RefreshCw size={16} />
-                รีเซ็ต
-              </button>
-            </div>
-          </div>
-
-          {/* Stats Display */}
-          <div className="grid grid-cols-2 border border-[#d7dbe3] bg-white divide-x divide-slate-100 mb-6">
-            <div className="p-4 text-center">
-              <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">จำนวนรายการทั้งหมด</p>
-              <p className="text-2xl font-bold text-[#102C57] mt-1">{filteredRows.length}</p>
-            </div>
-            <div className="p-4 text-center">
-              <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">จำนวนคงเหลือสะสมรวม</p>
-              <p className="text-2xl font-bold text-emerald-700 mt-1">{formatQuantity(totalRemainingQty)} <span className="text-sm font-semibold text-slate-400">ปี๊บ</span></p>
-            </div>
-          </div>
+          {/* Unified Report Filter Bar */}
+          <ReportFilterBar
+            dateMode="none"
+            searchQuery={searchQuery}
+            onSearchQueryChange={(query) => {
+              setSearchQuery(query);
+              setCurrentViewPage(0);
+            }}
+            searchPlaceholder="ค้นหารหัสสินค้า, ชื่อสินค้า, LOT หรือบาร์โค้ด"
+            searchLabel="ค้นหาสินค้า / LOT / บาร์โค้ด"
+            isLoading={loading}
+            onReset={() => {
+              setSearchQuery("");
+              setCurrentViewPage(0);
+            }}
+            onPrint={() => window.print()}
+            printButtonLabel="พิมพ์ A4 แนวตั้ง"
+            summaryStats={[
+              { label: "จำนวนรายการทั้งหมด", value: `${filteredRows.length.toLocaleString("th-TH")} รายการ` },
+              { label: "จำนวนคงเหลือสะสมรวม", value: `${formatQuantity(totalRemainingQty)} ปี๊บ`, highlight: true },
+            ]}
+            className="mb-6"
+          />
         </div>
       </div>
 
       {/* Visual Page Navigator (Screen Only) */}
       {reportPages.length > 0 && (
         <div className="print:hidden flex justify-center mb-6">
-          <div className="flex items-center gap-4 bg-[#102C57] text-white px-6 py-2 rounded-full shadow-md">
+          <div className="flex items-center gap-4 bg-[var(--surface-navy,#102C57)] text-white px-6 py-2 rounded-full shadow-md">
             <button
               type="button"
               onClick={() => setCurrentViewPage((prev) => Math.max(0, prev - 1))}
@@ -229,39 +210,20 @@ export default function WipBalanceReportClient() {
               `}} />
 
               {/* Corporate Header */}
-              <div className="flex justify-between items-end border-b-2 border-[#102C57] pb-4 mb-5">
-                <div className="flex items-center gap-3">
-                  <Image
-                    src="/brand/LOGO-KPF1.png"
-                    alt="KPF Logo"
-                    width={42}
-                    height={42}
-                    className="h-10 w-auto object-contain"
-                  />
-                  <div className="flex flex-col">
-                    <h1 className="text-[14px] font-black text-[#102C57] leading-none uppercase">บริษัท เคพีฟู้ดส์ จำกัด</h1>
-                    <p className="text-[9px] font-bold text-[#64748b] tracking-wider">K.P. foods Co.,Ltd.</p>
-                  </div>
-                </div>
-
-                <div className="text-center">
-                  <h2 className="text-[16px] font-black text-[#102C57] leading-none uppercase">รายงานสรุปสต็อกคงเหลือ WIP</h2>
-                  <p className="text-[8px] font-bold text-[#d4af37] uppercase tracking-[0.2em] mt-1">
-                    WIP Stock Balance Report (Portrait)
-                  </p>
-                </div>
-
-                <div className="text-[9px] text-right text-slate-500 leading-tight">
-                  <p><span className="font-bold">วันที่พิมพ์:</span> {printedAtLabel}</p>
-                  <p><span className="font-bold">ผู้ออกรายงาน:</span> {profile.username || "System"}</p>
-                  <p><span className="font-bold">หน้า:</span> {pageIndex + 1} / {reportPages.length}</p>
-                </div>
-              </div>
-
-              {/* Department Meta */}
-              <div className="flex justify-between items-center mb-4 text-xs font-bold text-slate-700 bg-slate-50 px-4 py-2 border border-slate-200">
-                <span>แผนก: ไลน์ผลิต KP13 (ฝ่ายผลิตอาหารสำเร็จรูป)</span>
-                <span>ประเภทสต็อก: WIP ค้างไลน์สะสม (เศษเหลือปลายวัน)</span>
+              <div className="mb-4">
+                <ReportHeader
+                  title="รายงานสรุปสต็อกคงเหลือ WIP"
+                  subtitle="WIP Stock Balance Report (Portrait)"
+                  meta={[
+                    { label: "แผนก", value: "ไลน์ผลิต KP13 (ฝ่ายผลิตอาหารสำเร็จรูป)" },
+                    { label: "ประเภทสต็อก", value: "WIP ค้างไลน์สะสม (เศษเหลือปลายวัน)" },
+                  ]}
+                  printedAt={printedAtLabel}
+                  printedBy={profile.username || "System"}
+                  page={pageIndex + 1}
+                  totalPages={reportPages.length}
+                  variant="block"
+                />
               </div>
 
               {/* Main Portrait Table */}
@@ -293,7 +255,7 @@ export default function WipBalanceReportClient() {
                     </tr>
                   ))}
                   {pageIndex === reportPages.length - 1 ? (
-                    <tr className="bg-[#102C57] text-white font-bold">
+                    <tr className="bg-[var(--surface-navy,#102C57)] text-white font-bold">
                       <td colSpan={4} className="border border-[#102C57] px-3 py-3 text-right uppercase tracking-wider text-[10px]">
                         สรุปรวมคงเหลือทั้งหมด (Grand Total)
                       </td>

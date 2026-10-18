@@ -1,0 +1,30 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import { createRequire } from "node:module";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { transform, loadBindings } from "next/dist/build/swc/index.js";
+
+test("shared grouped navigation selects groups, renders only current tasks and hides unavailable tasks", async () => {
+  await loadBindings();
+  const file = new URL("../src/components/GroupedPageNavigation.js", import.meta.url);
+  const { code } = await transform(fs.readFileSync(file, "utf8"), { filename: file.pathname, jsc: { parser: { syntax: "ecmascript", jsx: true }, transform: { react: { runtime: "automatic" } } }, module: { type: "commonjs" } });
+  const componentModule = { exports: {} };
+  const require = createRequire(import.meta.url);
+  new Function("require", "module", "exports", code)(name => name.endsWith(".css") ? {} : require(name), componentModule, componentModule.exports);
+  const Component = componentModule.exports.default;
+  const groups = [{ key: "weigh", label: "งานชั่ง", items: [{ key: "in", label: "ชั่งเข้า" }, { key: "return", label: "ชั่งคืน" }, { key: "void", label: "ยกเลิกชั่ง", visible: false }] }, { key: "issue", label: "งานเบิก", items: [{ key: "issue", label: "สแกนเบิก" }] }];
+  let selected;
+  const props = { groups, value: "return", onChange: value => { selected = value; } };
+  const html = renderToStaticMarkup(React.createElement(Component, props));
+  assert.match(html, /aria-current="page"[^>]*>ชั่งคืน/);
+  assert.doesNotMatch(html, /ยกเลิกชั่ง|สแกนเบิก/);
+  const tree = Component(props);
+  const groupButtons = tree.props.children[0].props.children[1].props.children;
+  groupButtons[1].props.onClick();
+  assert.equal(selected, "issue");
+  groupButtons[0].props.onClick();
+  assert.equal(selected, "issue", "clicking active group does not reset current task");
+  assert.equal(Component({ ...props, groups: [] }), null);
+});

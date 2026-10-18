@@ -20,6 +20,30 @@ function normalizeStringArray(value) {
   return [...new Set(value.map((item) => normalizeString(item)).filter(Boolean))];
 }
 
+async function saveAtomicRole(db, actor, body, roleId = null) {
+  let permissionIds = normalizeStringArray(body.permission_ids);
+  const keys = normalizeStringArray(body.permission_keys);
+  if (!permissionIds.length && keys.length) {
+    const { data, error } = await db.from("permissions").select("id,perm_key").in("perm_key", keys);
+    if (error) throw new ApiError(500, "ตรวจสอบสิทธิ์ไม่สำเร็จ");
+    if (keys.some((key) => !data?.some((item) => item.perm_key === key))) throw new ApiError(400, "พบสิทธิ์ที่ไม่ได้ลงทะเบียน");
+    permissionIds = data.map((item) => item.id);
+  }
+  const { data, error } = await db.rpc("save_role_permissions_atomic", {
+    p_actor_id: actor.userId, p_role_id: roleId,
+    p_role_key: normalizeString(body.role_key), p_name: normalizeString(body.name),
+    p_description: normalizeString(body.description), p_permission_ids: permissionIds,
+    p_expected_permission_ids: roleId && Array.isArray(body.expected_permission_ids)
+      ? normalizeStringArray(body.expected_permission_ids) : roleId ? null : [],
+  });
+  if (error) {
+    const status = error.code === "42501" ? 403 : error.code === "P0002" ? 404
+      : ["23505", "P0001"].includes(error.code) ? 409 : error.code === "22023" ? 400 : 503;
+    throw new ApiError(status, status === 503 ? "ยังไม่พร้อมบันทึกสิทธิ์ใหม่ กรุณาติดตั้ง SQL และตรวจสอบก่อนเปิดใช้งาน" : error.message);
+  }
+  return data;
+}
+
 export async function listRoles(request) {
   await requireAdmin(request);
   const supabaseAdmin = getSupabaseAdmin();
@@ -82,6 +106,11 @@ export async function createRole(request) {
   }
 
   const supabaseAdmin = getSupabaseAdmin();
+
+  if (process.env.ROLE_TASK_PERMISSIONS_ENABLED === "true") {
+    const role = await saveAtomicRole(supabaseAdmin, actor, body);
+    return Response.json({ role }, { status: 201 });
+  }
 
   const { data: role, error: roleError } = await supabaseAdmin
     .from("roles")
@@ -174,6 +203,10 @@ export async function updateRole(request, { id }) {
   }
 
   const supabaseAdmin = getSupabaseAdmin();
+  if (process.env.ROLE_TASK_PERMISSIONS_ENABLED === "true") {
+    await saveAtomicRole(supabaseAdmin, actor, body, roleId);
+    return Response.json({ ok: true });
+  }
   const { data: role, error: roleError } = await supabaseAdmin
     .from("roles")
     .select("id, is_system")

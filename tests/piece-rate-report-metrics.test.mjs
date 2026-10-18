@@ -18,6 +18,16 @@ test("missing historical conversion uses saved kilograms, not today's product se
   assert.equal(resolvePieceRateReportMetrics({ input_mode_snapshot: "pail", input_value: 56, normalized_kg_amount_snapshot: 61.6 }).normalizedKgAmount, 61.6);
 });
 
+test("pail reports preserve manually entered actual kilograms", () => {
+  assert.deepEqual(resolvePieceRateReportMetrics({
+    input_mode_snapshot: "pail",
+    input_value: 10,
+    weight_kg_snapshot: 5,
+    normalized_kg_amount_snapshot: 47.25,
+    metadata: { actualWeightKg: 47.25 },
+  }), { entryCountValue: 1, countValue: 10, normalizedKgAmount: 47.25 });
+});
+
 test("mixed report totals add quantities and kilograms separately", () => {
   const rows = [
     { input_mode_snapshot: "pail", input_value: 56, weight_kg_snapshot: 1.1 },

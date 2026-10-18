@@ -1,7 +1,6 @@
 import { jsonError, getSupabaseAdmin } from "@/lib/adminApi";
 import { requirePermissionKeys } from "@/lib/permissionGuard";
 import { getUserPermissions } from "@/lib/permissionsData";
-import { getSessionFromRequest } from "@/lib/sessionToken";
 import { toJsonResponse } from "@/lib/result";
 import { normalizeMasterPlanNo } from "@/lib/planNo";
 import { calculateMaterialsFromData } from "@/features/production-planning/services/calculationLogic";
@@ -34,12 +33,7 @@ function extractItemMasterPlanNo(item = {}) {
 
 async function hasPlanningManageAccess(request, userId, isAdmin = false) {
   if (isAdmin) return true;
-  const session = getSessionFromRequest(request, userId);
-  if (session?.isAdmin) return true;
-  if (Array.isArray(session?.permissions)) {
-    return session.permissions.includes("production-line-planning-manage");
-  }
-  const permissionResult = await getUserPermissions(userId);
+  const permissionResult = await getUserPermissions(userId, { fresh: true });
   return Boolean(
     permissionResult?.isAdmin
     || permissionResult?.permissions?.includes("production-line-planning-manage")

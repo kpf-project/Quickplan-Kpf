@@ -23,11 +23,12 @@ import {
   UserRound,
   Users,
   Warehouse,
-  Boxes,
   Search,
   X,
 } from "lucide-react";
 import GenericScheduleTable from "./GenericScheduleTable";
+import WeeklyPlanningWorkbench from "./WeeklyPlanningWorkbench";
+import DepartmentWipPicker from "./DepartmentWipPicker";
 import { fetchJson, fetcher } from "@/lib/clientFetch";
 import { useUserProfile } from "@/lib/useUserProfile";
 
@@ -250,7 +251,11 @@ function toValidDraftRequestLines(draftLines = [], activeDepartmentId = null) {
       planId: line.id || line.planId || null,
       workDate: line.workDate,
       skuCode: String(line.skuCode || "").trim().toUpperCase(),
+      skuName: String(line.skuName || "").trim(),
+      unit: line.planningUnit || line.unit || null,
       plannedQty: toNumber(line.plannedQty, 0),
+      formulaCode: line.formulaCode || null,
+      bomVersionId: line.bomVersionId || null,
       departmentId: activeDepartmentId || null,
       shiftId: line.shiftId || null,
       shiftCode: String(line.shiftCode || "").trim().toUpperCase() || null,
@@ -290,6 +295,7 @@ function mapAutoDraftRowsToDraftLines(rows = [], defaultDraftDate) {
             : toNumber(row?.displayFactor, 0),
         displayUnit: String(row?.displayUom || row?.uom || "").trim(),
         planningUnit: String(row?.planningUnit || row?.uom || "").trim(),
+        kgPerBatch: row?.kgPerBatch ?? null,
         plannedQty,
         sourceSectionDefId: String(row?.sourceSectionDefId || row?.scheduleSectionDefId || "").trim() || null,
         sourceSectionName: String(row?.sourceSectionName || row?.scheduleSectionName || "").trim() || null,
@@ -316,6 +322,7 @@ function mapPersistedDraftLinesToDraftLines(rows = [], defaultDraftDate) {
         skuCode: String(row?.skuCode || "").trim().toUpperCase(),
         skuName: String(row?.skuName || "").trim(),
         formulaCode: String(row?.formulaCode || row?.formula_code || "").trim().toUpperCase() || null,
+        kgPerBatch: row?.kgPerBatch ?? null,
         bomVersionId: row?.bomVersionId || row?.bom_version_id || null,
         shiftId: String(row?.shiftId || row?.shift_id || "").trim() || null,
         shiftCode: String(row?.shiftCode || row?.shift_code || "").trim().toUpperCase() || null,
@@ -364,9 +371,13 @@ export default function QaSubplanWorkbenchClient({
       if (planKind !== "main" || !planNo) return;
       if (hasPublishedMain && !row?.master_published_at) return;
       if (!byPlan.has(planNo)) {
-        byPlan.set(planNo, { planNo, total: 0, editable: 0 });
+        byPlan.set(planNo, { planNo, total: 0, editable: 0, periodStart: null, periodEnd: null });
       }
       const target = byPlan.get(planNo);
+      const start = String(row?.period_start || "").slice(0, 10);
+      const end = String(row?.period_end || start).slice(0, 10);
+      if (start && (!target.periodStart || start < target.periodStart)) target.periodStart = start;
+      if (end && (!target.periodEnd || end > target.periodEnd)) target.periodEnd = end;
       target.total += 1;
       if (row?.can_edit === true) target.editable += 1;
     });
@@ -444,6 +455,9 @@ export default function QaSubplanWorkbenchClient({
   const [draftLines, setDraftLines] = useState([]);
   const [previewData, setPreviewData] = useState(null);
   const [previewMeta, setPreviewMeta] = useState(null);
+  const [previewPending, setPreviewPending] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+  const [previewRevision, setPreviewRevision] = useState(0);
   const [message, setMessage] = useState("");
   const [errorText, setErrorText] = useState("");
   const [saving, setSaving] = useState(false);
@@ -459,7 +473,6 @@ export default function QaSubplanWorkbenchClient({
     dirty: false,
   });
   const autoPreviewKeyRef = useRef("");
-  const autoBomCalculationKeyRef = useRef("");
 
   const selectedMasterPlanNo = String(masterPlanNo || "").trim().toUpperCase();
   const fgDepartmentOptions = useMemo(() => {
@@ -511,6 +524,27 @@ export default function QaSubplanWorkbenchClient({
     fetcher,
     { revalidateOnFocus: false }
   );
+  const { data: productionShiftsPayload } = useSWR(
+    "/api/production-shifts",
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+  const settingShifts = useMemo(() => {
+    return (productionShiftsPayload?.data || []).filter((s) => s.isActive !== false);
+  }, [productionShiftsPayload]);
+  const { data: workCentersData } = useSWR(
+    activeDepartmentId
+      ? `/api/production-work-centers?departmentId=${encodeURIComponent(activeDepartmentId)}`
+      : null,
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+  const plannableWorkCenters = useMemo(() => {
+    const list = Array.isArray(workCentersData?.data) ? workCentersData.data : [];
+    return list.filter(
+      (wc) => (wc.requires_planning || wc.requiresPlanning) && wc.isActive !== false && wc.is_active !== false
+    );
+  }, [workCentersData]);
   const confirmedSubplanKeySet = useMemo(() => {
     const rows = Array.isArray(confirmedSubplansPayload?.data) ? confirmedSubplansPayload.data : [];
     return new Set(
@@ -547,6 +581,7 @@ export default function QaSubplanWorkbenchClient({
     if (!activeMasterPlanNo || !activeDepartmentId) return null;
     const params = new URLSearchParams();
     params.set("masterPlanNo", activeMasterPlanNo);
+    params.set("includeWeight", "1");
     if (activeDepartmentId) params.set("departmentId", activeDepartmentId);
     return `/api/production-planning/wip-plan/draft?${params.toString()}`;
   }, [activeDepartmentId, activeMasterPlanNo]);
@@ -843,19 +878,118 @@ export default function QaSubplanWorkbenchClient({
       .sort((a, b) => Number(a?.section?.display_order || 999) - Number(b?.section?.display_order || 999));
   }, [editableScheduleRows, fgSectionDefs, sectionShiftsData]);
   const noopScheduleAction = useCallback(() => {}, []);
+
+  const workCenterTableModels = useMemo(() => {
+    if (!plannableWorkCenters.length) return [];
+
+    const dayMeta = new Map();
+    editableScheduleRows.forEach((row) => {
+      const key = row.dayKey;
+      const dateValue = row.dateValue;
+      if (key && !dayMeta.has(key)) {
+        dayMeta.set(key, {
+          key,
+          dateValue,
+          label: dateValue
+            ? `${DAY_KEY_LABEL_TH[key] || thaiWeekdayShort(dateValue)} ${formatThaiSlashDate(dateValue)}`
+            : key,
+          sortOrder: DAY_KEY_ORDER[key] ?? 99,
+        });
+      }
+    });
+    const days = Array.from(dayMeta.values()).sort((a, b) => {
+      if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+      return String(a.key || "").localeCompare(String(b.key || ""));
+    });
+
+    return plannableWorkCenters
+      .map((wc, index) => {
+        return {
+          id: String(wc.id).trim(),
+          name: wc.name,
+          isWorkCenter: true,
+          section: {
+            id: String(wc.id).trim(),
+            name: wc.name,
+            code: wc.code,
+            display_order: wc.sortOrder ?? wc.sort_order ?? index,
+            production_schedule_column_defs: QA_FG_SECTION.production_schedule_column_defs,
+          },
+          days,
+          rows: editableScheduleRows.map((row, rowIndex) => ({
+            id: row.id || `${wc.id}-${rowIndex + 1}`,
+            day_key: row.dayKey,
+            row_data: row.rowData || {},
+          })),
+        };
+      })
+      .sort((a, b) => Number(a?.section?.display_order || 0) - Number(b?.section?.display_order || 0));
+  }, [plannableWorkCenters, editableScheduleRows]);
+
   const [selectedSectionId, setSelectedSectionId] = useState("");
-  const sectionTabs = qaFgSectionTableModels;
+  const sectionTabs = workCenterTableModels.length ? workCenterTableModels : qaFgSectionTableModels;
   const activeSectionModel =
     sectionTabs.find((item) => item.id === selectedSectionId) || sectionTabs[0] || null;
   const activeSectionId = String(activeSectionModel?.id || "").trim();
+
+  useEffect(() => {
+    if (sectionTabs.length > 0 && !sectionTabs.some((t) => t.id === selectedSectionId)) {
+      setSelectedSectionId(sectionTabs[0].id);
+    }
+  }, [sectionTabs, selectedSectionId]);
+
   const activeSectionShifts = useMemo(() => {
-    if (!sectionShiftsData?.sections || !activeSectionId) return [];
-    const sec = sectionShiftsData.sections.find((s) => String(s.id).trim() === activeSectionId);
-    return Array.isArray(sec?.shifts) ? sec.shifts : [];
-  }, [sectionShiftsData, activeSectionId]);
+    // 1. If assigned shifts exist for this specific section
+    if (sectionShiftsData?.sections && activeSectionId) {
+      const sec = sectionShiftsData.sections.find((s) => String(s.id).trim() === activeSectionId);
+      if (Array.isArray(sec?.shifts) && sec.shifts.length > 0) {
+        return sec.shifts
+          .filter((s) => s.isActive !== false && s.shiftName !== "กะ")
+          .map((s) => ({
+            id: s.shiftId || s.id,
+            shiftId: s.shiftId || s.id,
+            shiftCode: s.shiftCode || s.code,
+            shiftName: s.shiftName || s.name || s.shiftCode,
+            startTime: s.startTime,
+            endTime: s.endTime,
+          }));
+      }
+    }
+    // 2. Directly from shift settings table (/api/production-shifts)
+    if (settingShifts.length > 0) {
+      return settingShifts
+        .filter((s) => s.name !== "กะ")
+        .map((s) => ({
+          id: s.id,
+          shiftId: s.id,
+          shiftCode: s.code,
+          shiftName: s.name,
+          startTime: s.startTime,
+          endTime: s.endTime,
+        }));
+    }
+    // 3. Fallback to masterShifts from section shifts API
+    const activeMasterShifts = (sectionShiftsData?.masterShifts || []).filter(
+      (m) => m.isActive !== false && m.name !== "กะ"
+    );
+    if (activeMasterShifts.length > 0) {
+      return activeMasterShifts.map((m) => ({
+        id: m.id,
+        shiftId: m.id,
+        shiftCode: m.code,
+        shiftName: m.name,
+        startTime: m.startTime,
+        endTime: m.endTime,
+      }));
+    }
+    return [];
+  }, [sectionShiftsData, activeSectionId, settingShifts]);
   const activeSectionDraftLines = useMemo(
-    () => filterRowsForSection(draftLines, activeSectionId),
-    [activeSectionId, draftLines]
+    () => filterRowsForSection(draftLines, activeSectionId).map(line => {
+      const calculated = previewData?.draftLines?.find(row => (row.id || row.planId) === line.id && row.skuCode === line.skuCode && (row.bomVersionId || null) === (line.bomVersionId || null) && (row.formulaCode || "DEFAULT") === (line.formulaCode || "DEFAULT"));
+      return calculated ? { ...line, planningUnit: calculated.planningUnit || line.planningUnit, kgPerBatch: calculated.kgPerBatch } : line;
+    }),
+    [activeSectionId, draftLines, previewData]
   );
 
   const wipProductRows = useMemo(
@@ -1230,30 +1364,34 @@ export default function QaSubplanWorkbenchClient({
   ]);
 
   useEffect(() => {
-    const validLines = activeSectionDraftLines.filter(
-      (line) => line.workDate && line.skuCode && toNumber(line.plannedQty, 0) > 0
-    );
-    if (!activeMasterPlanNo || !activeDepartmentId || !activeSectionId || previewing || editingWipIds.size || !validLines.length) {
-      return undefined;
-    }
-    const calculationKey = `${activeMasterPlanNo}|${activeDepartmentId}|${activeSectionId}|${validLines.map((line) => `${line.id}:${line.workDate}:${line.shiftId || line.shiftCode || ""}:${line.skuCode}:${line.plannedQty}`).join(",")}`;
-    if (autoBomCalculationKeyRef.current === calculationKey) {
-      return undefined;
-    }
-    autoBomCalculationKeyRef.current = calculationKey;
-    const timer = setTimeout(() => {
-      regenerateSectionFromBom({ preserveDraftLines: true });
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [
-    activeDepartmentId,
-    activeMasterPlanNo,
-    activeSectionDraftLines,
-    activeSectionId,
-    editingWipIds,
-    previewing,
-    regenerateSectionFromBom,
-  ]);
+    if (!activeMasterPlanNo || !activeDepartmentId || !activeSectionId || draftLoading) return undefined;
+    const controller = new AbortController();
+    let active = true;
+    setPreviewPending(true);
+    setPreviewError("");
+    const timer = setTimeout(async () => {
+      const result = await fetchJson("/api/production-planning/explosion/preview", {
+        method: "POST",
+        signal: controller.signal,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          masterPlanNo: activeMasterPlanNo,
+          departmentId: activeDepartmentId,
+          wipDraftLines: toValidDraftRequestLines(draftLines, activeDepartmentId),
+          ignorePersistedDraft: true,
+        }),
+      });
+      if (!active) return;
+      setPreviewPending(false);
+      if (!result.ok) {
+        setPreviewError(result.error?.message || "คำนวณวัตถุดิบไม่สำเร็จ กรุณาลองใหม่");
+        return;
+      }
+      setPreviewData(result.data?.data || null);
+      setPreviewMeta(result.data?.meta || null);
+    }, 300);
+    return () => { active = false; controller.abort(); clearTimeout(timer); };
+  }, [activeMasterPlanNo, activeDepartmentId, activeSectionId, draftLoading, draftLines, previewRevision]);
 
   useEffect(() => {
     if (!activeMasterPlanNo || !activeDepartmentId || previewing) {
@@ -1582,6 +1720,9 @@ export default function QaSubplanWorkbenchClient({
           nextLine.displayFactor = catalogMeta ? toNumber(catalogMeta.factor, 1) : 0;
           nextLine.displayUnit = catalogMeta?.displayUnit || "";
           nextLine.planningUnit = catalogMeta?.planningUnit || "";
+          nextLine.formulaCode = null;
+          nextLine.bomVersionId = null;
+          nextLine.kgPerBatch = null;
         }
         return nextLine;
       })
@@ -1597,14 +1738,15 @@ export default function QaSubplanWorkbenchClient({
     setWipPickerLineId(null);
   }, [wipPickerLineId, updateLine]);
 
-  const addLine = useCallback(() => {
+  const addLine = useCallback((workDate = defaultDraftDate) => {
     localDraftStateRef.current = {
       draftUrl,
       dirty: true,
     };
     const defaultShift = activeSectionShifts[0] || null;
-    const newLine = emptyLine(defaultDraftDate, activeSectionModel, defaultShift);
+    const newLine = emptyLine(typeof workDate === "string" ? workDate : defaultDraftDate, activeSectionModel, defaultShift);
     setDraftLines((prev) => [...prev, newLine]);
+    setWipPickerLineId(newLine.id);
     setEditingWipIds((prev) => new Set([...prev, newLine.id]));
   }, [activeSectionModel, defaultDraftDate, draftUrl, activeSectionShifts]);
 
@@ -1622,6 +1764,16 @@ export default function QaSubplanWorkbenchClient({
       };
       return [...prev, duplicate];
     });
+  }, [draftUrl]);
+
+  const addWeeklyCell = useCallback((source, workDate, plannedQty) => {
+    localDraftStateRef.current = { draftUrl, dirty: true };
+    setDraftLines((previous) => [...previous, {
+      ...source,
+      id: crypto.randomUUID(),
+      workDate,
+      plannedQty,
+    }]);
   }, [draftUrl]);
 
   const recalculatePreview = useCallback(async (linesToUse = draftLines) => {
@@ -1678,15 +1830,15 @@ export default function QaSubplanWorkbenchClient({
       draftUrl,
       dirty: true,
     };
-    const nextLines = draftLines.filter((line) => line.id !== lineId);
+    const removedIds = new Set(Array.isArray(lineId) ? lineId : [lineId]);
+    const nextLines = draftLines.filter((line) => !removedIds.has(line.id));
     setDraftLines(nextLines);
     setEditingWipIds((prev) => {
       const next = new Set(prev);
-      next.delete(lineId);
+      removedIds.forEach(id => next.delete(id));
       return next;
     });
-    recalculatePreview(nextLines);
-  }, [draftLines, draftUrl, recalculatePreview]);
+  }, [draftLines, draftUrl]);
 
   const matrixColumns = useMemo(() => activeSectionDraftLines
     .filter((line) => editingWipIds.has(line.id) || (String(line.skuCode || "").trim() && toNumber(line.plannedQty, 0) > 0))
@@ -1706,7 +1858,7 @@ export default function QaSubplanWorkbenchClient({
           `${line.workDate}|${line.shiftCode || line.shiftId || ""}|${line.skuCode}` === column.lookupKey
         ));
       (trace?.materials || []).forEach((material) => {
-        const key = `${material.materialSkuCode}|${material.materialGoodsCode || ""}`;
+        const key = `${material.materialSkuCode}|${material.materialGoodsCode || ""}|${material.unit || ""}`;
         if (!rowMap.has(key)) {
           rowMap.set(key, {
             code: material.materialGoodsCode || material.materialSkuCode,
@@ -1751,7 +1903,10 @@ export default function QaSubplanWorkbenchClient({
       setSelectedSectionId={setSelectedSectionId}
       activeSectionModel={activeSectionModel}
       activeSectionShifts={activeSectionShifts}
-      previewMeta={previewMeta}
+      previewMeta={{ ...previewMeta, planRange: previewMeta?.planRange || draftPayload?.meta?.planRange }}
+      previewPending={previewPending}
+      previewError={previewError}
+      retryPreview={() => setPreviewRevision(value => value + 1)}
       matrixColumns={matrixColumns}
       materialRows={materialRows}
       matrixPlannedTotal={matrixPlannedTotal}
@@ -1775,6 +1930,7 @@ export default function QaSubplanWorkbenchClient({
       updateLine={updateLine}
       addLine={addLine}
       duplicateLine={duplicateLine}
+      addWeeklyCell={addWeeklyCell}
       confirmWipLine={confirmWipLine}
       editWipLine={editWipLine}
       removeLine={removeLine}
@@ -1882,7 +2038,7 @@ export default function QaSubplanWorkbenchClient({
               key={dept.id || dept.code || dept.name}
               className={`inline-flex min-w-[180px] items-center justify-center gap-2 rounded-xl border px-4 py-2 text-base font-bold ${
                 active
-                  ? "border-[#102C57] bg-[#102C57] text-white"
+                  ? "border-[#102C57] bg-[var(--surface-navy,#102C57)] text-white"
                   : "border-[#cfd8e6] bg-white text-[#102C57]"
               }`}
             >
@@ -1897,18 +2053,20 @@ export default function QaSubplanWorkbenchClient({
         <div className="mt-3 flex flex-wrap gap-2">
           {sectionTabs.map((section) => {
             const isActive = section.id === (activeSectionModel?.id || "");
+            const isWc = Boolean(section.isWorkCenter);
             return (
               <button
                 key={section.id}
                 type="button"
                 onClick={() => setSelectedSectionId(section.id)}
-                className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-base font-semibold transition-colors ${
+                className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-base font-semibold transition-colors shadow-xs ${
                   isActive
-                    ? "border-[#102C57] bg-[#102C57] text-white"
-                    : "border-[#cfd8e6] bg-white text-[#102C57]"
+                    ? "border-[#102C57] bg-[var(--surface-navy,#102C57)] text-white"
+                    : "border-[#cfd8e6] bg-white text-[#102C57] hover:bg-slate-50"
                 }`}
               >
-                {section.section?.name || "Section"}
+                {isWc ? <Warehouse className="h-4 w-4" /> : null}
+                <span>{isWc ? `ห้อง: ${section.section?.name || section.name}` : (section.section?.name || "Section")}</span>
                 {isActive ? <span className="text-[#d4af37]">▾</span> : null}
               </button>
             );
@@ -1938,7 +2096,7 @@ export default function QaSubplanWorkbenchClient({
         <div className="space-y-3">
           <div className="rounded-xl border border-[#d7dfeb] bg-white p-3">
             <div className="mb-2 flex items-center justify-between">
-              <h4 className="inline-flex items-center gap-2 text-[34px] leading-none font-bold text-[#102C57]"><CalendarDays className="h-5 w-5" /> แผนใหญ่ของ Section นี้</h4>
+              <h4 className="inline-flex items-center gap-2 text-[34px] leading-none font-bold text-[#102C57]"><CalendarDays className="h-5 w-5" /> {activeSectionModel?.isWorkCenter ? `แผนใหญ่ (ห้อง: ${activeSectionModel?.name || ""})` : "แผนใหญ่ของ Section นี้"}</h4>
               <span className="text-[11px] font-semibold text-[#102C57]">{editablePlanRows.length.toLocaleString()} รายการ</span>
             </div>
             <div className="mb-2 grid grid-cols-1 gap-2 md:grid-cols-4">
@@ -1951,7 +2109,7 @@ export default function QaSubplanWorkbenchClient({
                 <div className="text-sm font-bold text-[#102C57]">{previewMeta?.planRange?.start ? `${formatThaiSlashDate(previewMeta.planRange.start)} - ${formatThaiSlashDate(previewMeta.planRange.end)}` : "-"}</div>
               </div>
               <div className="rounded-xl border border-[#cdd8ea] bg-[#fbfdff] px-3 py-2">
-                <div className="inline-flex items-center gap-2 text-xs font-semibold text-[#102C57]"><Package2 className="h-4 w-4" /> FG ใน section</div>
+                <div className="inline-flex items-center gap-2 text-xs font-semibold text-[#102C57]"><Package2 className="h-4 w-4" /> {activeSectionModel?.isWorkCenter ? "FG ในแผนก" : "FG ใน section"}</div>
                 <div className="text-xl font-bold text-[#102C57]">{editablePlanRows.length.toLocaleString()}</div>
               </div>
               <div className="rounded-xl border border-[#cdd8ea] bg-[#fbfdff] px-3 py-2">
@@ -1983,7 +2141,7 @@ export default function QaSubplanWorkbenchClient({
 
           <div className="rounded-xl border border-[#d7dfeb] bg-white p-3">
             <div className="mb-2 flex items-center justify-between">
-              <h4 className="inline-flex items-center gap-2 text-[34px] leading-none font-bold text-[#102C57]"><Settings2 className="h-5 w-5" /> WIP แผนย่อย (Auto-Gen)</h4>
+              <h4 className="inline-flex items-center gap-2 text-[34px] leading-none font-bold text-[#102C57]"><Settings2 className="h-5 w-5" /> {activeSectionModel?.isWorkCenter ? `WIP แผนย่อย (${activeSectionModel?.name || ""})` : "WIP แผนย่อย (Auto-Gen)"}</h4>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -2016,7 +2174,7 @@ export default function QaSubplanWorkbenchClient({
             </div>
             <div className="overflow-auto rounded-lg border border-[#102C57]/20">
               <table className="w-full min-w-[820px] border-collapse text-[12px]">
-                <thead className="bg-[#102C57] text-white">
+                <thead className="bg-[var(--surface-navy,#102C57)] text-white">
                   <tr>
                     <th className="w-[140px] border border-[#0b2040] px-2 py-2 text-left font-semibold">วันที่ผลิต</th>
                     <th className="w-[155px] border border-[#0b2040] px-2 py-2 text-left font-semibold">กะ</th>
@@ -2041,38 +2199,34 @@ export default function QaSubplanWorkbenchClient({
                         />
                       </td>
                       <td className="border border-slate-300 px-2 py-2 text-center text-sm font-semibold text-[#102C57]">
-                        {activeSectionShifts.length > 0 ? (
-                          <select
-                            value={line.shiftId || line.shiftCode || ""}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              const matched = activeSectionShifts.find(s => s.shiftId === val || s.shiftCode === val);
-                              if (matched) {
-                                updateLine(line.id, "shiftId", matched.shiftId);
-                                updateLine(line.id, "shiftCode", matched.shiftCode);
-                                updateLine(line.id, "shiftName", matched.shiftName);
-                              } else {
-                                updateLine(line.id, "shiftId", null);
-                                updateLine(line.id, "shiftCode", null);
-                                updateLine(line.id, "shiftName", null);
-                              }
-                            }}
-                            className="h-8 w-full rounded border border-slate-300 bg-white px-2 text-sm font-bold text-[#102C57] focus:outline-none"
-                          >
-                            <option value="" className="text-slate-900 bg-white">-</option>
-                            {activeSectionShifts.map((s) => (
-                              <option 
-                                key={s.id || s.shiftId} 
-                                value={s.shiftId || s.shiftCode}
-                                className="text-slate-900 bg-white"
-                              >
-                                {s.shiftName || (s.shiftCode ? `${s.shiftCode} (${s.startTime || ""}-${s.endTime || ""})` : `${s.startTime || ""}-${s.endTime || ""}`) || "-"}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <span className="text-sm font-bold">{String(line.shiftName || line.shiftCode || "").trim() || "-"}</span>
-                        )}
+                        <select
+                          value={line.shiftId || line.shiftCode || ""}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const matched = activeSectionShifts.find(s => s.shiftId === val || s.shiftCode === val);
+                            if (matched) {
+                              updateLine(line.id, "shiftId", matched.shiftId);
+                              updateLine(line.id, "shiftCode", matched.shiftCode);
+                              updateLine(line.id, "shiftName", matched.shiftName);
+                            } else {
+                              updateLine(line.id, "shiftId", val || null);
+                              updateLine(line.id, "shiftCode", val || null);
+                              updateLine(line.id, "shiftName", val || null);
+                            }
+                          }}
+                          className="h-8 w-full rounded border border-slate-300 bg-white px-2 text-sm font-bold text-[#102C57] focus:outline-none cursor-pointer"
+                        >
+                          <option value="" className="text-slate-900 bg-white">-</option>
+                          {activeSectionShifts.map((s) => (
+                            <option
+                              key={s.id || s.shiftId}
+                              value={s.shiftId || s.shiftCode}
+                              className="text-slate-900 bg-white"
+                            >
+                              {s.shiftName || (s.shiftCode ? `${s.shiftCode} (${s.startTime || ""}-${s.endTime || ""})` : `${s.startTime || ""}-${s.endTime || ""}`) || "-"}
+                            </option>
+                          ))}
+                        </select>
                       </td>
                       <td className="border border-slate-300 px-2 py-2">
                         <button
@@ -2179,7 +2333,7 @@ export default function QaSubplanWorkbenchClient({
               <SlidersHorizontal className="h-5 w-5 text-[#d4af37]" /> สรุปความพร้อม WIP
             </h4>
             <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-              <div className="rounded-lg border border-[#102C57]/15 bg-[#102C57] px-2 py-3 text-white">
+              <div className="rounded-lg border border-[#102C57]/15 bg-[var(--surface-navy,#102C57)] px-2 py-3 text-white">
                 <div className="text-3xl font-extrabold text-white">{wipSummaryRows.length.toLocaleString()}</div>
                 <div className="text-[10px] text-white/80 font-medium">WIP ในแผน</div>
               </div>
@@ -2245,7 +2399,7 @@ export default function QaSubplanWorkbenchClient({
             </h4>
             <div className="max-h-[220px] overflow-y-auto rounded-lg border border-gray-200">
               <table className="w-full text-xs">
-                <thead className="sticky top-0 bg-[#102C57] text-white shadow-sm z-10">
+                <thead className="sticky top-0 bg-[var(--surface-navy,#102C57)] text-white shadow-sm z-10">
                   <tr>
                     <th className="px-2 py-2 text-left font-semibold">รหัส</th>
                     <th className="px-2 py-2 text-right font-semibold">ต้องใช้รวม</th>
@@ -2328,7 +2482,7 @@ function WipHeaderEditor({
   onEditWipLine,
 }) {
   return (
-    <div className="overflow-x-auto border-b border-slate-300 bg-[#102C57]">
+    <div className="overflow-x-auto border-b border-slate-300 bg-[var(--surface-navy,#102C57)]">
       <div className="grid min-w-[1120px] text-xs text-white" style={{ gridTemplateColumns: `10.1% 17.2% 5.6% repeat(${Math.max(columns.length, 1)}, minmax(0, 1fr)) 12.4%` }}>
         <div className="sticky left-0 z-10 border-r border-white/30 px-3 py-2 font-bold">วัตถุดิบ</div>
         <div className="sticky left-[135px] z-10 border-r border-white/30 px-3 py-2 font-bold">รายการ</div>
@@ -2368,183 +2522,13 @@ function WipHeaderEditor({
   );
 }
 
-function QaDepartmentMatrixView({
-  activeMasterPlanNo,
-  selectablePlanOptions,
-  setMasterPlanNo,
-  departmentTabs,
-  activeDepartmentId,
-  activeDepartment,
-  setSelectedDepartmentId,
-  sectionTabs,
-  selectedSectionId,
-  setSelectedSectionId,
-  activeSectionModel,
-  activeSectionShifts,
-  previewMeta,
-  matrixColumns: sourceMatrixColumns,
-  materialRows: sourceMaterialRows,
-  matrixPlannedTotal,
-  showWipEditor,
-  setShowWipEditor,
-  wipPickerLineId,
-  setWipPickerLineId,
-  handleSelectWipFromPicker,
-  draftLoading,
-  previewing,
-  saving,
-  confirming,
-  isConfirmedSubplanLocked,
-  confirmedSubplanMeta,
-  activeSectionDraftLines,
-  editingWipIds,
-  wipSkuOptions,
-  wipSkuNameBySku,
-  wipDisplayMetaBySku,
-  updateLine,
-  addLine,
-  duplicateLine,
-  confirmWipLine,
-  editWipLine,
-  removeLine,
-  saveDraft,
-  confirmSubplan,
-  regenerateSectionFromBom,
-  autofillDraftFromShortage,
-  message,
-  errorText,
-  confirmedResult,
-  fgRows,
-}) {
-  const selectedSectionName = activeSectionModel?.section?.name || "ทุก Section";
-  const [matrixDayView, setMatrixDayView] = useState(7);
-  const [wipEditorMode, setWipEditorMode] = useState("add");
-  const [collapsedMatrixDates, setCollapsedMatrixDates] = useState(() => new Set());
-  const [matrixSearch, setMatrixSearch] = useState("");
-  const groupedMatrixColumns = useMemo(() => {
-    const groups = new Map();
-    sourceMatrixColumns.forEach((column) => {
-      const dateKey = String(column.workDate || "").slice(0, 10) || "ไม่ระบุวันที่";
-      if (!groups.has(dateKey)) groups.set(dateKey, []);
-      groups.get(dateKey).push(column);
-    });
-    return Array.from(groups, ([date, columns]) => ({ date, columns }))
-      .sort((a, b) => a.date.localeCompare(b.date))
-      .slice(0, matrixDayView);
-  }, [sourceMatrixColumns, matrixDayView]);
-  const matrixColumns = useMemo(
-    () => groupedMatrixColumns.flatMap((group) => group.columns),
-    [groupedMatrixColumns]
-  );
-  const materialRows = useMemo(() => {
-    const keyword = matrixSearch.trim().toLowerCase();
-    if (!keyword) return sourceMaterialRows;
-    return sourceMaterialRows.filter((row) => `${row.code} ${row.name} ${row.unit}`.toLowerCase().includes(keyword));
-  }, [matrixSearch, sourceMaterialRows]);
-  const totalMaterials = materialRows.length;
-
-  return (
-    <section id="qa-subplan-workbench" className="-mx-3 mb-3 w-full bg-[#f7f8fa] text-[#132238]">
-      <header className="bg-[#102C57] text-white border-b-2 border-[#d4af37]">
-        <div className="flex items-center justify-between px-5 py-3">
-          <h3 className="text-xl font-extrabold tracking-tight">ตารางวัตถุดิบตามแผน WIP</h3>
-          <div className="flex items-center gap-2"><button type="button" onClick={regenerateSectionFromBom} disabled={previewing || isConfirmedSubplanLocked || !activeSectionModel} className="inline-flex h-9 items-center gap-2 border border-[#d4af37] px-4 text-xs font-bold text-[#d4af37] rounded-[2px] hover:bg-white/10 disabled:opacity-40"><RefreshCw size={14} /> คำนวณ BOM</button><button type="button" onClick={() => { if (!activeSectionDraftLines.length) addLine(); setWipEditorMode("add"); setShowWipEditor(true); }} disabled={isConfirmedSubplanLocked} className="inline-flex h-9 items-center gap-2 border border-white/70 px-4 text-xs font-bold rounded-[2px] hover:bg-white/10 disabled:opacity-40"><Package2 size={14} /> เพิ่ม WIP</button></div>
-        </div>
-      </header>
-
-      <div className="p-5 space-y-4">
-        <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.15fr_1.15fr_1.35fr_1.55fr_auto] items-end">
-          <MatrixField label="แผนหลัก"><select value={activeMasterPlanNo} onChange={(event) => setMasterPlanNo(event.target.value)} className="h-9 w-full border border-slate-300 bg-white px-3 text-xs font-semibold"><option value="">เลือกแผนหลัก</option>{selectablePlanOptions.map((plan) => <option key={plan.planNo} value={plan.planNo}>{plan.planNo}</option>)}</select></MatrixField>
-          <MatrixField label="แผนก"><div className="h-9 border border-slate-300 bg-white px-3 py-2 text-xs font-semibold">{activeDepartment?.name || "-"}</div></MatrixField>
-          <MatrixField label="Section"><select value={selectedSectionId || ""} onChange={(event) => setSelectedSectionId(event.target.value)} className="h-9 w-full border border-slate-300 bg-white px-3 text-xs font-semibold"><option value="">ทุก Section</option>{sectionTabs.map((section) => <option key={section.id} value={section.id}>{section.section?.name || section.name}</option>)}</select></MatrixField>
-          <MatrixField label="ช่วงวันที่"><div className="h-9 border border-slate-300 bg-white px-3 py-2 text-xs font-semibold">{previewMeta?.planRange?.start ? `${formatThaiSlashDate(previewMeta.planRange.start)} - ${formatThaiSlashDate(previewMeta.planRange.end)}` : "-"}</div></MatrixField>
-          <div className="flex gap-2 xl:justify-end"><button type="button" onClick={() => saveDraft({})} disabled={saving || isConfirmedSubplanLocked} className="h-9 border border-slate-300 bg-white px-3 text-xs font-bold disabled:opacity-50">{saving ? "กำลังบันทึก..." : "บันทึกร่าง"}</button><button type="button" onClick={confirmSubplan} disabled={confirming || saving || isConfirmedSubplanLocked} className="h-9 bg-[#d4af37] px-4 text-xs font-extrabold text-[#102C57] disabled:opacity-50">{confirming ? "กำลังยืนยัน..." : "ยืนยันแผน"}</button></div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-5 border border-slate-300 bg-white px-4 py-3 text-xs font-bold">
-          <span>WIP ที่วางแผน <strong className="ml-2 text-lg text-[#102C57]">{matrixColumns.length}</strong> รายการ</span><span className="h-6 w-px bg-slate-300" /><span>รวมปริมาณแผน <strong className="ml-2 text-lg text-[#102C57]">{matrixPlannedTotal.toLocaleString("th-TH", { maximumFractionDigits: 3 })}</strong> หน่วย</span><span className="ml-auto flex flex-wrap gap-4 font-normal text-slate-600"><MatrixLegend color="bg-[#f7cdd2]" label="มีแผน (Planned)" /><MatrixLegend color="bg-[#ef6c6c]" label="ขาดแคลน (Shortage)" /><MatrixLegend color="bg-[#b9dfc2]" label="เพียงพอ (Sufficient)" /><MatrixLegend color="border border-slate-300 bg-white" label="ไม่มีความต้องการ" /></span>
-        </div>
-
-        <div className="flex min-w-0 items-end gap-6 overflow-x-auto border-b border-slate-200"><span className="shrink-0 px-1 py-3 text-xs font-bold text-slate-600">แผนก</span>{departmentTabs.map((dept) => <button type="button" key={dept.id} onClick={() => setSelectedDepartmentId(dept.id)} className={`shrink-0 border-b-2 px-1 py-3 text-xs font-bold whitespace-nowrap ${String(dept.id) === String(activeDepartmentId) ? "border-[#d4af37] text-[#102C57]" : "border-transparent text-slate-500 hover:border-slate-300 hover:text-[#102C57]"}`}>{dept.name || dept.code || dept.id}</button>)}</div>
-        <div className="flex min-w-0 items-end gap-6 overflow-x-auto border-b border-slate-200"><span className="shrink-0 px-1 py-3 text-xs font-bold text-slate-600">Section</span>{sectionTabs.map((section) => <button type="button" key={section.id} onClick={() => setSelectedSectionId(section.id)} className={`shrink-0 border-b-2 px-1 py-3 text-xs font-bold whitespace-nowrap ${String(section.id) === String(selectedSectionId) ? "border-[#d4af37] text-[#102C57]" : "border-transparent text-slate-500 hover:border-slate-300 hover:text-[#102C57]"}`}>{section.section?.name || section.name}</button>)}</div>
-
-        {isConfirmedSubplanLocked && <div className="border border-[#d4af37] bg-[#fff9e6] px-4 py-3 text-xs font-bold text-[#8a6d1c]">แผนย่อยนี้ยืนยันแล้ว {confirmedSubplanMeta?.subPlanNo ? `(${confirmedSubplanMeta.subPlanNo})` : ""} จึงไม่สามารถแก้ไขได้</div>}
-        {errorText && <div className="border-l-4 border-red-600 bg-red-50 px-4 py-3 text-xs font-bold text-red-700">{errorText}</div>}
-        {message && <div className="border-l-4 border-emerald-600 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-700">{message}</div>}
-
-        <div className="border border-slate-300 bg-white [&>div.overflow-x-auto:not(.wip-modern-matrix)]:hidden">
-          
-          <div className="flex items-center justify-between bg-[#d4af37] px-4 py-2 text-xs font-extrabold text-[#102C57]"><span>Section: {selectedSectionName}</span><span>แผนก: {activeDepartment?.name || "-"}</span></div>
-          <MatrixViewToolbar
-            groups={groupedMatrixColumns}
-            dayView={matrixDayView}
-            setDayView={setMatrixDayView}
-            search={matrixSearch}
-            setSearch={setMatrixSearch}
-            collapsedDates={collapsedMatrixDates}
-            setCollapsedDates={setCollapsedMatrixDates}
-          />
-          <WipMaterialMatrix groups={groupedMatrixColumns} rows={materialRows} loading={draftLoading} collapsedDates={collapsedMatrixDates} onEditWip={() => { setWipEditorMode("edit"); setShowWipEditor(true); }} />
-          <div className="hidden">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs font-bold text-[#102C57]">WIP ที่วางแผนใน Section นี้</span>
-              <button type="button" onClick={addLine} disabled={isConfirmedSubplanLocked} className="inline-flex h-8 items-center gap-1 border border-[#102C57] bg-white px-3 text-xs font-bold text-[#102C57] disabled:opacity-40"><Plus size={13} /> เพิ่ม WIP</button>
-            </div>
-            <div className="overflow-x-auto">
-              <div className="flex min-w-max gap-2">
-                {activeSectionDraftLines.map((line) => (
-                  <div key={line.id} className="grid w-[290px] shrink-0 grid-cols-[1fr_1fr] gap-2 border border-slate-300 bg-white p-2">
-                    <input type="date" disabled={isConfirmedSubplanLocked} value={String(line.workDate || "").slice(0, 10)} onChange={(event) => updateLine(line.id, "workDate", event.target.value)} className="h-8 border border-slate-300 px-2 text-xs" />
-                    <select disabled={isConfirmedSubplanLocked} value={line.shiftId || line.shiftCode || ""} onChange={(event) => { const matched = activeSectionShifts.find((shift) => (shift.shiftId || shift.shiftCode) === event.target.value || shift.shiftCode === event.target.value); if (matched) { updateLine(line.id, "shiftId", matched.shiftId); updateLine(line.id, "shiftCode", matched.shiftCode); updateLine(line.id, "shiftName", matched.shiftName); } }} className="h-8 border border-slate-300 px-2 text-xs"><option value="">เลือกกะ</option>{activeSectionShifts.map((shift) => <option key={shift.id || shift.shiftId} value={shift.shiftId || shift.shiftCode}>{shift.shiftName || shift.shiftCode}</option>)}</select>
-                    <button type="button" disabled={isConfirmedSubplanLocked} onClick={() => setWipPickerLineId(line.id)} className="h-8 border border-slate-300 bg-white px-2 text-left font-mono text-xs hover:border-[#102C57] flex items-center justify-between gap-1 text-slate-800 disabled:bg-slate-100 rounded-[2px] shadow-sm transition-all"><span className={line.skuCode ? "font-bold text-[#102C57]" : "text-slate-400 font-sans font-normal"}>{line.skuCode || "ค้นหา WIP..."}</span><Search size={12} className="text-slate-400 shrink-0" /></button>
-                    <input type="number" min="0" step="0.001" disabled={isConfirmedSubplanLocked} value={line.plannedQty || ""} onChange={(event) => updateLine(line.id, "plannedQty", event.target.value)} placeholder="จำนวน" className="h-8 border border-slate-300 px-2 text-right text-xs" />
-                    <span className="col-span-2 truncate text-[11px] font-semibold text-slate-600">{line.skuName || wipSkuNameBySku.get(String(line.skuCode || "").trim().toUpperCase()) || "ยังไม่ได้เลือก WIP"}</span>
-                    <button type="button" disabled={isConfirmedSubplanLocked} onClick={() => removeLine(line.id)} className="col-span-2 text-right text-[11px] font-bold text-red-700 disabled:opacity-30">ลบรายการนี้</button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div className="overflow-x-auto"><table className="min-w-[1120px] w-full border-collapse text-xs"><thead><tr className="bg-[#102C57] text-white"><th rowSpan={3} className="sticky left-0 z-20 min-w-[135px] border-r border-white/30 px-3 py-2 text-left">รหัสวัตถุดิบ</th><th rowSpan={3} className="sticky left-[135px] z-20 min-w-[230px] border-r border-white/30 px-3 py-2 text-left">รายการวัตถุดิบ</th><th rowSpan={3} className="min-w-[70px] border-r border-white/30 px-2 py-2">หน่วย</th>{matrixColumns.map((column) => <th key={column.key} className="min-w-[110px] border-r border-white/30 px-2 py-2 text-center">{column.skuName || column.skuCode}</th>)}<th rowSpan={3} className="min-w-[85px] px-2 py-2">รวม</th></tr><tr className="bg-[#193d70] text-white">{matrixColumns.map((column) => <th key={`${column.key}-date`} className="border-r border-white/20 px-2 py-1 text-center">{formatThaiSlashDate(column.workDate).slice(0, 5)}</th>)}</tr><tr className="bg-[#244b7e] text-white">{matrixColumns.map((column) => <th key={`${column.key}-shift`} className="border-r border-white/20 px-2 py-1 text-center">{column.shiftName || column.shiftCode || "-"}</th>)}</tr></thead><tbody>{draftLoading ? <tr><td colSpan={matrixColumns.length + 4} className="py-12 text-center font-bold text-slate-500"><RefreshCw size={15} className="mr-2 inline animate-spin" />กำลังโหลดข้อมูล</td></tr> : !materialRows.length ? <tr><td colSpan={matrixColumns.length + 4} className="py-12 text-center font-bold text-slate-500">ยังไม่มีข้อมูลวัตถุดิบสำหรับ Section และ WIP ที่เลือก</td></tr> : materialRows.map((row) => { const total = matrixColumns.reduce((sum, column) => sum + toNumber(row.values[column.key], 0), 0) || toNumber(row.aggregate, 0); return <tr key={row.code} className="border-b border-slate-200"><td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 font-mono font-bold">{row.code}</td><td className="sticky left-[135px] z-10 border-r border-slate-200 bg-white px-3 py-2 font-semibold">{row.name}</td><td className="border-r border-slate-200 px-2 py-2 text-center">{row.unit}</td>{matrixColumns.map((column) => <td key={column.key} className={`border-r border-slate-200 px-2 py-2 text-center tabular-nums ${row.values[column.key] ? "bg-[#f7cdd2] font-bold" : "text-slate-400"}`}>{row.values[column.key] ? toNumber(row.values[column.key], 0).toLocaleString("th-TH", { maximumFractionDigits: 4 }) : "-"}</td>)}<td className="bg-[#e6f0ff] px-2 py-2 text-center font-extrabold">{total.toLocaleString("th-TH", { maximumFractionDigits: 4 })}</td></tr>; })}{materialRows.length > 0 && <tr className="bg-[#d4af37] font-extrabold text-[#102C57]"><td colSpan={3} className="px-3 py-2 text-right">รวม</td>{matrixColumns.map((column) => <td key={`total-${column.key}`} className="border-r border-[#b6911e] px-2 py-2 text-center">{materialRows.reduce((sum, row) => sum + toNumber(row.values[column.key], 0), 0).toLocaleString("th-TH", { maximumFractionDigits: 4 })}</td>)}<td className="px-2 py-2 text-center">{materialRows.reduce((sum, row) => sum + matrixColumns.reduce((columnSum, column) => columnSum + toNumber(row.values[column.key], 0), 0), 0).toLocaleString("th-TH", { maximumFractionDigits: 4 })}</td></tr>}</tbody></table></div>
-        </div>
-
-        <footer className="flex flex-wrap items-center gap-5 border border-slate-300 bg-white px-4 py-3 text-xs font-bold"><span className="text-[#102C57]">{activeDepartment?.name || "-"} / Section {selectedSectionName}</span><span className="h-5 w-px bg-slate-300" /><span>วัตถุดิบ {totalMaterials} รายการ</span><span className="h-5 w-px bg-slate-300" /><span>สถานะ: <span className="text-emerald-700">{previewing ? "กำลังคำนวณ" : "พร้อมคำนวณ"}</span></span></footer>
-        <div className="border border-[#d4af37] bg-[#fff9e6] px-4 py-2 text-xs font-semibold text-[#8a6d1c]">ยอดวัตถุดิบคำนวณจาก BOM ของ WIP ตามจำนวนที่วางแผนใน Section และกะที่เลือก</div>
-      </div>
-
-      {showWipEditor && (
-        <BulkWipEditorModal
-          mode={wipEditorMode}
-          lines={activeSectionDraftLines}
-          shifts={activeSectionShifts}
-          sectionName={selectedSectionName}
-          locked={isConfirmedSubplanLocked}
-          saving={saving}
-          updateLine={updateLine}
-          addLine={addLine}
-          duplicateLine={duplicateLine}
-          removeLine={removeLine}
-          onOpenPicker={setWipPickerLineId}
-          onClose={() => setShowWipEditor(false)}
-          onSave={async () => { await saveDraft({}); setShowWipEditor(false); }}
-        />
-      )}
-
-      {wipPickerLineId && (
-        <WipPickerModal
-          activeDeptId={activeDepartmentId || activeDepartment?.id || ""}
-          activeDeptName={activeDepartment?.name}
-          onSelect={handleSelectWipFromPicker}
-          onClose={() => setWipPickerLineId(null)}
-        />
-      )}
-    </section>
-  );
+function QaDepartmentMatrixView(props) {
+  return <WeeklyPlanningWorkbench {...props} MaterialMatrix={WipMaterialMatrix} WipPicker={DepartmentWipPicker} />;
 }
 
-function WipMaterialMatrix({ groups, rows, loading, collapsedDates, onEditWip }) {
+function WipMaterialMatrix({ groups, rows, loading, collapsedDates, onEditWip, onToggleDate }) {
   const displayGroups = groups.map((group) => {
-    if (!collapsedDates.has(group.date)) return group;
+    if (!collapsedDates.has(group.date) && group.columns.length) return group;
     return {
       ...group,
       columns: [{
@@ -2569,21 +2553,19 @@ function WipMaterialMatrix({ groups, rows, loading, collapsedDates, onEditWip })
   return (
     <div className="wip-modern-matrix max-w-full overflow-x-auto border-t border-slate-300 bg-white pb-3">
       <table className="w-max min-w-full border-collapse text-[11px] text-[#102C57]">
-        <thead className="bg-[#102C57] text-white">
+        <thead className="bg-[var(--surface-navy,#102C57)] text-white">
           <tr>
-            <th rowSpan={2} className="sticky left-0 z-30 w-[135px] min-w-[135px] border-r border-white/25 bg-[#102C57] px-3 py-3 text-left">วัตถุดิบ</th>
-            <th rowSpan={2} className="sticky left-[135px] z-30 w-[230px] min-w-[230px] border-r border-white/25 bg-[#102C57] px-3 py-3 text-left">รายการ</th>
-            <th rowSpan={2} className="sticky left-[365px] z-30 w-[70px] min-w-[70px] border-r border-white/25 bg-[#102C57] px-2 py-3 text-center">หน่วย</th>
-            {displayGroups.map((group) => <th key={group.date} colSpan={group.columns.length} className="border-r border-b border-white/30 px-3 py-2 text-center text-xs font-extrabold">{formatThaiSlashDate(group.date)} <span className="ml-1 text-white/70">⌄</span></th>)}
-            <th rowSpan={2} className="sticky right-0 z-30 w-[85px] min-w-[85px] bg-[#102C57] px-2 py-3 text-center">รวม</th>
+            <th rowSpan={2} className="sticky left-0 z-30 w-[135px] min-w-[135px] border-r border-white/25 bg-[var(--surface-navy,#102C57)] px-3 py-3 text-left">วัตถุดิบ</th>
+            <th rowSpan={2} className="sticky left-[135px] z-30 w-[230px] min-w-[230px] border-r border-white/25 bg-[var(--surface-navy,#102C57)] px-3 py-3 text-left">รายการ</th>
+            <th rowSpan={2} className="sticky left-[365px] z-30 w-[70px] min-w-[70px] border-r border-white/25 bg-[var(--surface-navy,#102C57)] px-2 py-3 text-center">หน่วย</th>
+            {displayGroups.map((group) => <th key={group.date} colSpan={group.columns.length} className="border-r border-b border-white/30 px-3 py-2 text-center text-xs font-extrabold"><button type="button" onClick={() => onToggleDate?.(group.date)} aria-expanded={!collapsedDates.has(group.date)}>{formatThaiSlashDate(group.date)} · {groups.find(item => item.date === group.date)?.columns.length || 0} WIP</button></th>)}
+            <th rowSpan={2} className="sticky right-0 z-30 w-[85px] min-w-[85px] bg-[var(--surface-navy,#102C57)] px-2 py-3 text-center">รวม</th>
           </tr>
           <tr>
             {columns.map((column) => (
               <th key={column.key} className="w-[110px] min-w-[110px] max-w-[110px] border-r border-white/25 bg-[#173b6b] px-2 py-2 text-center align-top">
                 <div className="truncate font-mono font-extrabold" title={column.skuName || column.skuCode}>{column.skuCode || "-"}</div>
-                <div className="mt-1 line-clamp-2 min-h-7 text-[10px] font-semibold leading-tight text-white" title={column.skuName || ""}>{column.skuName || "ไม่ระบุชื่อ WIP"}</div>
-                <div className="mt-1 truncate text-[10px] font-semibold text-white/85">{column.shiftName || column.shiftCode || "-"} · {toNumber(column.plannedQty, 0).toLocaleString("th-TH", { maximumFractionDigits: 3 })} {column.planningUnit || "หน่วย"}</div>
-                <button type="button" onClick={() => onEditWip(column.id)} aria-label={`แก้ไข WIP ${column.skuCode || ""}`} className="mt-1 w-full rounded py-1 text-base leading-none tracking-[3px] text-white/80 transition-colors hover:bg-white/15 hover:text-white">•••</button>
+                {!column.sourceColumns && <><div className="mt-1 text-[10px] font-semibold">{column.shiftName || column.shiftCode || "-"} · {toNumber(column.plannedQty, 0).toLocaleString("th-TH", { maximumFractionDigits: 3 })} {column.planningUnit || "หน่วย"}</div><details><summary className="cursor-pointer text-[10px]">ชื่อเต็ม / แก้ไข</summary><div className="whitespace-normal text-xs">{column.skuName || column.skuCode}</div><button type="button" onClick={() => onEditWip(column.id)} aria-label={`แก้ไข WIP ${column.skuCode || ""}`}>แก้ไข</button></details></>}
               </th>
             ))}
           </tr>
@@ -2624,13 +2606,13 @@ function MatrixViewToolbar({ groups, dayView, setDayView, search, setSearch, col
         </div>
         <div className="inline-flex h-9 overflow-hidden rounded border border-slate-300">
           {dayOptions.map((option) => (
-            <button key={option.days} type="button" onClick={() => setDayView(option.days)} className={`min-w-20 border-r border-slate-200 px-4 text-xs font-bold last:border-r-0 ${dayView === option.days ? "bg-[#102C57] text-white" : "bg-white text-[#102C57]"}`}>{option.label}</button>
+            <button key={option.days} type="button" onClick={() => setDayView(option.days)} className={`min-w-20 border-r border-slate-200 px-4 text-xs font-bold last:border-r-0 ${dayView === option.days ? "bg-[var(--surface-navy,#102C57)] text-white" : "bg-white text-[#102C57]"}`}>{option.label}</button>
           ))}
         </div>
         <label className="flex h-9 min-w-[260px] flex-1 items-center gap-2 rounded border border-slate-300 px-3 text-slate-500">
           <Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหา วัตถุดิบ, รายการ, หน่วย..." className="w-full bg-transparent text-xs outline-none" />
         </label>
-        <button type="button" onClick={() => setCollapsedDates(new Set())} className="h-9 rounded bg-[#102C57] px-4 text-xs font-bold text-white">เปิดทั้งหมด</button>
+        <button type="button" onClick={() => setCollapsedDates(new Set())} className="h-9 rounded bg-[var(--surface-navy,#102C57)] px-4 text-xs font-bold text-white">เปิดทั้งหมด</button>
         <button type="button" onClick={() => setCollapsedDates(new Set(allDates))} className="h-9 rounded border border-slate-300 bg-white px-4 text-xs font-bold text-[#102C57]">ยุบทั้งหมด</button>
       </div>
       <div className="mt-3 flex overflow-x-auto rounded border border-slate-200 bg-slate-50">
@@ -2670,159 +2652,179 @@ function BulkWipEditorModal({ mode, lines, shifts, sectionName, locked, saving, 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4">
-      <div className="flex max-h-[92vh] w-full max-w-[1500px] flex-col overflow-hidden rounded-sm border border-slate-400 bg-white shadow-2xl">
-        <header className="flex items-start justify-between bg-gradient-to-r from-[#102C57] to-[#173f78] px-7 py-5 text-white">
-          <div><h3 className="text-2xl font-extrabold">{mode === "edit" ? "แก้ไข WIP หลายรายการ" : "เพิ่ม WIP หลายรายการ"}</h3><p className="mt-1 text-xs font-semibold text-white/80">ระบุวันที่ กะ สินค้า WIP และจำนวน แล้วบันทึกพร้อมกัน</p></div>
-          <button type="button" onClick={onClose} className="p-1 text-white"><X size={24} /></button>
-        </header>
-        <div className="flex flex-wrap gap-5 border-b border-slate-200 px-7 py-5">
-          <label className="grid min-w-[320px] grid-cols-[180px_1fr] border border-slate-300"><span className="px-4 py-3 text-xs font-bold text-[#102C57]">กำหนดวันที่ทั้งหมด</span><input type="date" value={bulkDate} onChange={(event) => applyDate(event.target.value)} className="border-l border-slate-300 px-3 text-xs" /></label>
-          <label className="grid min-w-[320px] grid-cols-[170px_1fr] border border-slate-300"><span className="px-4 py-3 text-xs font-bold text-[#102C57]">กำหนดกะทั้งหมด</span><select value={bulkShift} onChange={(event) => applyShift(event.target.value)} className="border-l border-slate-300 px-3 text-xs"><option value="">เลือกกะ</option>{shifts.map((shift) => <option key={shift.id || shift.shiftId} value={shift.shiftId || shift.shiftCode}>{shift.shiftName || shift.shiftCode}</option>)}</select></label>
-          <div className="grid min-w-[320px] grid-cols-[190px_1fr] border border-slate-300"><span className="px-4 py-3 text-xs font-bold text-[#102C57]">กำหนด Section ทั้งหมด</span><span className="border-l border-slate-300 px-3 py-3 text-xs font-semibold">{sectionName}</span></div>
-          <button type="button" onClick={addLine} className="ml-auto bg-[#102C57] px-5 py-3 text-xs font-bold text-white"><Plus size={15} className="mr-2 inline" />เลือก WIP หลายรายการ</button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-auto px-7 py-4">
-          <table className="w-full min-w-[1050px] border-collapse text-xs">
-            <thead className="sticky top-0 z-10 bg-[#102C57] text-white"><tr><th className="w-14 px-3 py-3">ลำดับ</th><th className="px-3 py-3 text-left">วันที่</th><th className="px-3 py-3 text-left">กะ</th><th className="px-3 py-3 text-left">สินค้า WIP</th><th className="px-3 py-3 text-right">จำนวน</th><th className="px-3 py-3">หน่วย</th><th className="px-3 py-3">Section</th><th className="w-28 px-3 py-3">จัดการ</th></tr></thead>
-            <tbody>{lines.map((line, index) => <tr key={line.id} className="border-b border-slate-200 even:bg-slate-50"><td className="px-3 py-3 text-center font-bold">{index + 1}</td><td className="px-3 py-3"><input type="date" disabled={locked} value={String(line.workDate || "").slice(0, 10)} onChange={(event) => updateLine(line.id, "workDate", event.target.value)} className="h-10 w-full border border-slate-300 px-3" /></td><td className="px-3 py-3"><select disabled={locked} value={line.shiftId || line.shiftCode || ""} onChange={(event) => { const matched = shifts.find((shift) => (shift.shiftId || shift.shiftCode) === event.target.value); if (matched) { updateLine(line.id, "shiftId", matched.shiftId); updateLine(line.id, "shiftCode", matched.shiftCode); updateLine(line.id, "shiftName", matched.shiftName); } }} className="h-10 w-full border border-slate-300 px-3"><option value="">เลือกกะ</option>{shifts.map((shift) => <option key={shift.id || shift.shiftId} value={shift.shiftId || shift.shiftCode}>{shift.shiftName || shift.shiftCode}</option>)}</select></td><td className="px-3 py-3"><button type="button" onClick={() => onOpenPicker(line.id)} className={`flex h-10 w-full min-w-[310px] items-center justify-between border px-3 text-left ${line.skuCode ? "border-slate-300 text-[#102C57]" : "border-red-400 text-slate-400"}`}><span className="truncate font-bold">{line.skuCode ? `${line.skuCode}  ${line.skuName || ""}` : "เลือกสินค้า WIP"}</span><Search size={15} /></button></td><td className="px-3 py-3"><input type="number" min="0" step="0.001" disabled={locked} value={line.plannedQty || ""} onChange={(event) => updateLine(line.id, "plannedQty", event.target.value)} placeholder="ระบุจำนวน" className="h-10 w-full border border-slate-300 px-3 text-right" /></td><td className="px-3 py-3 text-center font-semibold">{line.planningUnit || "หน่วย"}</td><td className="px-3 py-3 text-center font-semibold">{sectionName}</td><td className="px-3 py-3 text-center"><button type="button" onClick={() => duplicateLine(line.id)} className="px-2 text-[#102C57]">คัดลอก</button><button type="button" disabled={locked} onClick={() => removeLine(line.id)} className="px-2 font-bold text-red-600">ลบ</button></td></tr>)}</tbody>
-          </table>
-          <button type="button" onClick={addLine} className="mt-3 h-11 w-full border border-dashed border-[#102C57] text-xs font-bold text-[#102C57]"><Plus size={15} className="mr-2 inline" />เพิ่มรายการ</button>
-        </div>
-        <footer className="flex items-center border-t border-slate-200 bg-slate-50 px-7 py-4"><div className="text-sm font-bold text-[#102C57]">{lines.length} รายการ <span className="mx-2">•</span> <span className="text-emerald-700">กรอกครบ {validCount}</span> <span className="mx-2">•</span> <span className="text-red-600">ต้องตรวจสอบ {invalidCount}</span></div><div className="ml-auto flex gap-4"><button type="button" onClick={onClose} className="h-11 min-w-36 border border-[#102C57] px-5 text-xs font-bold text-[#102C57]">ยกเลิก</button><button type="button" onClick={onSave} disabled={saving || invalidCount > 0 || !lines.length} className="h-11 min-w-64 bg-[#d4af37] px-6 text-xs font-extrabold text-[#102C57] disabled:opacity-40">{saving ? "กำลังบันทึก..." : `บันทึก WIP ${lines.length} รายการ`}</button></div></footer>
-      </div>
-    </div>
-  );
-}
-
-function WipPickerModal({ activeDeptId, activeDeptName, onSelect, onClose }) {
-  const [search, setSearch] = useState("");
-  const { data, error, isLoading } = useSWR(
-    activeDeptId ? `/api/production-planning/wip-options?departmentId=${activeDeptId}` : null,
-    fetcher,
-    { revalidateOnFocus: false }
-  );
-
-  const wipList = useMemo(() => data?.data || [], [data]);
-  const meta = data?.meta;
-
-  const filteredList = useMemo(() => {
-    if (!search.trim()) return wipList;
-    const q = search.trim().toLowerCase();
-    return wipList.filter((item) => {
-      const codeMatch = (item.skuCode || "").toLowerCase().includes(q);
-      const nameMatch = (item.name || "").toLowerCase().includes(q);
-      const fgMatch = (item.fgSkus || []).some((fg) => fg.toLowerCase().includes(q));
-      return codeMatch || nameMatch || fgMatch;
-    });
-  }, [wipList, search]);
-
-  return (
-    <div className="fixed inset-0 z-[60] bg-[#102C57]/60 backdrop-blur-sm p-4 md:p-8 flex items-center justify-center animate-in fade-in duration-150">
-      <div className="flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden border border-slate-300 bg-white shadow-2xl rounded-lg">
-        {/* Header */}
-        <div className="flex items-center justify-between bg-[#102C57] px-5 py-3.5 text-white">
+    <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/60 backdrop-blur-[2px] p-3 sm:p-5 overflow-y-auto">
+      <div className="flex max-h-[88vh] w-full max-w-[1080px] flex-col overflow-hidden rounded-xl border border-slate-300 bg-white shadow-2xl">
+        <header className="flex shrink-0 items-center justify-between bg-[var(--surface-navy,#102C57)] px-6 py-4 text-white">
           <div>
-            <h3 className="font-bold text-base flex items-center gap-2">
-              <Boxes size={18} className="text-[#d4af37]" />
-              เลือก WIP สำหรับ {activeDeptName || "แผนกปัจจุบัน"}
-            </h3>
-            <p className="text-xs text-slate-300 mt-0.5">
-              แสดงเฉพาะ WIP ที่เชื่อมโยงกับ FG ของแผนกผ่าน BOM (ผูกกับ FG {meta?.fgCount || 0} รายการ)
-            </p>
+            <h3 className="text-base sm:text-lg font-bold text-white">{mode === "edit" ? "แก้ไข WIP หลายรายการ" : "เพิ่ม WIP หลายรายการ"}</h3>
+            <p className="mt-0.5 text-xs text-slate-300 font-normal">ระบุวันที่ กะ สินค้า WIP และจำนวน แล้วบันทึกพร้อมกัน</p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded p-1 hover:bg-white/10 text-white transition-colors"
+            className="rounded-lg p-1.5 text-white/80 hover:bg-white/10 hover:text-white transition-colors"
           >
-            <X size={18} />
+            <X size={20} />
+          </button>
+        </header>
+
+        <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-slate-50 px-6 py-3">
+          <label className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs shadow-xs">
+            <span className="font-bold text-[#102C57]">กำหนดวันที่ทั้งหมด:</span>
+            <input type="date" value={bulkDate} onChange={(event) => applyDate(event.target.value)} className="text-xs text-slate-800 focus:outline-none" />
+          </label>
+          <label className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs shadow-xs">
+            <span className="font-bold text-[#102C57]">กำหนดกะทั้งหมด:</span>
+            <select value={bulkShift} onChange={(event) => applyShift(event.target.value)} className="text-xs text-slate-800 focus:outline-none cursor-pointer">
+              <option value="">เลือกกะ</option>
+              {shifts.map((shift) => (
+                <option key={shift.id || shift.shiftId} value={shift.shiftId || shift.shiftCode}>
+                  {shift.shiftName || shift.shiftCode}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs">
+            <span className="font-semibold text-slate-600">ห้อง/Section:</span>
+            <span className="font-bold text-[#102C57]">{sectionName}</span>
+          </div>
+          <button
+            type="button"
+            onClick={addLine}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-[var(--surface-navy,#102C57)] px-3.5 py-1.5 text-xs font-bold text-white hover:bg-[var(--surface-navy,#0c2345)] shadow-xs transition-colors"
+          >
+            <Plus size={14} />
+            <span>เพิ่มบรรทัด</span>
           </button>
         </div>
 
-        {/* Search & Stats */}
-        <div className="border-b border-slate-200 bg-slate-50 p-4 flex flex-col sm:flex-row gap-3 items-center justify-between">
-          <div className="relative w-full sm:w-96">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              autoFocus
-              placeholder="ค้นหารหัส WIP, ชื่อ WIP หรือรหัส FG..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-9 w-full rounded border border-slate-300 bg-white pl-9 pr-3 text-xs focus:border-[#102C57] focus:outline-none focus:ring-1 focus:ring-[#102C57]"
-            />
-          </div>
-          <div className="text-xs text-slate-500 font-medium self-end sm:self-center">
-            พบ {filteredList.length} รายการจากทั้งหมด {wipList.length} WIP
-          </div>
-        </div>
-
-        {/* Content list */}
-        <div className="overflow-auto p-4 flex-1">
-          {isLoading ? (
-            <div className="flex flex-col items-center justify-center py-12 text-slate-500 gap-2">
-              <RefreshCw size={24} className="animate-spin text-[#102C57]" />
-              <span className="text-xs font-semibold">กำลังโหลดรายการ WIP ของแผนก...</span>
-            </div>
-          ) : error ? (
-            <div className="py-8 text-center text-xs text-red-600 font-semibold">
-              เกิดข้อผิดพลาดในการโหลดข้อมูล: {error.message || "กรุณาลองใหม่อีกครั้ง"}
-            </div>
-          ) : filteredList.length === 0 ? (
-            <div className="py-12 text-center text-xs text-slate-500 font-medium">
-              {search ? "ไม่พบรายการ WIP ที่ตรงกับการค้นหา" : "ไม่มีรายการ WIP ที่ผูกกับ FG ของแผนกนี้ในระบบ"}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-2">
-              {filteredList.map((item) => (
-                <button
-                  key={item.skuCode}
-                  type="button"
-                  onClick={() => onSelect(item)}
-                  className="group flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-md border border-slate-200 bg-white p-3 text-left transition-all hover:border-[#102C57] hover:bg-slate-50 hover:shadow-sm focus:outline-none"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-bold text-[#102C57] group-hover:underline">
-                        {item.skuCode}
-                      </span>
-                      {item.unit && (
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
-                          หน่วย: {item.unit}
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs font-semibold text-slate-800 mt-1 truncate">
-                      {item.name || "-"}
-                    </div>
-                  </div>
-
-                  {/* FG references */}
-                  {item.fgSkus && item.fgSkus.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-1 sm:max-w-xs justify-start sm:justify-end">
-                      <span className="text-[10px] text-slate-400 font-medium">ใช้สำหรับ FG:</span>
-                      {item.fgSkus.slice(0, 3).map((fg) => (
-                        <span
-                          key={fg}
-                          className="rounded bg-blue-50 border border-blue-200 px-1.5 py-0.5 text-[10px] font-mono text-blue-700"
-                        >
-                          {fg}
-                        </span>
+        <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
+          <table className="w-full min-w-[850px] border-collapse text-xs">
+            <thead className="sticky top-0 z-10 bg-[var(--surface-navy,#102C57)] text-white">
+              <tr className="h-8">
+                <th className="w-12 px-2 py-2 text-center font-semibold">ลำดับ</th>
+                <th className="w-36 px-2 py-2 text-left font-semibold">วันที่</th>
+                <th className="w-28 px-2 py-2 text-left font-semibold">กะ</th>
+                <th className="px-3 py-2 text-left font-semibold">สินค้า WIP</th>
+                <th className="w-28 px-2 py-2 text-right font-semibold">จำนวน</th>
+                <th className="w-20 px-2 py-2 text-center font-semibold">หน่วย</th>
+                <th className="w-28 px-2 py-2 text-center font-semibold">ห้อง/Section</th>
+                <th className="w-24 px-2 py-2 text-center font-semibold">จัดการ</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {lines.map((line, index) => (
+                <tr key={line.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-2 py-2 text-center font-bold text-slate-500">{index + 1}</td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="date"
+                      disabled={locked}
+                      value={String(line.workDate || "").slice(0, 10)}
+                      onChange={(event) => updateLine(line.id, "workDate", event.target.value)}
+                      className="h-8 w-full rounded border border-slate-300 bg-white px-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500 disabled:bg-slate-100"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <select
+                      disabled={locked}
+                      value={line.shiftId || line.shiftCode || ""}
+                      onChange={(event) => {
+                        const matched = shifts.find((shift) => (shift.shiftId || shift.shiftCode) === event.target.value);
+                        if (matched) {
+                          updateLine(line.id, "shiftId", matched.shiftId);
+                          updateLine(line.id, "shiftCode", matched.shiftCode);
+                          updateLine(line.id, "shiftName", matched.shiftName);
+                        } else {
+                          updateLine(line.id, "shiftId", event.target.value || null);
+                          updateLine(line.id, "shiftCode", event.target.value || null);
+                          updateLine(line.id, "shiftName", event.target.value || null);
+                        }
+                      }}
+                      className="h-8 w-full rounded border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500 cursor-pointer disabled:bg-slate-100"
+                    >
+                      <option value="">เลือกกะ</option>
+                      {shifts.map((shift) => (
+                        <option key={shift.id || shift.shiftId} value={shift.shiftId || shift.shiftCode}>
+                          {shift.shiftName || shift.shiftCode}
+                        </option>
                       ))}
-                      {item.fgSkus.length > 3 && (
-                        <span className="text-[10px] text-slate-400 font-medium">
-                          +{item.fgSkus.length - 3}
-                        </span>
-                      )}
+                    </select>
+                  </td>
+                  <td className="px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => onOpenPicker(line.id)}
+                      className={`flex h-8 w-full items-center justify-between rounded border px-2.5 text-left text-xs transition-colors ${
+                        line.skuCode ? "border-slate-300 bg-white text-[#102C57] font-semibold" : "border-amber-300 bg-amber-50/50 text-slate-400"
+                      }`}
+                    >
+                      <span className="truncate">{line.skuCode ? `${line.skuCode} ${line.skuName || ""}` : "คลิกเพื่อเลือกสินค้า WIP..."}</span>
+                      <Search size={13} className="text-slate-400 shrink-0 ml-1" />
+                    </button>
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      disabled={locked}
+                      value={line.plannedQty || ""}
+                      onChange={(event) => updateLine(line.id, "plannedQty", event.target.value)}
+                      placeholder="0"
+                      className="h-8 w-full rounded border border-slate-300 bg-white px-2 text-right text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500 disabled:bg-slate-100"
+                    />
+                  </td>
+                  <td className="px-2 py-2 text-center text-slate-600">{line.planningUnit || "หน่วย"}</td>
+                  <td className="px-2 py-2 text-center font-medium text-slate-700">{sectionName}</td>
+                  <td className="px-2 py-2 text-center">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <button type="button" onClick={() => duplicateLine(line.id)} className="text-slate-500 hover:text-slate-800 p-1" title="คัดลอก">
+                        คัดลอก
+                      </button>
+                      <button type="button" disabled={locked} onClick={() => removeLine(line.id)} className="text-red-500 hover:text-red-700 p-1 font-bold" title="ลบ">
+                        ลบ
+                      </button>
                     </div>
-                  )}
-                </button>
+                  </td>
+                </tr>
               ))}
-            </div>
-          )}
+            </tbody>
+          </table>
+          <button
+            type="button"
+            onClick={addLine}
+            className="mt-3 flex h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-[#102C57]/40 text-xs font-bold text-[#102C57] hover:bg-slate-50 transition-colors"
+          >
+            <Plus size={14} />
+            <span>เพิ่มรายการอีก</span>
+          </button>
         </div>
+
+        <footer className="flex shrink-0 items-center justify-between border-t border-slate-200 bg-slate-50 px-6 py-3">
+          <div className="text-xs font-bold text-[#102C57]">
+            {lines.length} รายการ <span className="mx-2 text-slate-300">•</span> <span className="text-emerald-700">กรอกครบ {validCount}</span> <span className="mx-2 text-slate-300">•</span> <span className="text-amber-600">ต้องระบุข้อมูล {invalidCount}</span>
+          </div>
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-8 rounded-lg border border-slate-300 bg-white px-4 text-xs font-bold text-slate-700 hover:bg-slate-100 shadow-xs transition-colors"
+            >
+              ยกเลิก
+            </button>
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={saving || invalidCount > 0 || !lines.length}
+              className="h-8 rounded-lg bg-[#d4af37] hover:bg-[#c49f2e] px-5 text-xs font-bold text-[#102C57] shadow-xs disabled:opacity-40 transition-colors"
+            >
+              {saving ? "กำลังบันทึก..." : `บันทึก WIP (${lines.length})`}
+            </button>
+          </div>
+        </footer>
       </div>
     </div>
   );
 }
+

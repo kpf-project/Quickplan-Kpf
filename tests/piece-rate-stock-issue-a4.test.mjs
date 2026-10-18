@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
+import { createRequire } from "node:module";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { transform, loadBindings } from "next/dist/build/swc/index.js";
+import puppeteer from "puppeteer";
 
 import { buildPieceRateIssueSummaryRows } from "../src/features/attendance/utils/buildPieceRateIssueSummaryRows.js";
 
@@ -16,6 +21,39 @@ const issueSummarySource = fs.readFileSync(
   "src/features/attendance/utils/buildPieceRateIssueSummaryRows.js",
   "utf8"
 );
+
+test("issue summary quantity preserves fractional issues instead of rounding 100.573 to 101", () => {
+  const body = source.slice(source.indexOf("function formatQty("), source.indexOf("function formatWeight("));
+  const format = new Function(`${body}; return formatQty;`)();
+  assert.equal(format(100.573, 3), "100.573");
+  assert.equal(format(58, 3), "58");
+  assert.equal(format(0, 3), "-");
+  assert.equal(format(100.573), "101", "unrelated legacy reports retain their existing presentation");
+  const summary = source.slice(source.indexOf("function IssueSummaryReportA4("), source.indexOf("export default function PieceRateStockMovementReportPageClient"));
+  assert.match(summary, /formatQty\(row.quantity, 3\)/);
+  assert.match(summary, /formatQty\(totalQty, 3\)/);
+});
+
+test("web issue summary wraps long WIP and FG names inside their own cells", async () => {
+  await loadBindings();
+  const body = source.slice(source.indexOf("function IssueSummaryReportA4("), source.indexOf("export default function PieceRateStockMovementReportPageClient"));
+  const { code } = await transform(`const formatQty = String; const formatWeight = String; const formatSingleDate = String; const formatPeriod = () => "13-10-2569"; ${body}\nexport default IssueSummaryReportA4;`, { filename: "IssueSummaryReportA4.js", jsc: { parser: { syntax: "ecmascript", jsx: true }, transform: { react: { runtime: "automatic" } } }, module: { type: "commonjs" } });
+  const componentModule = { exports: {} };
+  new Function("require", "module", "exports", code)(createRequire(import.meta.url), componentModule, componentModule.exports);
+  const html = renderToStaticMarkup(createElement(componentModule.exports.default, { variant: "screen", rows: [{ groupKey: "test", issueDate: "2026-10-13", wipProductCode: "WKB-0002-2", wipProductName: "เนื้อขนมแครกเกอร์โบตั๋นป้ายแยมสับปะรดสำหรับผลิตสินค้าสำเร็จรูป", lotWeights: [{ lotNo: "061026", weightKg: 934.71 }], quantity: 100.573, totalWeightKg: 1996.28, fgProductCode: "BL0-1104", fgProductName: "ขนมปังกรอบ แยมสับปะรด 1.1 กก. บรรจุ 6 ปี๊บต่อกล่อง สำหรับสินค้าสำเร็จรูป" }] }));
+  const start = source.indexOf(".issue-summary-report .issue-summary-table th,");
+  const css = source.slice(start, source.indexOf("@media print", start));
+  const browser = await puppeteer.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 900 });
+    await page.setContent(`<style>.issue-summary-table{width:1123px;table-layout:fixed;border-collapse:collapse}.issue-summary-table td,.issue-summary-table th{border:1px solid #aaa;padding:4px;font:11px sans-serif}${css}</style>${html}`);
+    const cells = await page.$$eval(".issue-summary-name-cell", (nodes) => nodes.map((cell) => ({ whiteSpace: getComputedStyle(cell).whiteSpace, overflow: cell.scrollWidth > cell.clientWidth + 1 })));
+    assert.deepEqual(cells, [{ whiteSpace: "normal", overflow: false }, { whiteSpace: "normal", overflow: false }]);
+  } finally {
+    await browser.close();
+  }
+});
 
 test("issue report uses the shared A4 document layout in landscape", () => {
   assert.match(source, /reportKind="issue"/);
@@ -125,7 +163,7 @@ test("issue summary uses the business movement date before the recorded timestam
   assert.match(routeSource, /issueDate: kind === "issue" \|\| kind === "issue_void" \? row\.movement_date : null/);
 });
 
-test("issue summary keeps every value on one line on screen and A4 landscape print", () => {
+test("issue summary retains compact identifiers and the existing A4 landscape print layout", () => {
   assert.match(source, /issue-summary-report[\s\S]*?stock-report-issue[\s\S]*?overflow-x-auto/);
   assert.match(source, /min-w-\[1123px\]/);
   assert.match(source, /issue-summary-table[\s\S]*?white-space: nowrap !important;/);

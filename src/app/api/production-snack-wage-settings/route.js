@@ -1,15 +1,6 @@
 import { ApiError, getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { normalizeParam } from "@/lib/validation";
-
-const VIEW_PERMISSION_KEYS = [
-  "production-line-settings-view",
-  "production-line-settings-manage",
-];
-
-const MANAGE_PERMISSION_KEYS = [
-  "production-line-settings-manage",
-];
 
 const SNACK_WAGE_CONFIG_TABLE = "production_snack_wage_config";
 const SNACK_WAGE_MAPPING_TABLE = "production_snack_wage_product_mappings";
@@ -175,7 +166,7 @@ async function buildSnackWageSettingsPayload(supabaseAdmin, options = {}) {
 }
 
 async function listSnackWageSettings(request) {
-  await requirePermissionKeys(request, VIEW_PERMISSION_KEYS);
+  await requireTaskPermission(request, "production-settings-snack-wage-view");
   const supabaseAdmin = getSupabaseAdmin();
   const { searchParams } = new URL(request.url);
   return buildSnackWageSettingsPayload(supabaseAdmin, {
@@ -184,7 +175,7 @@ async function listSnackWageSettings(request) {
 }
 
 async function saveSnackWageSettings(request) {
-  const { userId } = await requirePermissionKeys(request, MANAGE_PERMISSION_KEYS);
+  const { userId } = await requireTaskPermission(request, "production-settings-snack-wage-rate-edit");
   const body = await readJson(request);
   const arrangedRatePerKg = normalizeRate(
     body.arrangedRatePerKg ?? body.arranged_rate_per_kg ?? 0,

@@ -1,0 +1,50 @@
+.overlay { position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; padding: 16px; background: #0007; color: #102c57; }
+.dialog { width: min(1600px, 100%); height: min(880px, 94dvh); display: flex; flex-direction: column; background: white; border: 1px solid #d7e0eb; border-radius: 5px; box-shadow: 0 16px 48px #0003; outline: none; }
+.header { display: flex; align-items: center; gap: 20px; padding: 10px 16px; border-bottom: 1px solid #e2e8f0; min-height: 56px; }
+.header h2 { font-size: 20px; font-weight: 800; margin: 0; }
+.header label { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.header > span { font-size: 13px; color: #64748b; }
+.header > button { margin-left: auto; }
+.dialog button, .dialog select, .dialog input { border: 1px solid #cbd7e6; border-radius: 4px; background: white; padding: 7px 10px; font-size: 14px; }
+.dialog button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; font-weight: 700; }
+.dialog button:hover:not(:disabled) { background: #edf4fc; }
+.dialog button:disabled { opacity: .45; cursor: not-allowed; }
+.dialog :is(button,input,select):focus-visible { outline: 2px solid #1683dd; outline-offset: 2px; }
+.body { display: grid; grid-template-columns: minmax(0,1fr) 340px; flex: 1; min-height: 0; }
+.list { min-height: 0; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.toolbar { display: flex; align-items: center; gap: 10px; }
+.toolbar input { flex: 1; min-width: 0; height: 40px; }
+.tableScroll { overflow: auto; min-height: 0; flex: 1; border: 1px solid #d7e0eb; }
+.tableScroll table { width: 100%; border-collapse: collapse; font-size: 16px; min-width: 720px; }
+.tableScroll th { position: sticky; top: 0; z-index: 1; background: var(--surface-navy,#10345d); color: white; text-align: left; padding: 10px; font-weight: 700; white-space: nowrap; }
+.tableScroll th, .tableScroll td { border-right: 1px solid #d7e0eb; }
+.tableScroll th { border-bottom: 1px solid #d7e0eb; }
+.tableScroll th:last-child, .tableScroll td:last-child { border-right: 0; }
+.tableScroll td { padding: 6px 10px; border-bottom: 1px solid #e2e8f0; height: 54px; line-height: 1.4; }
+.tableScroll td:first-child { width: 64px; }
+.tableScroll td:nth-child(2) { width: 92px; text-align: center; }
+.tableScroll td:last-child { width: 110px; }
+.tableScroll td button { white-space: nowrap; width: 100%; font-size: 16px; }
+.tableScroll td:nth-child(4) { font-weight: 600; }
+.tableScroll img, .summary img { object-fit: contain; flex-shrink: 0; }
+.tableScroll tr[data-selected='true'] { background: #eaf4ff; }
+.tableScroll tr:hover { background: #f5f9fd; }
+.code { white-space: nowrap; font-weight: 700; }
+.dialog kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 32px; height: 32px; background: #edf2f8; border: 1px solid #d4deeb; border-radius: 5px; font-family: inherit; font-weight: 700; font-size: 18px; }
+.aside { border-left: 1px solid #dce5ef; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+.aside h3 { font-size: 22px; font-weight: 800; margin: 0; }
+.aside h4 { font-size: 16px; font-weight: 700; }
+.help, .noImage { color: #64748b; font-size: 12px; line-height: 1.6; margin: 0; }
+.summary { display: flex; align-items: center; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid #e2e8f0; font-size: 16px; }
+.summary p { margin: 3px 0 0; }
+.keyChange { display: flex; justify-content: center; align-items: center; gap: 24px; }
+.keyChange small { display: block; text-align: center; margin-bottom: 5px; }
+.keyChange kbd { width: 48px; height: 48px; font-size: 26px; }
+.keyInput { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 700; }
+.keyInput input { font-size: 20px; }
+.error { color: #be123c; font-size: 13px; line-height: 1.5; }
+.success { color: #047857; background: #ecfdf5; padding: 8px; font-size: 13px; }
+.footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: auto; }
+.dialog .primary { background: var(--surface-navy,#10345d); color: white; }
+@media(max-width: 900px) { .body { grid-template-columns: minmax(0,1fr) 280px; } .header { flex-wrap: wrap; gap: 8px; } }
+@media(max-width: 639px) { .overlay { padding: 8px; } .body { display: flex; flex-direction: column; overflow-y: auto; } .list { min-height: 300px; flex-shrink: 0; height: 50dvh; } .aside { overflow: visible; border-left: 0; border-top: 1px solid #e2e8f0; } .header > span { display: none; } }

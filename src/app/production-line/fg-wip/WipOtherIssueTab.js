@@ -91,7 +91,7 @@ function WipPickerModal({ open, rows, loading, selected, onSelect, onClose, onCo
   return (
     <div className="fixed inset-0 z-[150] bg-black/60 sm:grid sm:place-items-center sm:p-5" role="dialog" aria-modal="true" aria-labelledby="wip-picker-title">
       <div className="flex h-full w-full flex-col bg-white sm:max-h-[88vh] sm:max-w-5xl sm:shadow-2xl">
-        <header className="flex min-h-[92px] items-center justify-between bg-[#061f43] px-4 py-4 text-white sm:min-h-0 sm:px-6">
+        <header className="flex min-h-[92px] items-center justify-between bg-[var(--surface-navy,#061f43)] px-4 py-4 text-white sm:min-h-0 sm:px-6">
           <div>
             <h2 id="wip-picker-title" className="text-xl font-black sm:text-2xl">เลือก WIP ค้างไลน์</h2>
             <p className="mt-1 text-sm text-white/75">แสดงเฉพาะรายการที่ยังมียอดคงเหลือ</p>
@@ -261,7 +261,7 @@ export default function WipOtherIssueTab({ issueDate, operatorName }) {
 
       <div className="border border-[#b8c3cf] bg-white xl:grid xl:grid-cols-2 xl:divide-x xl:divide-[#cbd4df]">
         <section className="p-4 sm:p-6">
-          <h2 className="mb-4 flex items-center gap-3 text-lg font-black sm:text-xl"><span className="grid h-9 w-9 shrink-0 place-items-center bg-[#061f43] text-white">1</span>เลือก WIP และ LOT</h2>
+          <h2 className="mb-4 flex items-center gap-3 text-lg font-black sm:text-xl"><span className="grid h-9 w-9 shrink-0 place-items-center bg-[var(--surface-navy,#061f43)] text-white">1</span>เลือก WIP และ LOT</h2>
           <button type="button" onClick={openPicker} className="flex min-h-14 w-full items-center gap-3 border-2 border-[#061f43] bg-white px-4 text-left text-base font-bold hover:bg-[#f4f7fa]">
             <Barcode size={24} /><span className="flex-1">กดเพื่อเลือก WIP ค้างไลน์</span><Search size={22} />
           </button>
@@ -277,7 +277,7 @@ export default function WipOtherIssueTab({ issueDate, operatorName }) {
         </section>
 
         <section className="border-t border-[#cbd4df] p-4 sm:p-6 xl:border-t-0">
-          <h2 className="mb-4 flex items-center gap-3 text-lg font-black sm:text-xl"><span className="grid h-9 w-9 shrink-0 place-items-center bg-[#061f43] text-white">2</span>ระบุจำนวนและวัตถุประสงค์</h2>
+          <h2 className="mb-4 flex items-center gap-3 text-lg font-black sm:text-xl"><span className="grid h-9 w-9 shrink-0 place-items-center bg-[var(--surface-navy,#061f43)] text-white">2</span>ระบุจำนวนและวัตถุประสงค์</h2>
           <div className="grid grid-cols-[58px_1fr_58px_78px] border border-[#8796a8]">
             <button type="button" onClick={() => updateQuantity(quantity - 1)} disabled={!selected} className="grid min-h-16 place-items-center border-r border-[#aebbc9] disabled:opacity-40" aria-label="ลดจำนวน"><Minus size={25} /></button>
             <input value={quantity} onChange={(event) => updateQuantity(event.target.value)} disabled={!selected} inputMode="numeric" className="min-w-0 text-center text-4xl font-black tabular-nums outline-none disabled:bg-[#f4f6f8]" aria-label="จำนวนที่เบิก" />
@@ -298,7 +298,7 @@ export default function WipOtherIssueTab({ issueDate, operatorName }) {
       </div>
 
       <section className="mt-4 border border-[#b8c3cf] bg-white p-4 sm:p-6">
-        <h2 className="mb-4 flex items-center gap-3 text-lg font-black sm:text-xl"><span className="grid h-9 w-9 shrink-0 place-items-center bg-[#061f43] text-white">3</span>ตรวจสอบและยืนยัน</h2>
+        <h2 className="mb-4 flex items-center gap-3 text-lg font-black sm:text-xl"><span className="grid h-9 w-9 shrink-0 place-items-center bg-[var(--surface-navy,#061f43)] text-white">3</span>ตรวจสอบและยืนยัน</h2>
         <div className="grid grid-cols-2 divide-x divide-[#cbd4df] border border-[#aebbc9] text-center">
           <div className="p-3 sm:p-4"><span className="block text-sm font-semibold">เบิกครั้งนี้</span><strong className="mt-1 block text-2xl font-black tabular-nums sm:text-3xl">{selected ? quantity : 0} <small className="text-base">ปี๊บ</small></strong></div>
           <div className="p-3 sm:p-4"><span className="block text-sm font-semibold">คงเหลือหลังเบิก</span><strong className="mt-1 block text-2xl font-black tabular-nums sm:text-3xl">{selected ? afterQty : 0} <small className="text-base">ปี๊บ</small></strong></div>

@@ -1,15 +1,10 @@
 import { getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { normalizeParam } from "@/lib/validation";
 
 export async function GET(request) {
   try {
-    await requirePermissionKeys(request, [
-      "production-line-settings-view",
-      "production-line-settings-manage",
-      "production-line-bom-view",
-      "production-line-bom-manage",
-    ]);
+    await requireTaskPermission(request, "production-settings-categories-view");
     const { searchParams } = new URL(request.url);
     const search = normalizeParam(searchParams.get("search")) ?? "";
     const includeInactive = searchParams.get("includeInactive") === "true";
@@ -61,9 +56,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const { userId } = await requirePermissionKeys(request, [
-      "production-line-settings-manage",
-    ]);
+    const { userId } = await requireTaskPermission(request, "production-settings-categories-create");
     const body = await readJson(request);
     const code = normalizeParam(body.code);
     const name = normalizeParam(body.name);

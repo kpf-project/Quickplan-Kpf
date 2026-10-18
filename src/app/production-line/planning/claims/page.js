@@ -155,8 +155,8 @@ export default async function MaterialClaimsPage({ searchParams }) {
               <p className="text-xs text-gray-500">เลือกเคลมแบบ checkbox และรวมกลุ่มใบเบิกตามโครงแผนหลักและแผนย่อย</p>
             </div>
             <div className="flex items-center gap-2">
-              {masterPlanNo ? <span className="rounded-full bg-[#102C57]/10 px-3 py-1 text-xs font-bold text-[#102C57]">{masterPlanNo}</span> : null}
-              <Link href="/production-line/planning/plan" className="rounded-lg border border-[#102C57]/30 px-3 py-1.5 text-xs font-semibold text-[#102C57] transition-colors hover:bg-[#102C57]/5">
+              {masterPlanNo ? <span className="rounded-full bg-[var(--surface-navy,#102C57)]/10 px-3 py-1 text-xs font-bold text-[#102C57]">{masterPlanNo}</span> : null}
+              <Link href="/production-line/planning/plan" className="rounded-lg border border-[#102C57]/30 px-3 py-1.5 text-xs font-semibold text-[#102C57] transition-colors hover:bg-[var(--surface-navy,#102C57)]/5">
                 กลับหน้าวางแผน
               </Link>
             </div>

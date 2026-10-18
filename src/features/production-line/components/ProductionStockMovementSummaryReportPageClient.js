@@ -23,6 +23,7 @@ import {
 import WeightScalePrimaryHeader from "@/features/production-line/components/WeightScalePrimaryHeader";
 import { fetchProductionStockMovementSummaryReport } from "@/features/production-line/services/productionStockIssueClient";
 import { useUserProfile } from "@/lib/useUserProfile";
+import { ReportHeader, ReportFilterBar, ReportFilterField } from "@/components/print";
 
 const LIMIT_OPTIONS = [20, 50, 100];
 
@@ -641,7 +642,11 @@ export default function ProductionStockMovementSummaryReportPageClient({
   const loadRows = useCallback((nextFilters) => {
     startTransition(async () => {
       if (typeof window !== "undefined") {
-        const params = new URLSearchParams();
+        const params = new URLSearchParams(window.location.search);
+        params.delete("dateFrom");
+        params.delete("dateTo");
+        params.delete("productCodes");
+        params.delete("lotNos");
         if (nextFilters.dateFrom) params.set("dateFrom", nextFilters.dateFrom);
         if (nextFilters.dateTo) params.set("dateTo", nextFilters.dateTo);
         if (Array.isArray(nextFilters.productCodes)) {
@@ -683,246 +688,199 @@ export default function ProductionStockMovementSummaryReportPageClient({
 
   return (
     <div className="weight-scale-report-page min-h-screen bg-[#f4f6f8] text-[#262626]">
-      <div className="weight-scale-report-screen-only">
+      <div className="print:hidden">
         <WeightScalePrimaryHeader
           eyebrow="รายงานผลิตภัณฑ์"
           badge="สรุปภาพรวม"
           title="รายงานเคลื่อนไหวสินค้า"
         />
+      </div>
 
-        <div className="mx-auto flex w-full max-w-none flex-col gap-8 px-3 py-8 sm:px-4 lg:px-6 2xl:px-8">
-          <section className="overflow-visible border-2 border-[#d4af37] bg-white shadow-[0_20px_40px_rgba(0,0,0,0.12)]">
-            <div className="flex flex-col gap-6 p-6 sm:p-8">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-                <div className="grid flex-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-                  <label className="flex flex-col gap-2">
-                    <span className="inline-flex items-center gap-2 text-sm font-black text-black">
-                      <CalendarRange size={16} />
-                      จากวันที่
-                    </span>
-                    <input
-                      type="date"
-                      value={filters.dateFrom}
-                      onChange={(event) =>
-                        setFilters((current) => ({ ...current, dateFrom: event.target.value, page: 1 }))
-                      }
-                      className="h-12 border border-[#d7dbe3] px-4 text-[14px] font-semibold text-black outline-none transition focus:border-[#d4af37]"
-                    />
-                  </label>
+      <div className="weight-scale-report-screen-only print:hidden mx-auto flex w-full max-w-none flex-col gap-6 px-3 py-6 sm:px-4 lg:px-6 2xl:px-8">
+        <ReportFilterBar
+          dateMode="range"
+          dateFrom={filters.dateFrom}
+          dateTo={filters.dateTo}
+          onDateFromChange={(val) => setFilters((current) => ({ ...current, dateFrom: val, page: 1 }))}
+          onDateToChange={(val) => setFilters((current) => ({ ...current, dateTo: val, page: 1 }))}
+          isLoading={isPending}
+          onSearch={() => loadRows({ ...filters, page: 1 })}
+          searchButtonLabel="ค้นหา"
+          onReset={() =>
+            setFilters((current) => ({
+              ...current,
+              dateFrom: initialFilters.dateFrom,
+              dateTo: initialFilters.dateTo,
+              productCodes: [],
+              lotNos: [],
+              page: 1,
+              limit: 20,
+            }))
+          }
+          resetButtonLabel="รีเซ็ต"
+          onPrint={() => window.print()}
+          printButtonLabel="พิมพ์รายงาน"
+          onExportExcel={async () => {
+            const payload = await fetchProductionStockMovementSummaryReport({
+              dateFrom: filters.dateFrom,
+              dateTo: filters.dateTo,
+              productCodes: filters.productCodes,
+              lotNos: filters.lotNos,
+              includeAll: true,
+            });
+            await exportWorkbook({
+              rows: normalizeRows(payload?.rows),
+              filters,
+              scope,
+              selectedProducts,
+            });
+          }}
+          excelButtonLabel="ส่งออก Excel"
+        >
+          {/* Product Filter Dropdown */}
+          <div className="relative block w-full sm:w-auto min-w-[220px]" ref={productPickerRef}>
+            <label className="block text-[11px] font-black uppercase tracking-wider text-[#64748b] mb-1">
+              สินค้า
+            </label>
+            <button
+              type="button"
+              onClick={() => setIsProductPickerOpen((current) => !current)}
+              className="flex h-10 w-full items-center justify-between rounded-md border border-[#cbd5e1] bg-[#f8fafc] px-3 text-left text-[13px] font-semibold text-[#102C57] transition hover:border-[#102C57] hover:bg-white"
+            >
+              <span className="truncate">
+                {selectedProducts.length ? `เลือกแล้ว ${selectedProducts.length} รายการ` : "ทุกสินค้าในรายงาน"}
+              </span>
+              <ChevronDown size={14} className="text-[#94a3b8] shrink-0 ml-1.5" />
+            </button>
 
-                  <label className="flex flex-col gap-2">
-                    <span className="inline-flex items-center gap-2 text-sm font-black text-black">
-                      <CalendarRange size={16} />
-                      ถึงวันที่
-                    </span>
-                    <input
-                      type="date"
-                      value={filters.dateTo}
-                      onChange={(event) =>
-                        setFilters((current) => ({ ...current, dateTo: event.target.value, page: 1 }))
-                      }
-                      className="h-12 border border-[#d7dbe3] px-4 text-[14px] font-semibold text-black outline-none transition focus:border-[#d4af37]"
-                    />
-                  </label>
-
-                  <div className="relative flex flex-col gap-2" ref={productPickerRef}>
-                    <span className="inline-flex items-center gap-2 text-sm font-black text-black">
-                      <Package size={16} />
-                      สินค้า
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setIsProductPickerOpen((current) => !current)}
-                      className="flex h-12 items-center justify-between border border-[#d7dbe3] px-4 text-left text-[14px] font-semibold text-black transition hover:border-[#d4af37]"
+            {isProductPickerOpen ? (
+              <div className="absolute top-full left-0 z-50 mt-1 max-h-72 w-[44rem] max-w-[calc(100vw-2rem)] overflow-auto rounded-md border border-[#cbd5e1] bg-white shadow-[0_16px_30px_rgba(16,44,87,0.12)]">
+                {productOptions.map((product) => {
+                  const checked = filters.productCodes.includes(product.code);
+                  return (
+                    <label
+                      key={product.code}
+                      className="flex min-w-max cursor-pointer items-center gap-3 border-b border-slate-100 px-4 py-2.5 text-sm font-semibold text-black hover:bg-[#fff8e7]"
                     >
-                      <span className="truncate">
-                        {selectedProducts.length ? `เลือกแล้ว ${selectedProducts.length} รายการ` : "ทุกสินค้าในรายงาน"}
-                      </span>
-                      <ChevronDown size={16} />
-                    </button>
-
-                    {isProductPickerOpen ? (
-                      <div className="absolute top-full z-50 mt-1 max-h-72 w-[44rem] max-w-[calc(100vw-2rem)] overflow-auto border border-[#d7dbe3] bg-white shadow-[0_16px_30px_rgba(16,44,87,0.12)]">
-                        {productOptions.map((product) => {
-                          const checked = filters.productCodes.includes(product.code);
-                          return (
-                            <label
-                              key={product.code}
-                              className="flex min-w-max cursor-pointer items-center gap-3 border-b border-slate-100 px-4 py-3 text-sm font-semibold text-black hover:bg-[#fff8e7]"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() =>
-                                  setFilters((current) => ({
-                                    ...current,
-                                    page: 1,
-                                    lotNos: [],
-                                    productCodes: checked
-                                      ? current.productCodes.filter((entry) => entry !== product.code)
-                                      : [...current.productCodes, product.code],
-                                  }))
-                                }
-                                className="h-4 w-4 shrink-0 border-slate-300 text-[#102C57]"
-                              />
-                              <span className="whitespace-nowrap">{`${product.code} - ${product.name}`}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <div className="flex flex-col gap-2">
-                    <span className="inline-flex items-center gap-2 text-sm font-black text-black"><Search size={16} />ค้นหา LOT</span>
-                    <label className="flex h-12 min-w-0 items-center gap-2 border border-[#d7dbe3] bg-white px-3 transition focus-within:border-[#d4af37]">
-                        <Search size={16} className="shrink-0 text-slate-400" />
-                        <input
-                          type="search"
-                          value={lotSearchQuery}
-                          onChange={(event) => setLotSearchQuery(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" && filters.productCodes.length) {
-                              event.preventDefault();
-                              void openLotPicker();
-                            }
-                          }}
-                          disabled={!filters.productCodes.length}
-                          placeholder={filters.productCodes.length ? "ค้นหาเลข LOT" : "เลือกสินค้าก่อน"}
-                          aria-label="ค้นหาเลข LOT"
-                          className="h-full min-w-0 flex-1 bg-transparent text-[14px] font-semibold text-black outline-none placeholder:text-slate-400 disabled:cursor-not-allowed"
-                        />
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          setFilters((current) => ({
+                            ...current,
+                            page: 1,
+                            lotNos: [],
+                            productCodes: checked
+                              ? current.productCodes.filter((entry) => entry !== product.code)
+                              : [...current.productCodes, product.code],
+                          }))
+                        }
+                        className="h-4 w-4 shrink-0 rounded border-[#cbd5e1] text-[#102C57]"
+                      />
+                      <span className="whitespace-nowrap">{`${product.code} - ${product.name}`}</span>
                     </label>
-                  </div>
-
-                  <div className="flex flex-col gap-2">
-                    <span className="inline-flex items-center gap-2 text-sm font-black text-black"><Files size={16} />เลือก LOT</span>
-                    <button
-                      type="button"
-                      onClick={() => void openLotPicker()}
-                      disabled={!filters.productCodes.length}
-                      className="flex h-12 items-center justify-between border border-[#d7dbe3] bg-white px-4 text-left text-[14px] font-semibold text-black transition hover:border-[#d4af37] disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                    >
-                      <span className="truncate">{filters.lotNos.length ? `เลือกแล้ว ${filters.lotNos.length} LOT` : filters.productCodes.length ? "เปิดรายการ LOT" : "เลือกสินค้าก่อน"}</span>
-                      <ChevronDown size={16} />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setFilters((current) => ({
-                        ...current,
-                        dateFrom: initialFilters.dateFrom,
-                        dateTo: initialFilters.dateTo,
-                        productCodes: [],
-                        lotNos: [],
-                        page: 1,
-                        limit: 20,
-                      }))
-                    }
-                    className="inline-flex h-12 items-center gap-2 border border-[#d7dbe3] px-4 text-sm font-bold text-[#102C57] transition hover:border-[#d4af37] hover:bg-[#fff8e7]"
-                  >
-                    <RefreshCw size={16} />
-                    รีเซ็ต
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => loadRows({ ...filters, page: 1 })}
-                    className="inline-flex h-12 items-center gap-2 bg-[#102C57] px-4 text-sm font-bold text-white transition hover:bg-[#173b72]"
-                  >
-                    {isPending ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
-                    ค้นหา
-                  </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const payload = await fetchProductionStockMovementSummaryReport({
-                        dateFrom: filters.dateFrom,
-                        dateTo: filters.dateTo,
-                        productCodes: filters.productCodes,
-                        lotNos: filters.lotNos,
-                        includeAll: true,
-                      });
-                      await exportWorkbook({
-                        rows: normalizeRows(payload?.rows),
-                        filters,
-                        scope,
-                        selectedProducts,
-                      });
-                    }}
-                    className="inline-flex h-12 items-center gap-2 border border-[#d4af37] px-4 text-sm font-bold text-[#102C57] transition hover:bg-[#fff8e7]"
-                  >
-                    <Download size={16} />
-                    ส่งออก Excel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => window.print()}
-                    className="inline-flex h-12 items-center gap-2 border border-[#d4af37] px-4 text-sm font-bold text-[#102C57] transition hover:bg-[#fff8e7]"
-                  >
-                    <Printer size={16} />
-                    พิมพ์รายงาน
-                  </button>
-                </div>
+                  );
+                })}
               </div>
+            ) : null}
+          </div>
 
-              {rows.some((row) => row.openingQuantity < 0 || row.openingWeightKg < 0 || row.balanceQuantity < 0 || row.balanceWeightKg < 0) && (
-                <div role="alert" className="border border-amber-300 bg-amber-50 px-5 py-3 text-sm text-amber-900">
-                  พบยอดติดลบในรายงาน กรุณาตรวจสอบประวัติรับเข้า เบิก ชั่งคืน และการยกเลิกก่อนใช้ยอดนี้อ้างอิงสต็อก
-                </div>
-              )}
-              <div className="grid gap-px border-x border-b border-[#d7dde5] bg-[#d7dde5] shadow-sm md:grid-cols-4">
-                <div className="bg-white px-5 py-4 flex flex-col items-center text-center">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Files size={14} className="text-[#102C57]" />
-                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#7d8795]">
-                      จำนวนรายการ
-                    </p>
-                  </div>
-                  <p className="text-2xl font-semibold text-[#102C57]">{summary.totalCount}</p>
-                </div>
-                <div className="bg-white px-5 py-4 flex flex-col items-center text-center">
-                  <div className="flex items-center gap-2 mb-1">
-                    <FileCheck size={14} className="text-emerald-600" />
-                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#7d8795]">
-                      น้ำหนักรับเข้าสำเร็จ
-                    </p>
-                  </div>
-                  <p className="mt-1 text-2xl font-semibold text-emerald-700">{formatWeight(summary.inboundWeightKg)}</p>
-                </div>
-                <div className="bg-white px-5 py-4 flex flex-col items-center text-center">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Truck size={14} className="text-blue-600" />
-                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#7d8795]">
-                      น้ำหนักเบิกสำเร็จ
-                    </p>
-                  </div>
-                  <p className="mt-1 text-2xl font-semibold text-blue-700">{formatWeight(summary.issueWeightKg)}</p>
-                </div>
-                <div className="bg-white px-5 py-4 flex flex-col items-center text-center">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Scale size={14} className="text-amber-600" />
-                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#7d8795]">
-                      น้ำหนักคงเหลือ
-                    </p>
-                  </div>
-                  <p className="mt-1 text-2xl font-semibold text-[#102C57]">
-                    {formatWeight(summary.balanceWeightKg)} <span className="text-sm font-medium text-[#7d8795]">Kg</span>
-                  </p>
-                </div>
-              </div>
+          {/* Quick Search LOT */}
+          <div className="w-full sm:w-auto min-w-[160px]">
+            <label className="block text-[11px] font-black uppercase tracking-wider text-[#64748b] mb-1">
+              ค้นหา LOT
+            </label>
+            <div className="relative flex h-10 items-center rounded-md border border-[#cbd5e1] bg-[#f8fafc] px-3 focus-within:border-[#102C57] focus-within:bg-white focus-within:ring-2 focus-within:ring-[#102C57]/10 transition">
+              <Search size={15} className="text-[#94a3b8] shrink-0 mr-2" />
+              <input
+                type="search"
+                value={lotSearchQuery}
+                onChange={(event) => setLotSearchQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && filters.productCodes.length) {
+                    event.preventDefault();
+                    void openLotPicker();
+                  }
+                }}
+                disabled={!filters.productCodes.length}
+                placeholder={filters.productCodes.length ? "ค้นหาเลข LOT" : "เลือกสินค้าก่อน"}
+                aria-label="ค้นหาเลข LOT"
+                className="bg-transparent text-[13px] font-semibold text-[#102C57] outline-none w-32 placeholder:text-slate-400 disabled:cursor-not-allowed"
+              />
             </div>
-          </section>
+          </div>
+
+          {/* LOT Modal Trigger Button */}
+          <div className="w-full sm:w-auto min-w-[150px]">
+            <label className="block text-[11px] font-black uppercase tracking-wider text-[#64748b] mb-1">
+              เลือก LOT
+            </label>
+            <button
+              type="button"
+              onClick={() => void openLotPicker()}
+              disabled={!filters.productCodes.length}
+              className="flex h-10 w-full items-center justify-between rounded-md border border-[#cbd5e1] bg-[#f8fafc] px-3 text-left text-[13px] font-semibold text-[#102C57] transition hover:border-[#102C57] hover:bg-white disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+            >
+              <span className="truncate">
+                {filters.lotNos.length ? `เลือกแล้ว ${filters.lotNos.length} LOT` : filters.productCodes.length ? "เปิดรายการ LOT" : "เลือกสินค้าก่อน"}
+              </span>
+              <ChevronDown size={14} className="text-[#94a3b8] shrink-0 ml-1.5" />
+            </button>
+          </div>
+        </ReportFilterBar>
+
+        {rows.some((row) => row.openingQuantity < 0 || row.openingWeightKg < 0 || row.balanceQuantity < 0 || row.balanceWeightKg < 0) && (
+          <div role="alert" className="border border-amber-300 bg-amber-50 px-5 py-3 text-sm text-amber-900 rounded-md">
+            พบยอดติดลบในรายงาน กรุณาตรวจสอบประวัติรับเข้า เบิก ชั่งคืน และการยกเลิกก่อนใช้ยอดนี้อ้างอิงสต็อก
+          </div>
+        )}
+
+        <div className="grid gap-px border border-[#d7dde5] bg-[#d7dde5] shadow-sm rounded-lg overflow-hidden md:grid-cols-4">
+          <div className="bg-white px-5 py-4 flex flex-col items-center text-center">
+            <div className="flex items-center gap-2 mb-1">
+              <Files size={14} className="text-[#102C57]" />
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#7d8795]">
+                จำนวนรายการ
+              </p>
+            </div>
+            <p className="text-2xl font-semibold text-[#102C57]">{summary.totalCount}</p>
+          </div>
+          <div className="bg-white px-5 py-4 flex flex-col items-center text-center">
+            <div className="flex items-center gap-2 mb-1">
+              <FileCheck size={14} className="text-emerald-600" />
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#7d8795]">
+                น้ำหนักรับเข้าสำเร็จ
+              </p>
+            </div>
+            <p className="mt-1 text-2xl font-semibold text-emerald-700">{formatWeight(summary.inboundWeightKg)}</p>
+          </div>
+          <div className="bg-white px-5 py-4 flex flex-col items-center text-center">
+            <div className="flex items-center gap-2 mb-1">
+              <Truck size={14} className="text-blue-600" />
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#7d8795]">
+                น้ำหนักเบิกสำเร็จ
+              </p>
+            </div>
+            <p className="mt-1 text-2xl font-semibold text-blue-700">{formatWeight(summary.issueWeightKg)}</p>
+          </div>
+          <div className="bg-white px-5 py-4 flex flex-col items-center text-center">
+            <div className="flex items-center gap-2 mb-1">
+              <Scale size={14} className="text-amber-600" />
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#7d8795]">
+                น้ำหนักคงเหลือ
+              </p>
+            </div>
+            <p className="mt-1 text-2xl font-semibold text-[#102C57]">
+              {formatWeight(summary.balanceWeightKg)} <span className="text-sm font-medium text-[#7d8795]">Kg</span>
+            </p>
+          </div>
         </div>
       </div>
 
       {/* Visual Paging Controls */}
       {reportPages.length > 0 && (
         <div className="weight-scale-report-screen-only flex justify-center mb-6">
-          <div className="flex items-center gap-4 bg-[#102C57] text-white px-6 py-2 rounded-full shadow-lg">
+          <div className="flex items-center gap-4 bg-[var(--surface-navy,#102C57)] text-white px-6 py-2 rounded-full shadow-lg">
             <button
               type="button"
               onClick={() => setCurrentViewPage(prev => Math.max(0, prev - 1))}
@@ -973,49 +931,21 @@ export default function ProductionStockMovementSummaryReportPageClient({
 
               
               {/* Corporate Header */}
-              <div className={`movement-summary-print-header bg-white px-6 py-3 border-b ${isClean ? 'border-[#94a3b8]' : 'border-black'}`}>
-                 <div className="flex justify-between items-end mb-3">
-                    <div className="flex items-center gap-3">
-                      <Image
-                        src="/brand/LOGO-KPF1.png"
-                        alt="KPF"
-                        width={40}
-                        height={40}
-                        className="h-10 w-auto object-contain"
-                      />
-                      <div className="flex flex-col">
-                        <h1 className="text-[14px] font-black text-[#102C57] leading-none uppercase">บริษัท เคพีฟู้ดส์ จำกัด</h1>
-                        <p className="text-[9px] font-bold text-[#64748b] tracking-wider">K.P. foods Co.,Ltd.</p>
-                      </div>
-                    </div>
-
-                    <div className="-mt-1 text-center pb-1">
-                      <h2 className="text-[18px] font-black text-[#102C57] leading-none uppercase">รายงานเคลื่อนไหวสินค้า</h2>
-                      {!isClean && <p className="text-[9px] font-bold text-[#d4af37] uppercase tracking-[0.2em] mt-1">Stock Movement Summary Report</p>}
-                    </div>
-
-                    <div className="text-[10px] text-[#102C57] leading-tight text-right">
-                       <p><span className="font-black text-[#64748b] uppercase text-[8px]">วันที่พิมพ์:</span> {printedAtLabel}</p>
-                       <p><span className="font-black text-[#64748b] uppercase text-[8px]">ผู้ออกรายงาน:</span> {profile.username || "System"}</p>
-                    </div>
-                 </div>
-
-                 <div className={`grid grid-cols-3 border-t pt-2 ${isClean ? 'border-[#94a3b8]' : 'border-black'}`}>
-                    <div className="flex gap-2 items-center">
-                      <span className="text-[11px] font-black text-[#64748b] uppercase whitespace-nowrap">แผนก:</span>
-                      <span className="text-[11px] font-bold text-[#102C57]">{scope.departmentName || "-"}</span>
-                    </div>
-                    <div className="flex gap-2 items-center justify-center">
-                      <span className="text-[11px] font-black text-[#64748b] uppercase whitespace-nowrap">ช่วงวันที่:</span>
-                      <span className="text-[11px] font-bold text-[#102C57]">{reportPeriodLabel}</span>
-                    </div>
-                    <div className="flex gap-2 items-center justify-end">
-                      <span className="text-[11px] font-black text-[#64748b] uppercase whitespace-nowrap">สินค้า:</span>
-                      <span className="text-[11px] font-bold text-[#102C57] whitespace-nowrap">
-                        {selectedProducts.length ? `เลือกแล้ว ${selectedProducts.length} รายการ` : "สินค้าทั้งหมด"}
-                      </span>
-                    </div>
-                 </div>
+              <div className={`movement-summary-print-header bg-white px-6 py-2 border-b ${isClean ? 'border-[#94a3b8]' : 'border-black'}`}>
+                <ReportHeader
+                  title="รายงานเคลื่อนไหวสินค้า"
+                  subtitle="Stock Movement Summary Report"
+                  meta={[
+                    { label: "แผนก", value: scope.departmentName || "-" },
+                    { label: "ช่วงวันที่", value: reportPeriodLabel },
+                    { label: "สินค้า", value: selectedProducts.length ? `เลือกแล้ว ${selectedProducts.length} รายการ` : "สินค้าทั้งหมด" },
+                  ]}
+                  printedAt={printedAtLabel}
+                  printedBy={profile.username || "System"}
+                  page={pageIndex + 1}
+                  totalPages={reportPages.length}
+                  variant="block"
+                />
               </div>
 
               <div className="weight-scale-report-print-body movement-summary-print-body bg-white px-0 py-3 min-h-[150mm] print:min-h-0 print:border-none print:px-0 print:py-2">
@@ -1055,6 +985,11 @@ export default function ProductionStockMovementSummaryReportPageClient({
                     .movement-summary-report-table thead tr {
                       background-color: #f8f9fa !important;
                     }
+                    .movement-summary-report-table thead th {
+                      background-color: #f8f9fa !important;
+                      color: #1a1c1e !important;
+                      font-weight: 700 !important;
+                    }
                     .movement-summary-report-table thead tr:last-child {
                       border-bottom: 2px solid #1a1c1e !important;
                     }
@@ -1076,12 +1011,12 @@ export default function ProductionStockMovementSummaryReportPageClient({
                       font-weight: 600 !important;
                     }
                     .movement-summary-report-table tbody tr.grand-total-row {
-                      background-color: #102C57 !important;
+                      background-color: var(--surface-navy, #102C57) !important;
                       color: #ffffff !important;
                       font-weight: bold !important;
                     }
                     .movement-summary-report-table tbody tr.grand-total-row td {
-                      background-color: #102C57 !important;
+                      background-color: var(--surface-navy, #102C57) !important;
                       border-left: none !important;
                       border-right: none !important;
                       border-color: #102C57 !important;
@@ -1477,9 +1412,13 @@ export default function ProductionStockMovementSummaryReportPageClient({
         <style dangerouslySetInnerHTML={{ __html: `
           @page {
             size: A4 landscape;
-            margin: 4mm;
+            margin: 8mm 6mm;
           }
           @media print {
+            * {
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
             .weight-scale-report-screen-only,
             .weight-scale-report-screen-only * {
               display: none !important;
@@ -1504,7 +1443,7 @@ export default function ProductionStockMovementSummaryReportPageClient({
             }
             .movement-summary-print-only th,
             .movement-summary-print-only td {
-              border: 0.5px solid #aeb7c2 !important;
+              border: 0.5pt solid #aeb7c2 !important;
               padding: 2.5px 4px !important;
               vertical-align: middle !important;
             }
@@ -1523,12 +1462,12 @@ export default function ProductionStockMovementSummaryReportPageClient({
             }
             .movement-summary-print-only .table-header th {
               background: #f8f9fa !important;
-              color: #111827 !important;
-              font-weight: 800 !important;
+              color: #1a1c1e !important;
+              font-weight: 700 !important;
               text-align: center !important;
             }
             .movement-summary-print-only .table-header:last-child th {
-              border-bottom: 2px solid #1f2937 !important;
+              border-bottom: 2px solid #1a1c1e !important;
               font-size: 9.8px !important;
             }
             .movement-summary-print-only .date-header-row td {
@@ -1548,15 +1487,15 @@ export default function ProductionStockMovementSummaryReportPageClient({
               page-break-inside: avoid !important;
             }
             .movement-summary-print-only tbody tr.zebra-row {
-              break-inside: auto !important;
-              page-break-inside: auto !important;
+              break-inside: avoid !important;
+              page-break-inside: avoid !important;
             }
             .movement-summary-print-only .subtotal-row td {
               background: #f8fafc !important;
               font-weight: 800 !important;
             }
             .movement-summary-print-only .grand-total-row td {
-              background: #102C57 !important;
+              background: var(--surface-navy, #102C57) !important;
               color: #ffffff !important;
               font-weight: 900 !important;
             }
@@ -1578,39 +1517,19 @@ export default function ProductionStockMovementSummaryReportPageClient({
               ))}
             </colgroup>
             <thead>
-              <tr className="print-report-header">
-                <th colSpan={17}>
-                  <div className="flex items-end justify-between">
-                    <div className="flex items-center gap-3 text-left">
-                      <Image
-                        src="/brand/LOGO-KPF1.png"
-                        alt="KPF"
-                        width={40}
-                        height={40}
-                        className="h-10 w-auto object-contain"
-                      />
-                      <div>
-                        <div className="text-[13px] font-black text-[#102C57]">บริษัท เคพีฟู้ดส์ จำกัด</div>
-                        <div className="text-[9px] font-bold text-[#64748b]">K.P. foods Co.,Ltd.</div>
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-[17px] font-black text-[#102C57]">รายงานเคลื่อนไหวสินค้า</div>
-                    </div>
-                    <div className="text-right text-[9px] leading-tight text-[#102C57]">
-                      <div><span className="font-black text-[#64748b]">วันที่พิมพ์:</span> {printedAtLabel}</div>
-                      <div><span className="font-black text-[#64748b]">ผู้ออกรายงาน:</span> {profile.username || "System"}</div>
-                    </div>
-                  </div>
-                </th>
-              </tr>
-              <tr className="print-report-meta">
-                <th colSpan={5} className="text-left">แผนก: <span className="font-black">{scope.departmentName || "-"}</span></th>
-                <th colSpan={7} className="text-center">ช่วงวันที่: <span className="font-black">{reportPeriodLabel}</span></th>
-                <th colSpan={5} className="text-right">
-                  สินค้า: <span className="font-black">{selectedProducts.length ? `เลือกแล้ว ${selectedProducts.length} รายการ` : "สินค้าทั้งหมด"}</span>
-                </th>
-              </tr>
+              <ReportHeader
+                title="รายงานเคลื่อนไหวสินค้า"
+                subtitle="Stock Movement Summary Report"
+                meta={[
+                  { label: "แผนก", value: scope.departmentName || "-" },
+                  { label: "ช่วงวันที่", value: reportPeriodLabel },
+                  { label: "สินค้า", value: selectedProducts.length ? `เลือกแล้ว ${selectedProducts.length} รายการ` : "สินค้าทั้งหมด" },
+                ]}
+                printedAt={printedAtLabel}
+                printedBy={profile.username || "System"}
+                variant="table-rows"
+                colSpan={17}
+              />
               <tr className="table-header">
                 <th rowSpan={2} className="text-center font-bold">#</th>
                 <th rowSpan={2} className="text-left font-bold">สินค้า</th>
@@ -1714,7 +1633,7 @@ export default function ProductionStockMovementSummaryReportPageClient({
       {isLotPickerOpen ? (
         <div className="weight-scale-report-screen-only fixed inset-0 z-[100] flex items-center justify-center bg-[#071a33]/70 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setIsLotPickerOpen(false); }}>
           <section role="dialog" aria-modal="true" aria-labelledby="lot-picker-title" className="flex max-h-[82dvh] w-full max-w-2xl flex-col overflow-hidden border border-[#d4af37] bg-white shadow-[0_30px_90px_rgba(0,0,0,.35)]">
-            <header className="flex items-center justify-between bg-[#102C57] px-5 py-4 text-white">
+            <header className="flex items-center justify-between bg-[var(--surface-navy,#102C57)] px-5 py-4 text-white">
               <div><p className="text-[10px] font-black tracking-[.2em] text-[#e8bd42]">LOT FILTER</p><h2 id="lot-picker-title" className="mt-1 text-xl font-black">เลือก LOT ที่ต้องการแสดง</h2><p className="mt-1 text-xs text-slate-300">{selectedProducts.map((product) => product.code).join(", ") || "กรุณาเลือกสินค้า"}</p></div>
               <button type="button" onClick={() => setIsLotPickerOpen(false)} aria-label="ปิดหน้าต่าง" className="grid h-10 w-10 place-items-center border border-white/25 hover:bg-white/10"><X size={20} /></button>
             </header>
@@ -1735,7 +1654,7 @@ export default function ProductionStockMovementSummaryReportPageClient({
                 </section>
               )) : <div className="grid min-h-56 place-items-center text-sm font-semibold text-slate-400">ไม่พบ LOT ที่ตรงกับเงื่อนไข</div>}
             </div>
-            <footer className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-5 py-4"><span className="text-sm text-slate-600">เลือกแล้ว <strong className="text-[#102C57]">{filters.lotNos.length}</strong> LOT</span><div className="flex gap-2"><button type="button" onClick={() => { setFilters((current) => ({ ...current, lotNos: [] })); }} className="h-10 border border-slate-300 px-4 text-sm font-bold text-[#102C57]">ล้างทั้งหมด</button><button type="button" onClick={() => { setIsLotPickerOpen(false); loadRows({ ...filters, page: 1 }); }} className="h-10 bg-[#102C57] px-5 text-sm font-bold text-white">ใช้ตัวกรอง</button></div></footer>
+            <footer className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-5 py-4"><span className="text-sm text-slate-600">เลือกแล้ว <strong className="text-[#102C57]">{filters.lotNos.length}</strong> LOT</span><div className="flex gap-2"><button type="button" onClick={() => { setFilters((current) => ({ ...current, lotNos: [] })); }} className="h-10 border border-slate-300 px-4 text-sm font-bold text-[#102C57]">ล้างทั้งหมด</button><button type="button" onClick={() => { setIsLotPickerOpen(false); loadRows({ ...filters, page: 1 }); }} className="h-10 bg-[var(--surface-navy,#102C57)] px-5 text-sm font-bold text-white">ใช้ตัวกรอง</button></div></footer>
           </section>
         </div>
       ) : null}

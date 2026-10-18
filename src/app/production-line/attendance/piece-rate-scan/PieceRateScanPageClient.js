@@ -53,6 +53,7 @@ import {
   isAppOnline,
   WRAPPER_NETWORK_CHANGE_EVENT,
 } from "@/lib/offline/networkStatus";
+import { getBangkokWorkDate, validatePieceRateWorkDate } from "@/lib/piece-rate-work-date";
 import "../scan/scanner.css";
 import PieceRateWorkForm from "./PieceRateWorkForm";
 import PieceRateDesktopWorkstation from "./PieceRateDesktopWorkstation";
@@ -337,6 +338,7 @@ export default function PieceRateScanPageClient() {
   const [desktopWorkflowMode, setDesktopWorkflowMode] = useState(() =>
     normalizePieceRateWorkflowMode(searchParams.get("tab"))
   );
+  const [selectedWorkDate, setSelectedWorkDate] = useState(() => getBangkokWorkDate());
 
   const [stage, setStage] = useState(() => (isPreviewMode ? "form" : "product"));
   const [scanMode, setScanMode] = useState(() => (isPreviewMode ? "multi" : null));
@@ -628,10 +630,7 @@ export default function PieceRateScanPageClient() {
             console.error("Failed to parse saved product", e);
           }
 
-          const d = new Date();
-          const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-
-          if (savedInfo && savedInfo.barcode && savedInfo.date === today) {
+          if (savedInfo && savedInfo.barcode && savedInfo.date === selectedWorkDate) {
             const productBarcode = savedInfo.barcode;
             let productPayload = await getCachedPieceRateProductLookup(productBarcode);
 
@@ -711,17 +710,17 @@ export default function PieceRateScanPageClient() {
   }, [isEmployeePickerOpen, searchEmployeeQuery]);
 
   const desktopScale = usePieceRateDesktopScale({
-    enabled: isDesktopRuntime && (desktopWorkflowMode === "weigh-in" || desktopWorkflowMode === "waste"),
+    enabled: isDesktopRuntime && (desktopWorkflowMode === "weigh-in" || desktopWorkflowMode === "waste" || scanMode === "waste"),
     hasProduct: Boolean(resolvedProduct),
-    hasEmployee: desktopWorkflowMode === "waste" || Boolean(resolvedEmployee),
+    hasEmployee: desktopWorkflowMode === "waste" || scanMode === "waste" || Boolean(resolvedEmployee),
   });
 
   useEffect(() => {
-    if (!isDesktopRuntime || desktopWorkflowMode !== "waste") return;
+    if (!isDesktopRuntime || (desktopWorkflowMode !== "waste" && scanMode !== "waste")) return;
     void getAllCachedPieceRateProducts().then((records) => {
       setWasteProductOptions((records || []).filter((record) => record?.payload?.product));
     });
-  }, [desktopWorkflowMode, isDesktopRuntime, masterSummary.productCount]);
+  }, [desktopWorkflowMode, isDesktopRuntime, masterSummary.productCount, scanMode]);
 
   const handleDesktopWorkflowModeChange = useCallback((nextMode) => {
     setDesktopWorkflowMode(nextMode);
@@ -1044,13 +1043,7 @@ export default function PieceRateScanPageClient() {
             console.error("Failed to parse saved product", e);
           }
 
-          const d = new Date();
-          const year = d.getFullYear();
-          const month = String(d.getMonth() + 1).padStart(2, "0");
-          const day = String(d.getDate()).padStart(2, "0");
-          const today = `${year}-${month}-${day}`;
-
-          if (savedInfo && savedInfo.barcode && savedInfo.date === today) {
+          if (savedInfo && savedInfo.barcode && savedInfo.date === selectedWorkDate) {
             const productBarcode = savedInfo.barcode;
             const cachedProduct = await getCachedPieceRateProductLookup(productBarcode);
             let productPayload = cachedProduct;
@@ -1206,7 +1199,7 @@ export default function PieceRateScanPageClient() {
     });
     setIsLookingUp(false);
     isProcessingScanRef.current = false;
-  }, [handleLookupFailure, isLookingUp, masterSummary.ready, scanMode, startStageTransition, stopScanner]);
+  }, [handleLookupFailure, isLookingUp, masterSummary.ready, scanMode, selectedWorkDate, startStageTransition, stopScanner]);
 
   const handleSwitchCamera = useCallback(() => {
     if (cameras.length < 2) return;
@@ -1255,6 +1248,29 @@ export default function PieceRateScanPageClient() {
     });
   }, [clearKeyboardBuffer, desktopWorkflowMode, isDesktopRuntime, startStageTransition]);
 
+  const handleWorkDateChange = useCallback((nextDate) => {
+    let normalizedDate;
+    try {
+      normalizedDate = validatePieceRateWorkDate(nextDate);
+    } catch (error) {
+      setErrorMessage(error?.message || "วันที่ทำงานไม่ถูกต้อง");
+      return false;
+    }
+    if (normalizedDate === selectedWorkDate) return true;
+    if (
+      stage !== "product"
+      && !window.confirm("เปลี่ยนวันที่ทำงานและล้างสินค้า/พนักงานของรอบที่ยังไม่บันทึกหรือไม่?")
+    ) {
+      return false;
+    }
+
+    setSelectedWorkDate(normalizedDate);
+    setDesktopRefreshKey((value) => value + 1);
+    setErrorMessage("");
+    if (stage !== "product") handleResetAll();
+    return true;
+  }, [handleResetAll, selectedWorkDate, stage]);
+
   const handleBackToEmployee = useCallback(() => {
     setResolvedEmployee(null);
     setEmployeeScanValue("");
@@ -1270,6 +1286,7 @@ export default function PieceRateScanPageClient() {
 
   const handleSelectMode = useCallback((mode) => {
     setScanMode(mode);
+    setDesktopWorkflowMode(mode === "waste" ? "waste" : "weigh-in");
     setLockedProduct(null);
     setResolvedProduct(null);
     setResolvedEmployee(null);
@@ -1281,7 +1298,7 @@ export default function PieceRateScanPageClient() {
     clearKeyboardBuffer();
     startStageTransition(() => {
       setStage("product");
-      setStatusMessage(mode === "single" ? "เริ่มต้นด้วยการสแกนสินค้าหลักของวันนี้" : "พร้อมสแกนบาร์โค้ดสินค้า");
+      setStatusMessage(mode === "waste" ? "เลือกหรือสแกนสินค้าเพื่อชั่งของเสีย" : mode === "single" ? "เริ่มต้นด้วยการสแกนสินค้าหลักของวันนี้" : "พร้อมสแกนบาร์โค้ดสินค้า");
     });
   }, [clearKeyboardBuffer, startStageTransition]);
 
@@ -1817,6 +1834,9 @@ export default function PieceRateScanPageClient() {
           onDesktopRecordSaved={() => setDesktopRefreshKey((value) => value + 1)}
           workflowMode={desktopWorkflowMode}
           onWorkflowModeChange={setDesktopWorkflowMode}
+          workDate={selectedWorkDate}
+          maxWorkDate={getBangkokWorkDate()}
+          onWorkDateChange={handleWorkDateChange}
         />
         {renderModals()}
       </>
@@ -1841,6 +1861,9 @@ export default function PieceRateScanPageClient() {
           refreshKey={desktopRefreshKey}
           workflowMode={desktopWorkflowMode}
           onWorkflowModeChange={handleDesktopWorkflowModeChange}
+          workDate={selectedWorkDate}
+          maxWorkDate={getBangkokWorkDate()}
+          onWorkDateChange={handleWorkDateChange}
         />
         {renderModals()}
       </>
@@ -1859,6 +1882,17 @@ export default function PieceRateScanPageClient() {
               <h1 className="text-sm font-black tracking-tight text-[#0f2747]">สแกนคิดค่าแรง</h1>
               <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#b68a12]">เลือกโหมดเริ่มงาน</span>
             </div>
+            <label className="ml-auto flex items-center gap-2 border border-[#d4af37]/35 bg-[#fff8e5] px-3 py-2 text-xs font-black text-[#0f2747]">
+              <span className="hidden sm:inline">วันที่ทำงาน</span>
+              <input
+                type="date"
+                value={selectedWorkDate}
+                max={getBangkokWorkDate()}
+                onChange={(event) => handleWorkDateChange(event.target.value)}
+                className="bg-transparent font-black outline-none"
+                aria-label="วันที่ทำงาน"
+              />
+            </label>
           </div>
         </header>
 

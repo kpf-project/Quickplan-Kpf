@@ -1,5 +1,5 @@
 import { getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import {
   createScaleReceipt,
   loadScaleRecentReceiptsData,
@@ -9,17 +9,6 @@ import { normalizeParam } from "@/lib/validation";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const SCALE_RECEIPT_PERMISSION_KEYS = [
-  "production-line-attendance-view",
-  "production-line-attendance-manage",
-  "production-line-attendance-report-view",
-  "production-line-attendance-report-manage",
-  "production-line-settings-view",
-  "production-line-settings-manage",
-];
-const SCALE_RECEIPT_MANAGE_PERMISSION_KEYS = [
-  "production-line-attendance-manage",
-];
 
 function normalizeLimit(value, fallback = 20) {
   const parsed = Number.parseInt(String(value ?? "").trim(), 10);
@@ -31,7 +20,7 @@ function normalizeLimit(value, fallback = 20) {
 
 export async function GET(request) {
   try {
-    await requirePermissionKeys(request, SCALE_RECEIPT_PERMISSION_KEYS);
+    await requireTaskPermission(request, "production-scale-receipt-view");
 
     const { searchParams } = new URL(request.url);
     const departmentId = normalizeParam(searchParams.get("departmentId"));
@@ -55,10 +44,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const permission = await requirePermissionKeys(
-      request,
-      SCALE_RECEIPT_MANAGE_PERMISSION_KEYS
-    );
+    const permission = await requireTaskPermission(request, "production-scale-receipt-write");
     const body = await readJson(request);
 
     const departmentId = normalizeParam(body?.departmentId);

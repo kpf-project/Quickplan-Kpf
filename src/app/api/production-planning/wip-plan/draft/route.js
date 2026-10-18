@@ -3,6 +3,8 @@ import { getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
 import { requirePermissionKeys } from "@/lib/permissionGuard";
 import { normalizeMasterPlanNo } from "@/lib/planNo";
 import { persistSubplanDraftLines } from "@/lib/autoSubplanDrafts";
+import { fetchSupabaseRowsByChunks } from "@/lib/supabaseRangeFetch";
+import { wipPlanKgPerBatch, wipPlanWeightVersion } from "@/features/production-planning/services/wipPlanDisplayWeight";
 import {
   buildPlanRange,
   buildDraftPlanId,
@@ -263,6 +265,7 @@ export async function GET(request) {
             skuCode: row?.sku_code,
             skuName: row?.sku_name,
             plannedQty: row?.planned_qty,
+            unit: row?.unit,
             departmentId: row?.owner_department_id,
             shiftId: row?.shift_id,
             shiftCode: row?.shift_code,
@@ -294,6 +297,24 @@ export async function GET(request) {
         };
       });
 
+    if (searchParams.get("includeWeight") === "1" && lines.length) {
+      const versionIds = [...new Set(lines.map(line => line.bomVersionId).filter(Boolean))];
+      const [boundVersions, products, boms] = await Promise.all([
+        fetchSupabaseRowsByChunks(versionIds, chunk => supabaseAdmin.from("production_bom_versions").select("id,bom_id,base_batch,base_output_boxes").in("id", chunk)),
+        loadProductsMetaBySkus(supabaseAdmin, [...new Set(lines.map(line => line.skuCode))]),
+        fetchSupabaseRowsByChunks([...new Set(lines.map(line => line.skuCode))], chunk => supabaseAdmin.from("production_boms").select("id,sku_code").in("sku_code", chunk)),
+      ]);
+      const legacySkus = new Set(lines.filter(line => !line.bomVersionId).map(line => line.skuCode));
+      const approvedVersions = await fetchSupabaseRowsByChunks(boms.filter(bom => legacySkus.has(bom.sku_code)).map(bom => bom.id), chunk => supabaseAdmin.from("production_bom_versions").select("id,bom_id,formula_code,status,version_no,base_batch,base_output_boxes").in("bom_id", chunk).eq("status", "approved"));
+      const versions = [...approvedVersions, ...boundVersions];
+      const bomSkuMap = new Map(boms.map(bom => [bom.id, bom.sku_code]));
+      lines.forEach(line => {
+        const version = wipPlanWeightVersion(line, versions, boms);
+        line.kgPerBatch = wipPlanKgPerBatch(version, line.skuCode, bomSkuMap.get(version?.bom_id), products.get(line.skuCode)?.uom_name);
+        line.weightUsesCurrentBom = !line.bomVersionId && line.kgPerBatch !== null;
+      });
+    }
+
     return NextResponse.json(
       {
         data: {
@@ -306,7 +327,8 @@ export async function GET(request) {
           canManageGlobal: Boolean(scope.canManageGlobal),
           planRange,
           existingSubplan: existingSubplan || null,
-          subplanLocked: hasExportedRequisition,
+          subplanLocked: false,
+          hasExportedRequisition,
         },
       },
       { status: 200 }
@@ -336,6 +358,7 @@ export async function POST(request) {
     const masterPlanNo = normalizeMasterPlanNo(inputMasterPlanNo);
     const inputDepartmentId = normalizePlanningDepartmentId(body?.departmentId);
     const inputLines = Array.isArray(body?.lines) ? body.lines : [];
+    const replaceFromDate = String(body?.replaceFromDate || "").slice(0, 10) || null;
 
     if (!inputMasterPlanNo) {
       return NextResponse.json({ error: "masterPlanNo is required" }, { status: 400 });
@@ -343,7 +366,7 @@ export async function POST(request) {
     if (!masterPlanNo) {
       return NextResponse.json({ error: "Invalid masterPlanNo format" }, { status: 400 });
     }
-    if (!inputLines.length) {
+    if (!inputLines.length && !replaceFromDate) {
       return NextResponse.json({ error: "lines are required" }, { status: 400 });
     }
 
@@ -372,18 +395,17 @@ export async function POST(request) {
     }
 
     const hasExportedRequisition = await checkHasExportedRequisition(supabaseAdmin, masterPlanNo, selectedDepartmentId);
-    if (hasExportedRequisition) {
-      return NextResponse.json(
-        { error: "ไม่สามารถแก้ไขแผนได้เนื่องจากใบเบิกวัตถุดิบได้รับการยืนยันการเบิกจ่ายเรียบร้อยแล้ว" },
-        { status: 400 }
-      );
-    }
-
     const parsedLines = inputLines
       .map((row, index) => parseInputLine(row, index, selectedDepartmentId))
       .filter(Boolean);
-    if (!parsedLines.length) {
+    if (!parsedLines.length && !replaceFromDate) {
       return NextResponse.json({ error: "No valid draft lines" }, { status: 400 });
+    }
+    if (replaceFromDate && parsedLines.some((line) => line.workDate < replaceFromDate)) {
+      return NextResponse.json(
+        { error: "ไม่สามารถแก้ไขแผนของวันที่ผ่านมาแล้ว" },
+        { status: 400 }
+      );
     }
 
     // WIP can be produced before or after the FG date when the BOM route is multi-step.
@@ -439,6 +461,7 @@ export async function POST(request) {
       planRange,
       actorUserId: permission.userId,
       nowIso,
+      replaceFromDate,
     });
 
     return NextResponse.json(
@@ -456,6 +479,7 @@ export async function POST(request) {
           editableDepartmentIds,
           planRange,
           canManageGlobal: Boolean(scope.canManageGlobal),
+          hasExportedRequisition,
         },
       },
       { status: 200 }

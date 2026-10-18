@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { CalendarDays, Loader2, Printer, Search } from "lucide-react";
 import { useUserProfile } from "@/lib/useUserProfile";
+import { ReportHeader, ReportFilterBar } from "@/components/print";
 import { calculateAverageWeightPerTin } from "@/features/production-line/utils/buildFgPackingReportRows";
 
 function formatNumber(value, maximumFractionDigits = 3) {
@@ -148,22 +149,23 @@ export default function FgPackingReportClient({ productionDate }) {
           </button>
         </header>
 
-        <form onSubmit={handleSearch} className="packing-filter-panel print-hidden">
-          <label>
-            <span className="flex items-center gap-1.5"><CalendarDays size={14} className="text-[#d7a21f]" />วันที่ผลิต</span>
-            <input
-              type="date"
-              value={searchDate}
-              onChange={(event) => setSearchDate(event.target.value)}
-              className="packing-date-input"
-              required
-            />
-          </label>
-          <button type="submit" disabled={loading || !searchDate} className="packing-search-action disabled:opacity-50">
-            {loading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}ค้นหา
-          </button>
-          <div className="packing-filter-summary"><span>รายการในรายงาน</span><strong>{rows.length.toLocaleString("th-TH")}</strong></div>
-        </form>
+        <div className="print-hidden border-b border-slate-200 bg-slate-50/50 p-4">
+          <ReportFilterBar
+            dateMode="single"
+            dateSingle={searchDate}
+            onDateSingleChange={setSearchDate}
+            dateLabel="วันที่ผลิต"
+            isLoading={loading}
+            onSearch={handleSearch}
+            searchButtonLabel="ค้นหา"
+            onPrint={() => window.print()}
+            printButtonLabel="พิมพ์ A4 แนวนอน"
+            className="mb-0 border-0 bg-transparent p-0 shadow-none"
+            summaryStats={[
+              { label: "รายการในรายงาน", value: `${rows.length.toLocaleString("th-TH")} รายการ`, highlight: true },
+            ]}
+          />
+        </div>
 
         {error ? <div className="print-hidden m-4 border border-red-400 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div> : null}
         {warnings.length > 0 ? (
@@ -173,29 +175,20 @@ export default function FgPackingReportClient({ productionDate }) {
         ) : null}
 
         <div className="packing-report-sheet">
-        <header className="mb-3 flex items-start justify-between border-b-2 border-black pb-3">
-          <div className="flex items-center gap-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/brand/LOGO-KPF1.png" alt="KPF" className="h-10 w-auto object-contain" />
-            <div><strong className="block text-sm text-black">บริษัท เคพีฟู้ดส์ จำกัด</strong><span className="text-[9px] font-bold text-black">K.P. foods Co.,Ltd.</span></div>
-          </div>
-          <div className="text-center text-black">
-            <h1 className="text-xl font-black leading-none">รายงานการบรรจุ</h1>
-            <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.18em]">Packing Production Report</p>
-          </div>
-          <div className="text-right text-[9px] leading-tight text-black">
-            <div><strong>วันที่พิมพ์:</strong> {printedAt}</div>
-            <div><strong>ผู้ออกรายงาน:</strong> {profile?.username || profile?.name || "System"}</div>
-            <div><strong>หน้ากระดาษ:</strong> A4 แนวนอน</div>
-          </div>
-        </header>
-
-        <div className="mb-3 grid grid-cols-3 border-t border-dashed border-black pt-2 text-[10px] text-black">
-          <div><strong>แผนก:</strong> ฝ่ายผลิต KP13</div>
-          <div className="text-center"><strong>วันที่ผลิต:</strong> {formatDate(reportDate)}</div>
-          <div className="text-right"><strong>จำนวนสินค้า:</strong> {rows.length.toLocaleString("th-TH")} รายการ</div>
+        <div className="mb-3">
+          <ReportHeader
+            title="รายงานการบรรจุ"
+            subtitle="Packing Production Report"
+            meta={[
+              { label: "แผนก", value: "ฝ่ายผลิต KP13" },
+              { label: "วันที่ผลิต", value: formatDate(reportDate) },
+              { label: "จำนวนสินค้า", value: `${rows.length.toLocaleString("th-TH")} รายการ` },
+            ]}
+            printedAt={printedAt}
+            printedBy={profile?.username || profile?.name || "System"}
+            variant="block"
+          />
         </div>
-
         <table className="packing-report-table" aria-label="รายงานการบรรจุ">
           <colgroup>
             <col style={{ width: "8%" }} /><col style={{ width: "15%" }} /><col style={{ width: "5%" }} />

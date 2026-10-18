@@ -273,7 +273,7 @@ function ModalContent({
             onClick={() => setMobileStep("catalog")}
             className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
               showCatalogPanel
-                ? "bg-[#102C57] text-white shadow-sm"
+                ? "bg-[var(--surface-navy,#102C57)] text-white shadow-sm"
                 : "border border-slate-200 bg-slate-50 text-slate-600"
             }`}
           >
@@ -284,7 +284,7 @@ function ModalContent({
             onClick={() => setMobileStep("details")}
             className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
               showDetailsPanel
-                ? "bg-[#102C57] text-white shadow-sm"
+                ? "bg-[var(--surface-navy,#102C57)] text-white shadow-sm"
                 : "border border-slate-200 bg-slate-50 text-slate-600"
             }`}
           >
@@ -328,7 +328,7 @@ function ModalContent({
 
             <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-white px-4 py-2 text-[11px]">
               <div className="text-slate-500">เลือก FG หรือ WIP ได้หลายรายการในวันเดียว แล้วกำหนด section และกะให้แต่ละรายการแยกกัน</div>
-              <div className="rounded-full border border-[#102C57]/15 bg-[#102C57]/5 px-2.5 py-1 font-semibold text-[#102C57]">
+              <div className="rounded-full border border-[#102C57]/15 bg-[var(--surface-navy,#102C57)]/5 px-2.5 py-1 font-semibold text-[#102C57]">
                 เลือกแล้ว {selectedItems.size.toLocaleString()} รายการ
               </div>
             </div>
@@ -349,7 +349,7 @@ function ModalContent({
                       onClick={() => toggleProduct(product)}
                       className={`rounded-2xl border p-4 text-left transition ${
                         isSelected
-                          ? "border-[#102C57] bg-[#102C57]/5 shadow-sm"
+                          ? "border-[#102C57] bg-[var(--surface-navy,#102C57)]/5 shadow-sm"
                           : "border-slate-200 bg-white hover:border-[#102C57]/30 hover:bg-slate-50"
                       }`}
                     >
@@ -360,7 +360,7 @@ function ModalContent({
                         </div>
                         <div className={`inline-flex h-6 w-6 items-center justify-center rounded-full border text-xs ${
                           isSelected
-                            ? "border-[#102C57] bg-[#102C57] text-white"
+                            ? "border-[#102C57] bg-[var(--surface-navy,#102C57)] text-white"
                             : "border-slate-300 bg-white text-slate-400"
                         }`}>
                           {isSelected ? <Check size={13} /> : null}
@@ -370,7 +370,7 @@ function ModalContent({
                         <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
                           productKind === "WIP"
                             ? "border-[#d4af37]/50 bg-[#fff8e2] text-[#102C57]"
-                            : "border-[#102C57]/20 bg-[#102C57]/5 text-[#102C57]"
+                            : "border-[#102C57]/20 bg-[var(--surface-navy,#102C57)]/5 text-[#102C57]"
                         }`}>
                           {productKind}
                         </span>
@@ -444,7 +444,7 @@ function ModalContent({
                               <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${
                                 productKind === "WIP"
                                   ? "border-[#d4af37]/50 bg-[#fff8e2] text-[#102C57]"
-                                  : "border-[#102C57]/20 bg-[#102C57]/5 text-[#102C57]"
+                                  : "border-[#102C57]/20 bg-[var(--surface-navy,#102C57)]/5 text-[#102C57]"
                               }`}>
                                 {productKind}
                               </span>
@@ -632,7 +632,7 @@ function ModalContent({
                 type="button"
                 onClick={handleConfirm}
                 disabled={selectedItems.size === 0}
-                className="h-12 w-full rounded-xl bg-[#102C57] text-sm font-bold text-white transition hover:bg-[#0d2549] disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-12 w-full rounded-xl bg-[var(--surface-navy,#102C57)] text-sm font-bold text-white transition hover:bg-[#0d2549] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 เพิ่มลงแผน ({selectedItems.size.toLocaleString()})
               </button>
@@ -645,7 +645,7 @@ function ModalContent({
             <button
               type="button"
               onClick={() => setMobileStep("details")}
-              className="h-11 w-full rounded-xl border border-[#102C57]/20 bg-[#102C57]/5 text-sm font-bold text-[#102C57] transition hover:bg-[#102C57]/10"
+              className="h-11 w-full rounded-xl border border-[#102C57]/20 bg-[var(--surface-navy,#102C57)]/5 text-sm font-bold text-[#102C57] transition hover:bg-[var(--surface-navy,#102C57)]/10"
             >
               ไปยังรายการที่เลือก ({selectedItems.size.toLocaleString()})
             </button>

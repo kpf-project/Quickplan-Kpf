@@ -107,6 +107,23 @@ export async function saveRow(planId, row) {
       dayKey:       row.day_key,
       rowData:      row.row_data,
       subPlanId:    row.sub_plan_id ?? null,
+      visionImport: row._visionImport === true,
+    }),
+  });
+}
+
+export async function saveRows(planId, rows) {
+  if (!rows.length) return { ok: true, data: [] };
+  return fetchJson(`${BASE}/plans/${planId}/rows`, {
+    method: "POST",
+    body: JSON.stringify({
+      rows: rows.map((row) => ({
+        sectionDefId: row.section_def_id,
+        dayKey: row.day_key,
+        rowData: row.row_data,
+        subPlanId: row.sub_plan_id ?? null,
+        visionImport: row._visionImport === true,
+      })),
     }),
   });
 }

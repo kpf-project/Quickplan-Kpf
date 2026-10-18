@@ -7,6 +7,7 @@ import { Search, ClipboardList, List, Grid3x3, Undo2 } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { usePermissions } from "@/lib/usePermissions";
 import { fetchRawMaterialRequisitions } from "@/features/raw-material-requisitions/services/rawMaterialRequisitionsClient";
+import { useTabState, upsertTab } from "@/lib/tabState";
 
 const pad2 = (value) => String(value).padStart(2, "0");
 
@@ -32,23 +33,72 @@ const getDefaultDateRange = () => {
   };
 };
 
+const requisitionDataCache = new Map();
+
+function buildCacheKey(type, dateFrom, dateTo, search, page) {
+  return `${type}:${dateFrom || ""}:${dateTo || ""}:${search || ""}:${page || 1}`;
+}
+
 export default function RawMaterialRequisitionsPage({ initialTab = "requisition" }) {
   const activeTab = initialTab === "return" ? "return" : "requisition";
-  const [records, setRecords] = useState([]);
-  const [returnRecords, setReturnRecords] = useState([]);
+
+  const defaultDates = useMemo(() => getDefaultDateRange(), []);
+
+  const initialDateFrom = useMemo(() => {
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search).get("dateFrom");
+      if (p) return p;
+    }
+    return defaultDates.from;
+  }, [defaultDates.from]);
+
+  const initialDateTo = useMemo(() => {
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search).get("dateTo");
+      if (p) return p;
+    }
+    return defaultDates.to;
+  }, [defaultDates.to]);
+
+  const initialSearch = useMemo(() => {
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search).get("search");
+      if (p) return p;
+    }
+    return "";
+  }, []);
+
+  const [dateFrom, setDateFrom] = useTabState(
+    `requisition-filter:${activeTab}:dateFrom`,
+    initialDateFrom
+  );
+  const [dateTo, setDateTo] = useTabState(
+    `requisition-filter:${activeTab}:dateTo`,
+    initialDateTo
+  );
+  const [searchText, setSearchText] = useTabState(
+    `requisition-filter:${activeTab}:search`,
+    initialSearch
+  );
+
+  const initialCacheKey = useMemo(
+    () => buildCacheKey(activeTab, dateFrom, dateTo, searchText, 1),
+    [activeTab, dateFrom, dateTo, searchText]
+  );
+  const cachedInitial = requisitionDataCache.get(initialCacheKey);
+
+  const [records, setRecords] = useState(() => (activeTab === "requisition" && cachedInitial?.data ? cachedInitial.data : []));
+  const [returnRecords, setReturnRecords] = useState(() => (activeTab === "return" && cachedInitial?.data ? cachedInitial.data : []));
   const [loading, setLoading] = useState(false);
-  const [hasLoadedInitial, setHasLoadedInitial] = useState(false);
+  const [hasLoadedInitial, setHasLoadedInitial] = useState(() => Boolean(cachedInitial));
   const [errorMessage, setErrorMessage] = useState("");
-  const [pagination, setPagination] = useState({ page: 1, totalPages: 1, totalRecords: 0, pageSize: 100 });
-  const [returnPagination, setReturnPagination] = useState({ page: 1, totalPages: 1, totalRecords: 0, pageSize: 100 });
-  const [cursorInfo, setCursorInfo] = useState({ next: null, hasMore: false });
-  const [returnCursorInfo, setReturnCursorInfo] = useState({ next: null, hasMore: false });
+  const [pagination, setPagination] = useState(() => (activeTab === "requisition" && cachedInitial?.pagination ? cachedInitial.pagination : { page: 1, totalPages: 1, totalRecords: 0, pageSize: 100 }));
+  const [returnPagination, setReturnPagination] = useState(() => (activeTab === "return" && cachedInitial?.pagination ? cachedInitial.pagination : { page: 1, totalPages: 1, totalRecords: 0, pageSize: 100 }));
+  const [cursorInfo, setCursorInfo] = useState(() => (activeTab === "requisition" && cachedInitial?.cursor ? cachedInitial.cursor : { next: null, hasMore: false }));
+  const [returnCursorInfo, setReturnCursorInfo] = useState(() => (activeTab === "return" && cachedInitial?.cursor ? cachedInitial.cursor : { next: null, hasMore: false }));
   const [cursorMap, setCursorMap] = useState({ 1: null });
   const [returnCursorMap, setReturnCursorMap] = useState({ 1: null });
-  const [searchText, setSearchText] = useState("");
   const deferredSearchText = useDeferredValue(searchText);
-  const [dateFrom, setDateFrom] = useState(() => getDefaultDateRange().from);
-  const [dateTo, setDateTo] = useState(() => getDefaultDateRange().to);
   const scrollRef = useRef(null);
   const tableScrollRef = useRef(null);
   const horizontalScrollRef = useRef(null);
@@ -63,11 +113,11 @@ export default function RawMaterialRequisitionsPage({ initialTab = "requisition"
   const permissionState = usePermissions();
   const canViewRequisition = permissionState.loaded
     ? (permissionState.isAdmin ||
-      permissionState.permissions.includes("admin-requisition"))
+      ["admin-requisition", "raw-materials-requisitions-view"].some((key) => permissionState.permissions.includes(key)))
     : false;
   const canViewReturn = permissionState.loaded
     ? (permissionState.isAdmin ||
-      permissionState.permissions.includes("admin-returns"))
+      ["admin-returns", "raw-materials-returns-view"].some((key) => permissionState.permissions.includes(key)))
     : false;
 
   useEffect(() => {
@@ -101,6 +151,48 @@ export default function RawMaterialRequisitionsPage({ initialTab = "requisition"
     };
   }, []);
 
+  // Synchronize active filters with browser URL and tab href
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    let changed = false;
+
+    if (dateFrom) {
+      if (url.searchParams.get("dateFrom") !== dateFrom) {
+        url.searchParams.set("dateFrom", dateFrom);
+        changed = true;
+      }
+    } else if (url.searchParams.has("dateFrom")) {
+      url.searchParams.delete("dateFrom");
+      changed = true;
+    }
+
+    if (dateTo) {
+      if (url.searchParams.get("dateTo") !== dateTo) {
+        url.searchParams.set("dateTo", dateTo);
+        changed = true;
+      }
+    } else if (url.searchParams.has("dateTo")) {
+      url.searchParams.delete("dateTo");
+      changed = true;
+    }
+
+    if (searchText) {
+      if (url.searchParams.get("search") !== searchText) {
+        url.searchParams.set("search", searchText);
+        changed = true;
+      }
+    } else if (url.searchParams.has("search")) {
+      url.searchParams.delete("search");
+      changed = true;
+    }
+
+    if (changed) {
+      window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+      upsertTab(`${url.pathname}${url.search}`);
+    }
+  }, [dateFrom, dateTo, searchText]);
+
   const loadData = useCallback(async (page = 1, type = "requisition", options = {}) => {
     const cursorOverride = Object.prototype.hasOwnProperty.call(options, "cursor")
       ? options.cursor
@@ -114,7 +206,11 @@ export default function RawMaterialRequisitionsPage({ initialTab = "requisition"
     activeRequestRef.current?.abort();
     const controller = new AbortController();
     activeRequestRef.current = controller;
-    setLoading(true);
+    const cacheKey = buildCacheKey(type, dateFrom, dateTo, searchValue, page);
+    const hasCached = requisitionDataCache.has(cacheKey);
+    if (!hasCached) {
+      setLoading(true);
+    }
     setErrorMessage("");
     try {
       const isRequisition = type === "requisition";
@@ -150,6 +246,14 @@ export default function RawMaterialRequisitionsPage({ initialTab = "requisition"
       }
       const payload = result.data;
       const nextCursor = payload?.cursor?.next ?? null;
+
+      requisitionDataCache.set(cacheKey, {
+        data: payload?.data ?? [],
+        pagination: payload?.pagination ?? { page: 1, totalPages: 1, totalRecords: 0, pageSize: 100 },
+        cursor: payload?.cursor ?? { next: null, hasMore: false },
+        timestamp: Date.now(),
+      });
+
       if (isRequisition) {
         setRecords(payload?.data ?? []);
         setPagination(payload?.pagination ?? { page: 1, totalPages: 1, totalRecords: 0, pageSize: 100 });
@@ -476,7 +580,7 @@ export default function RawMaterialRequisitionsPage({ initialTab = "requisition"
             <div className="requisition-table-scroll">
               <table className="requisition-table w-full border-collapse text-left text-[10px] xl:text-xs table-bordered">
               <thead
-                className="bg-[#102C57] text-white sticky top-0 z-20 shadow-md"
+                className="bg-[var(--surface-navy,#102C57)] text-white sticky top-0 z-20 shadow-md"
                 style={{ display: "table", tableLayout: "fixed", width: "100%" }}
               >
                 <tr>

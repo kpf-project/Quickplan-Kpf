@@ -28,7 +28,7 @@ const EMPTY_SUMMARY = {
   total: 0,
   invoices: null,
   lots: null,
-  totalAmountInclVat: 0,
+  totalAmountExclVat: 0,
   review: 0,
 };
 
@@ -280,8 +280,8 @@ export default function RawMaterialReceiptsPageClient() {
             "คลัง",
             "ปริมาณสุทธิ",
             "หน่วย",
-            "ราคา/หน่วยรวม VAT",
-            "มูลค่าสุทธิรวม VAT",
+            "มูลค่าวัตถุดิบเบิกจริง/หน่วย",
+            "มูลค่าวัตถุดิบเบิกจริง",
             "รหัสแผนก",
             "ชื่อแผนก",
             "สถานะ",
@@ -297,8 +297,8 @@ export default function RawMaterialReceiptsPageClient() {
             "คลัง",
             "ปริมาณสุทธิ",
             "หน่วย",
-            "ราคา/หน่วยรวม VAT",
-            "มูลค่าสุทธิรวม VAT",
+            "ราคา/หน่วยไม่รวม VAT",
+            "มูลค่าสุทธิไม่รวม VAT",
             "รหัสผู้ขาย",
             "ผู้ขาย",
             "สถานะ",
@@ -315,8 +315,8 @@ export default function RawMaterialReceiptsPageClient() {
         row.WL_CODE,
         Number(row.NET_BASE_QTY),
         row.BASE_UNIT_NAME,
-        row.UNIT_PRICE_INCL_VAT == null ? "" : Number(row.UNIT_PRICE_INCL_VAT),
-        row.NET_AMOUNT_INCL_VAT == null ? "" : Number(row.NET_AMOUNT_INCL_VAT),
+        row.UNIT_PRICE_EXCL_VAT == null ? "" : Number(row.UNIT_PRICE_EXCL_VAT),
+        row.NET_AMOUNT_EXCL_VAT == null ? "" : Number(row.NET_AMOUNT_EXCL_VAT),
         isProduction ? row.DEPT_CODE || "" : row.AP_CODE,
         isProduction ? row.DEPT_THAIDESC || "" : row.AP_NAME,
         row.COST_STATUS === "ready" ? "ข้อมูลครบ" : "รอตรวจสอบ",
@@ -417,8 +417,8 @@ export default function RawMaterialReceiptsPageClient() {
             </h1>
             <p className="mt-0.5 text-xs text-slate-500">
               {isProduction
-                ? "รายการรับเข้าจากการผลิต (DT 305) ประเภทงานระหว่างทำ (03) แสดงยอดสุทธิรวม VAT"
-                : "รายการรับเข้าตามใบกำกับสินค้า แสดงยอดสุทธิรวม VAT"}
+                ? "รายการรับเข้าจากการผลิต (DT 305) ประเภทงานระหว่างทำ (03) แสดงต้นทุนไม่รวม VAT"
+                : "รายการรับเข้าตามใบกำกับสินค้า แสดงราคาสุทธิไม่รวม VAT"}
             </p>
           </div>
           <p className="text-xs text-blue-700">
@@ -597,9 +597,9 @@ export default function RawMaterialReceiptsPageClient() {
           ) : null}
           <span className="text-slate-300">|</span>
           <span>
-            มูลค่าสุทธิรวม VAT{" "}
+            {isProduction ? "มูลค่าวัตถุดิบเบิกจริง" : "มูลค่าสุทธิไม่รวม VAT"}{" "}
             <strong className="tabular-nums">
-              {formatNumber(summary.totalAmountInclVat)}
+              {formatNumber(summary.totalAmountExclVat)}
             </strong>{" "}
             บาท
           </span>
@@ -627,7 +627,7 @@ export default function RawMaterialReceiptsPageClient() {
         <section className="min-w-0">
           <div className="max-h-[calc(100vh-270px)] overflow-auto">
             <table className="w-full min-w-[1100px] table-fixed border-collapse text-[12px]">
-              <thead className="sticky top-0 z-20 bg-[#102C57] text-white">
+              <thead className="sticky top-0 z-20 bg-[var(--surface-navy,#102C57)] text-white">
                 <tr className="border-b border-white/40">
                   <th className="w-[85px] border-r border-white/25 px-2 py-2 text-left">วันที่รับเข้า</th>
                   {isProduction ? (
@@ -641,8 +641,8 @@ export default function RawMaterialReceiptsPageClient() {
                   <th className="w-[44px] border-r border-white/25 px-2 py-2 text-center">คลัง</th>
                   <th className="w-[94px] border-r border-white/25 px-2 py-2 text-right">ปริมาณสุทธิ</th>
                   <th className="w-[50px] border-r border-white/25 px-2 py-2 text-left">หน่วย</th>
-                  <th className="w-[100px] border-r border-white/25 px-2 py-2 text-right leading-tight">ราคา/หน่วย<br />รวม VAT</th>
-                  <th className="w-[105px] border-r border-white/25 px-2 py-2 text-right leading-tight">มูลค่าสุทธิ<br />รวม VAT</th>
+                  <th className="w-[100px] border-r border-white/25 px-2 py-2 text-right leading-tight">{isProduction ? <>ต้นทุนวัตถุดิบ<br />ต่อหน่วย</> : <>ราคา/หน่วย<br />ไม่รวม VAT</>}</th>
+                  <th className="w-[105px] border-r border-white/25 px-2 py-2 text-right leading-tight">{isProduction ? <>มูลค่าวัตถุดิบ<br />เบิกจริง</> : <>มูลค่าสุทธิ<br />ไม่รวม VAT</>}</th>
                   <th className="w-[100px] px-2 py-2 text-center">สถานะ</th>
                 </tr>
               </thead>
@@ -695,8 +695,8 @@ export default function RawMaterialReceiptsPageClient() {
                         <td className="border-r border-slate-200 px-2 py-2 text-center font-bold">{row.WL_CODE || "—"}</td>
                         <td className="border-r border-slate-200 px-2 py-2 text-right font-semibold tabular-nums">{formatNumber(row.NET_BASE_QTY, 2, 8)}</td>
                         <td className="border-r border-slate-200 px-2 py-2 font-semibold">{row.BASE_UNIT_NAME || "—"}</td>
-                        <td className="border-r border-slate-200 px-2 py-2 text-right font-semibold tabular-nums">{formatNumber(row.UNIT_PRICE_INCL_VAT, 4)}</td>
-                        <td className="border-r border-slate-200 px-2 py-2 text-right font-bold tabular-nums">{formatNumber(row.NET_AMOUNT_INCL_VAT)}</td>
+                        <td className="border-r border-slate-200 px-2 py-2 text-right font-semibold tabular-nums">{formatNumber(row.UNIT_PRICE_EXCL_VAT, 4)}</td>
+                        <td className="border-r border-slate-200 px-2 py-2 text-right font-bold tabular-nums">{formatNumber(row.NET_AMOUNT_EXCL_VAT)}</td>
                         <td className="px-2 py-2 text-center"><CostStatus status={row.COST_STATUS} /></td>
                       </tr>
                     );
@@ -801,27 +801,27 @@ export default function RawMaterialReceiptsPageClient() {
                 </dd>
               </div>
               <div>
-                <dt className="text-slate-500">ราคา/หน่วยรวม VAT</dt>
+                <dt className="text-slate-500">{isProduction ? "ต้นทุนวัตถุดิบต่อหน่วย" : "ราคา/หน่วยไม่รวม VAT"}</dt>
                 <dd className="mt-1 text-lg font-bold tabular-nums">
-                  {formatNumber(selected.UNIT_PRICE_INCL_VAT, 4)} บาท/
+                  {formatNumber(selected.UNIT_PRICE_EXCL_VAT, 4)} บาท/
                   {selected.BASE_UNIT_NAME || "หน่วย"}
                 </dd>
               </div>
               <div>
-                <dt className="text-slate-500">มูลค่าสุทธิรวม VAT</dt>
+                <dt className="text-slate-500">{isProduction ? "มูลค่าวัตถุดิบเบิกจริง" : "มูลค่าสุทธิไม่รวม VAT"}</dt>
                 <dd className="mt-1 text-lg font-bold tabular-nums">
-                  {formatNumber(selected.NET_AMOUNT_INCL_VAT)} บาท
+                  {formatNumber(selected.NET_AMOUNT_EXCL_VAT)} บาท
                 </dd>
               </div>
             </dl>
 
-            {selected.UNIT_PRICE_INCL_VAT != null ? (
+            {selected.UNIT_PRICE_EXCL_VAT != null ? (
               <div className="mt-4 rounded bg-slate-100 p-3 text-xs leading-6">
-                <p>ราคา/หน่วยรวม VAT = มูลค่าสุทธิรวม VAT ÷ ปริมาณสุทธิ</p>
+                <p>{isProduction ? "ต้นทุนวัตถุดิบต่อหน่วย = มูลค่าวัตถุดิบเบิกจริง ÷ ปริมาณรับเข้าจริง (ยังไม่รวม DL/OH และ VAT)" : "ราคา/หน่วยไม่รวม VAT = มูลค่าสุทธิไม่รวม VAT ÷ ปริมาณสุทธิ"}</p>
                 <p className="font-bold tabular-nums">
-                  {formatNumber(selected.NET_AMOUNT_INCL_VAT)} ÷{" "}
+                  {formatNumber(selected.NET_AMOUNT_EXCL_VAT)} ÷{" "}
                   {formatNumber(selected.NET_BASE_QTY, 2, 8)} ={" "}
-                  {formatNumber(selected.UNIT_PRICE_INCL_VAT, 4)} บาท/
+                  {formatNumber(selected.UNIT_PRICE_EXCL_VAT, 4)} บาท/
                   {selected.BASE_UNIT_NAME || "หน่วย"}
                 </p>
               </div>

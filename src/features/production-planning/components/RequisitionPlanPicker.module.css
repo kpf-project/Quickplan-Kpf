@@ -1,0 +1,29 @@
+.backdrop { position: fixed; inset: 0; z-index: 420; display: flex; justify-content: flex-end; background: #0008; }
+.panel { display: flex; flex-direction: column; width: min(720px, 100%); height: 100dvh; background: white; color: #102c57; box-shadow: -8px 0 28px #0002; }
+.panel header { display: flex; align-items: center; justify-content: space-between; padding: 22px 24px 18px; }
+.panel h2 { font-size: 23px; font-weight: 700; margin: 0; }
+.panel button { cursor: pointer; }
+.panel :is(button,input,select):focus-visible { outline: 2px solid #0866d6; outline-offset: -2px; }
+.search { display: flex; align-items: center; gap: 10px; border: 1px solid #c6d5e6; border-radius: 3px; margin: 0 24px 20px; padding: 0 12px; }
+.search input { height: 42px; min-width: 0; width: 100%; background: white; font-size: 14px; color: #111; }
+.workspace { display: grid; grid-template-columns: 165px minmax(0,1fr); flex: 1; min-height: 0; }
+.months { overflow-y: auto; border-right: 1px solid #d6e1ee; }
+.months label { display: block; padding: 0 18px 14px; font-size: 13px; font-weight: 600; }
+.months select { display: block; width: 100%; height: 36px; margin-top: 5px; border: 1px solid #c6d5e6; border-radius: 3px; padding: 0 8px; background: white; }
+.months button { display: block; width: 100%; padding: 13px 18px; text-align: left; font-size: 14px; }
+.months button[aria-pressed=true] { background: #deecff; font-weight: 700; }
+.results { min-width: 0; overflow-y: auto; }
+.resultHeading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 20px 17px; border-bottom: 1px solid #d6e1ee; }
+.resultHeading h3 { font-size: 18px; font-weight: 700; margin: 0; }
+.resultHeading > span { font-size: 12px; white-space: nowrap; }
+.plan { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left; padding: 18px 20px; border-bottom: 1px solid #d6e1ee; }
+.plan > span:first-child { min-width: 0; }
+.plan strong { display: block; color: #0866d6; font-size: 16px; margin-bottom: 5px; }
+.plan > span:first-child > span { display: block; color: #111; font-size: 13px; }
+.plan[aria-current=true], .plan:hover { background: #eaf3ff; }
+.rowEnd { display: flex; align-items: center; gap: 6px; color: #0866d6; font-size: 12px; white-space: nowrap; }
+.panel footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 18px 24px; border-top: 1px solid #d6e1ee; font-size: 12px; }
+.panel footer > span:first-child { display: flex; align-items: center; gap: 8px; }
+.message { padding: 24px; font-size: 13px; }
+.message button { text-decoration: underline; color: #0866d6; }
+@media(max-width: 480px) { .workspace { grid-template-columns: 125px minmax(0,1fr); }.months button { padding: 12px; }.plan { padding: 15px 12px; }.rowEnd { flex-wrap: wrap; justify-content: flex-end; }.resultHeading { padding: 10px 12px; } }

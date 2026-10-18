@@ -200,7 +200,7 @@ function DeptMatrixTable({ dept, dates, poolRows, claimDeptId, onClaimDay, feedb
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       {/* Dept header */}
-      <div className="flex items-center justify-between bg-[#102C57] px-4 py-3">
+      <div className="flex items-center justify-between bg-[var(--surface-navy,#102C57)] px-4 py-3">
         <div className="flex items-center gap-2">
           <span className="text-sm font-bold text-white">{dept.deptName}</span>
           {dept.deptCode && (
@@ -288,7 +288,7 @@ function DeptMatrixTable({ dept, dates, poolRows, claimDeptId, onClaimDay, feedb
                                     ? "bg-slate-100 text-slate-400 cursor-wait"
                                     : !claimDeptId
                                     ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-                                    : "bg-[#102C57] text-white hover:bg-[#1a3d6b] active:scale-95"
+                                    : "bg-[var(--surface-navy,#102C57)] text-white hover:bg-[#1a3d6b] active:scale-95"
                                   }`}
                               >
                                 {isPending ? "กำลังเคลม..." : `เคลม ${unclaimedCount}`}

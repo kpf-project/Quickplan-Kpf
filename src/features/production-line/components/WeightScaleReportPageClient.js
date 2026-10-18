@@ -7,7 +7,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ClipboardCheck,
   Download,
   FileCheck,
   FileSearch,
@@ -21,17 +20,17 @@ import {
 } from "lucide-react";
 import { printWeightScaleLabelViaAgent } from "@/features/production-line/services/localPrintAgentClient";
 import {
-  exportScaleReceiptErpExcel,
   fetchScaleReceiptReport,
   logScaleReceiptReportPrint,
-  previewScaleReceiptErpExport,
 } from "@/features/production-line/services/scaleClient";
 import WeightScalePrimaryHeader from "@/features/production-line/components/WeightScalePrimaryHeader";
 import { useUserProfile } from "@/lib/useUserProfile";
+import { ReportHeader } from "@/components/print";
 import {
   buildWeightScaleReportPrintLog,
   printReportWithBestEffortAudit,
 } from "@/lib/weight-scale-report-print-log";
+import { upsertTab } from "@/lib/tabState";
 
 const LIMIT_OPTIONS = [20, 50, 100];
 
@@ -306,17 +305,6 @@ function downloadBlob(blob, filename) {
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-function buildErpReceiptExportFilters({ departmentId, filters }) {
-  return {
-    departmentId,
-    dateFrom: filters.dateFrom,
-    dateTo: filters.dateTo,
-    search: filters.search,
-    itemStatus: filters.itemStatus,
-    productCodes: filters.productCodes,
-  };
-}
-
 function formatFilenameDateRange(dateFrom, dateTo) {
   const normalizedFrom = String(dateFrom || "").trim();
   const normalizedTo = String(dateTo || "").trim();
@@ -498,9 +486,6 @@ export default function WeightScaleReportPageClient({
   const [errorMessage, setErrorMessage] = useState("");
   const [reprintReceiptId, setReprintReceiptId] = useState("");
   const [isExporting, setIsExporting] = useState(false);
-  const [isPreviewingErp, setIsPreviewingErp] = useState(false);
-  const [isExportingErp, setIsExportingErp] = useState(false);
-  const [erpPreview, setErpPreview] = useState(null);
   const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
   const [currentViewPage, setCurrentViewPage] = useState(0);
   const [isPending, startTransition] = useTransition();
@@ -897,6 +882,7 @@ export default function WeightScaleReportPageClient({
           }
           const newUrl = `${window.location.pathname}?${params.toString()}`;
           window.history.replaceState({ ...window.history.state, as: newUrl, url: newUrl }, "", newUrl);
+          upsertTab(newUrl);
         }
 
         // Fetch ALL items to handle client-side visual paging like Crystal Reports
@@ -933,7 +919,6 @@ export default function WeightScaleReportPageClient({
   };
 
   const handleFieldChange = (key, value, { resetPage = true } = {}) => {
-    setErpPreview(null);
     setFilters((current) => ({
       ...current,
       [key]: value,
@@ -942,7 +927,6 @@ export default function WeightScaleReportPageClient({
   };
 
   const handleRecordTypeChange = (newRecordType) => {
-    setErpPreview(null);
     const nextFilters = {
       ...filters,
       recordType: newRecordType,
@@ -958,7 +942,6 @@ export default function WeightScaleReportPageClient({
       return;
     }
 
-    setErpPreview(null);
     setFilters((current) => {
       const exists = current.productCodes.includes(normalizedCode);
       return {
@@ -972,7 +955,6 @@ export default function WeightScaleReportPageClient({
   };
 
   const clearProductSelection = () => {
-    setErpPreview(null);
     setFilters((current) => ({
       ...current,
       productCodes: [],
@@ -1049,48 +1031,6 @@ export default function WeightScaleReportPageClient({
       setErrorMessage(error?.message || "ส่งออกรายงานไม่สำเร็จ");
     } finally {
       setIsExporting(false);
-    }
-  };
-
-  const handlePreviewErpExport = async () => {
-    setIsPreviewingErp(true);
-    setFeedback("");
-    setErrorMessage("");
-
-    try {
-      const payload = await previewScaleReceiptErpExport(
-        buildErpReceiptExportFilters({ departmentId, filters })
-      );
-      setErpPreview(payload);
-      setFeedback(
-        `พรีวิว ERP พร้อมแล้ว: ${payload.documentCount} เอกสาร / ${payload.rowCount} รายการ`
-      );
-    } catch (error) {
-      setErpPreview(null);
-      setErrorMessage(error?.message || "พรีวิว Export ERP ไม่สำเร็จ");
-    } finally {
-      setIsPreviewingErp(false);
-    }
-  };
-
-  const handleExportErp = async () => {
-    setIsExportingErp(true);
-    setFeedback("");
-    setErrorMessage("");
-
-    try {
-      const payload = await exportScaleReceiptErpExcel(
-        buildErpReceiptExportFilters({ departmentId, filters })
-      );
-      downloadBlob(payload.blob, payload.fileName);
-      setErpPreview(null);
-      setFeedback(
-        `Export ERP เรียบร้อย: ${payload.documentCount} เอกสาร / ${payload.rowCount} รายการ`
-      );
-    } catch (error) {
-      setErrorMessage(error?.message || "Export ERP ไม่สำเร็จ");
-    } finally {
-      setIsExportingErp(false);
     }
   };
 
@@ -1336,7 +1276,7 @@ export default function WeightScaleReportPageClient({
                   type="button"
                   onClick={handleReloadReport}
                   disabled={isPending}
-                  className="inline-flex h-10 w-full items-center justify-center gap-2 border border-[#d4af37] bg-[#102C57] px-5 text-sm font-black uppercase tracking-[0.14em] text-[#fff7df] transition hover:bg-[#173b67] disabled:cursor-not-allowed disabled:opacity-60 xl:w-auto"
+                  className="inline-flex h-10 w-full items-center justify-center gap-2 border border-[#d4af37] bg-[var(--surface-navy,#102C57)] px-5 text-sm font-black uppercase tracking-[0.14em] text-[#fff7df] transition hover:bg-[#173b67] disabled:cursor-not-allowed disabled:opacity-60 xl:w-auto"
                 >
                   {isPending ? (
                     <RefreshCw size={16} className="animate-spin" />
@@ -1403,7 +1343,7 @@ export default function WeightScaleReportPageClient({
                 <button
                   type="button"
                   onClick={handlePrintReport}
-                  className="weight-scale-report-screen-only inline-flex h-10 items-center justify-center gap-2 border border-[#102C57] bg-[#102C57] px-4 text-[11px] font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#173b67]"
+                  className="weight-scale-report-screen-only inline-flex h-10 items-center justify-center gap-2 border border-[#102C57] bg-[var(--surface-navy,#102C57)] px-4 text-[11px] font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#173b67]"
                 >
                   <Printer size={14} />
                   พิมพ์รายงาน
@@ -1422,75 +1362,8 @@ export default function WeightScaleReportPageClient({
                   )}
                   ส่งออก Excel
                 </button>
-                {filters.recordType === "production" && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => void handlePreviewErpExport()}
-                      disabled={isPreviewingErp || isExportingErp || isPending}
-                      className="weight-scale-report-screen-only inline-flex h-10 items-center justify-center gap-2 border border-[#d4af37] bg-[#fff8df] px-4 text-[11px] font-black uppercase tracking-[0.14em] text-[#102C57] transition hover:bg-[#f1df9a] disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {isPreviewingErp ? (
-                        <RefreshCw size={14} className="animate-spin" />
-                      ) : (
-                        <ClipboardCheck size={14} />
-                      )}
-                      Preview ERP
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleExportErp()}
-                      disabled={!erpPreview || isPreviewingErp || isExportingErp || isPending}
-                      className="weight-scale-report-screen-only inline-flex h-10 items-center justify-center gap-2 border border-[#d4af37] bg-[#102C57] px-4 text-[11px] font-black uppercase tracking-[0.14em] text-[#fff7df] transition hover:bg-[#173b67] disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {isExportingErp ? (
-                        <RefreshCw size={14} className="animate-spin" />
-                      ) : (
-                        <Download size={14} />
-                      )}
-                      Export ERP
-                    </button>
-                  </>
-                )}
               </div>
             </div>
-
-            {erpPreview ? (
-              <div className="mt-4 border border-[#d4af37] bg-[#102C57] p-4 text-[#fff7df]">
-                <div className="flex flex-col gap-1 border-b border-[#d4af37]/40 pb-3 sm:flex-row sm:items-end sm:justify-between">
-                  <div>
-                    <p className="text-[11px] font-black uppercase tracking-[0.2em] text-[#d4af37]">
-                      ERP WIP Receipt Preview
-                    </p>
-                    <p className="mt-1 text-sm font-semibold text-white/85">
-                      ระบบยังไม่จองเลขจริงจนกว่าจะกด Export ERP
-                    </p>
-                  </div>
-                  <p className="text-sm font-black">
-                    {erpPreview.documentCount} เอกสาร / {erpPreview.rowCount} รายการ
-                  </p>
-                </div>
-
-                <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                  {(erpPreview.documents || []).map((document) => (
-                    <div
-                      key={`${document.documentDate}-${document.documentNo}`}
-                      className="border border-white/15 bg-white/[0.06] px-3 py-2"
-                    >
-                      <p className="text-[11px] font-semibold text-white/60">
-                        {document.documentDate}
-                      </p>
-                      <p className="mt-1 text-base font-black tracking-[0.08em] text-[#d4af37]">
-                        {document.documentNo}
-                      </p>
-                      <p className="mt-1 text-xs text-white/70">
-                        {document.rowCount} รายการ
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
 
             {feedback ? (
               <p className="mt-4 text-sm font-semibold text-emerald-700">{feedback}</p>
@@ -1545,7 +1418,7 @@ export default function WeightScaleReportPageClient({
         {/* Visual Paging Controls (Crystal Report Style) */}
         {reportPages.length > 1 && (
           <div className="weight-scale-report-screen-only fixed inset-x-0 bottom-2 z-50 flex justify-center pointer-events-none print:hidden">
-            <div className="flex items-center gap-3 bg-[#102C57]/95 text-white px-5 py-1.5 rounded-full shadow-lg backdrop-blur-sm">
+            <div className="flex items-center gap-3 bg-[var(--surface-navy,#102C57)]/95 text-white px-5 py-1.5 rounded-full shadow-lg backdrop-blur-sm">
               <button
                 type="button"
                 onClick={() => setCurrentViewPage(prev => Math.max(0, prev - 1))}
@@ -1584,52 +1457,22 @@ export default function WeightScaleReportPageClient({
                   pageIndex === currentViewPage ? 'block' : 'hidden'
                 }`}
               >
-                {/* Compact Corporate Header */}
-                <div className="bg-white px-6 py-3 border-b border-black">
-                   <div className="flex justify-between items-end mb-3">
-                      <div className="flex items-center gap-3">
-                        <Image
-                          src="/brand/LOGO-KPF1.png"
-                          alt="KPF"
-                          width={40}
-                          height={40}
-                          className="h-10 w-auto object-contain"
-                        />
-                        <div className="flex flex-col">
-                          <h1 className="text-[14px] font-black text-[#102C57] leading-none uppercase">บริษัท เคพีฟู้ดส์ จำกัด</h1>
-                          <p className="text-[9px] font-bold text-[#64748b] tracking-wider">K.P. foods Co.,Ltd.</p>
-                        </div>
-                      </div>
-
-                      <div className="text-center pb-1">
-                        <h2 className="text-[18px] font-black text-[#102C57] leading-none uppercase">
-                          {filters.recordType === "return" ? "รายงานชั่งคืนวัตถุดิบละเอียด" : "รายงานชั่งน้ำหนักละเอียด"}
-                        </h2>
-                        <p className="text-[9px] font-bold text-[#d4af37] uppercase tracking-[0.2em] mt-1">
-                          {filters.recordType === "return" ? "Detailed Return Report" : "Detailed Weight Report"}
-                        </p>
-                      </div>
-
-                      <div className="text-[10px] text-[#102C57] leading-tight text-right">
-                         <div><span className="font-bold">วันที่พิมพ์:</span> {printedAtLabel}</div>
-                         <div><span className="font-bold">ผู้ออกรายงาน:</span> {profile.username || "System"}</div>
-                      </div>
-                   </div>
-
-                   <div className="grid grid-cols-3 border-t border-black pt-2">
-                      <div className="flex gap-2 items-center">
-                        <span className="text-[11px] font-black text-[#64748b] uppercase whitespace-nowrap">แผนก:</span>
-                        <span className="text-[11px] font-bold text-[#102C57]">{departmentName || "-"}</span>
-                      </div>
-                      <div className="flex gap-2 items-center justify-center">
-                        <span className="text-[11px] font-black text-[#64748b] uppercase whitespace-nowrap">ช่วงวันที่:</span>
-                        <span className="text-[11px] font-bold text-[#102C57]">{reportPeriodLabel}</span>
-                      </div>
-                      <div className="flex gap-2 items-center justify-end">
-                        <span className="text-[11px] font-black text-[#64748b] uppercase whitespace-nowrap">ขอบเขต:</span>
-                        <span className="text-[11px] font-bold text-[#102C57] truncate">{selectedProductCountLabel}</span>
-                      </div>
-                   </div>
+                {/* Corporate Report Header */}
+                <div className="bg-white px-6 py-2 border-b border-black">
+                  <ReportHeader
+                    title={filters.recordType === "return" ? "รายงานชั่งคืนวัตถุดิบละเอียด" : "รายงานชั่งน้ำหนักละเอียด"}
+                    subtitle={filters.recordType === "return" ? "Detailed Return Report" : "Detailed Weight Report"}
+                    meta={[
+                      { label: "แผนก", value: departmentName || "-" },
+                      { label: "ช่วงวันที่", value: reportPeriodLabel },
+                      { label: "ขอบเขต", value: selectedProductCountLabel },
+                    ]}
+                    printedAt={printedAtLabel}
+                    printedBy={profile.username || "System"}
+                    page={pageIndex + 1}
+                    totalPages={reportPages.length}
+                    variant="block"
+                  />
                 </div>
 
                 <div className="weight-scale-report-print-body detailed-report-print-body bg-white px-4 py-2 min-h-[240mm]">
@@ -1644,8 +1487,8 @@ export default function WeightScaleReportPageClient({
                         <col style={{ width: "8%" }} />
                         <col style={{ width: "15%" }} />
                       </colgroup>
-                      <thead className="bg-[#f8f5ee]">
-                        <tr className="border-b border-black text-[12.5px] font-black uppercase tracking-normal text-[#111111]">
+                      <thead className="bg-[#f8f9fa]">
+                        <tr className="border-b-2 border-[#1a1c1e] text-[12.5px] font-black uppercase tracking-normal text-[#1a1c1e]">
                           <th className="px-3 py-0.5 text-center">ลำดับ</th>
                           <th className="px-3 py-0.5 text-center">บาร์โค้ด</th>
                           <th className="px-3 py-0.5 text-left">สินค้า</th>
@@ -1659,7 +1502,7 @@ export default function WeightScaleReportPageClient({
                         {pageRows.map((vRow, vIndex) => {
                           if (vRow.type === 'date-header') {
                             return (
-                              <tr key={vIndex} className="bg-[#102C57] text-white">
+                              <tr key={vIndex} className="bg-[var(--surface-navy,#102C57)] text-white">
                                 <td colSpan={7} className="px-3 py-1">
                                   <div className="flex items-center gap-3">
                                     <span className="text-[10px] font-black uppercase tracking-[0.1em] text-[#f3d67a]">วันที่รายงาน:</span>
@@ -1768,7 +1611,7 @@ export default function WeightScaleReportPageClient({
           }
           .daily-weight-detail-print-table th,
           .daily-weight-detail-print-table td {
-            border: 0.5px solid #cbd5e1 !important;
+            border: 0.5pt solid #cbd5e1 !important;
             padding: 4px 5px !important;
             vertical-align: middle !important;
             white-space: nowrap !important;
@@ -1789,23 +1632,26 @@ export default function WeightScaleReportPageClient({
             color: #102C57 !important;
           }
           .daily-weight-detail-print-table .table-header th {
-            background: #f8f5ee !important;
-            color: #111111 !important;
+            background: #f8f9fa !important;
+            color: #1a1c1e !important;
             font-weight: 900 !important;
             text-align: center !important;
             font-size: 11.5px !important;
-            border: 0.5px solid #cbd5e1 !important;
+            border: 0.5pt solid #cbd5e1 !important;
+            border-bottom: 2px solid #1a1c1e !important;
           }
           .daily-weight-detail-print-table .date-header-row td {
-            background: #102C57 !important;
+            background: var(--surface-navy, #102C57) !important;
             color: #ffffff !important;
             font-weight: 900 !important;
             padding: 4px 6px !important;
-            border: 0.5px solid #102C57 !important;
+            border: 0.5pt solid #102C57 !important;
             break-after: avoid !important;
             page-break-after: avoid !important;
           }
-          .daily-weight-detail-print-table thead,
+          .daily-weight-detail-print-table thead {
+            display: table-header-group !important;
+          }
           .daily-weight-detail-print-table thead tr,
           .daily-weight-detail-print-table .date-header-row,
           .daily-weight-detail-print-table .subtotal-row,
@@ -1814,8 +1660,8 @@ export default function WeightScaleReportPageClient({
             page-break-inside: avoid !important;
           }
           .daily-weight-detail-print-table tbody tr.item-row {
-            break-inside: auto !important;
-            page-break-inside: auto !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
           }
           .daily-weight-detail-print-table tbody tr.item-row:nth-child(even) {
             background-color: #f8fafc !important;
@@ -1824,13 +1670,13 @@ export default function WeightScaleReportPageClient({
             background-color: #fbfcfd !important;
             color: #111111 !important;
             font-weight: 900 !important;
-            border: 0.5px solid #cbd5e1 !important;
+            border: 0.5pt solid #cbd5e1 !important;
           }
           .daily-weight-detail-print-table .grand-total-row td {
-            background-color: #102C57 !important;
+            background-color: var(--surface-navy, #102C57) !important;
             color: #ffffff !important;
             font-weight: 900 !important;
-            border: 0.5px solid #102C57 !important;
+            border: 0.5pt solid #102C57 !important;
           }
           .daily-weight-detail-print-table .table-header th:nth-child(1),
           .daily-weight-detail-print-table .table-header th:nth-child(2),
@@ -1873,42 +1719,19 @@ export default function WeightScaleReportPageClient({
               <col style={{ width: "15%" }} />
             </colgroup>
             <thead>
-              <tr className="print-report-header">
-                <th colSpan={7}>
-                  <div className="flex items-end justify-between">
-                    <div className="flex items-center gap-3 text-left">
-                      <Image
-                        src="/brand/LOGO-KPF1.png"
-                        alt="KPF"
-                        width={40}
-                        height={40}
-                        className="h-10 w-auto object-contain"
-                      />
-                      <div>
-                        <div className="text-[13px] font-black text-[#102C57]">บริษัท เคพีฟู้ดส์ จำกัด</div>
-                        <div className="text-[9px] font-bold text-[#64748b]">K.P. foods Co.,Ltd.</div>
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-[17px] font-black text-[#102C57]">
-                        {filters.recordType === "return" ? "รายงานชั่งคืนวัตถุดิบละเอียด" : "รายงานชั่งน้ำหนักละเอียด"}
-                      </div>
-                      <div className="mt-1 text-[8px] font-black uppercase tracking-[0.22em] text-[#d4af37]">
-                        {filters.recordType === "return" ? "Detailed Return Report" : "Detailed Weight Report"}
-                      </div>
-                    </div>
-                    <div className="text-right text-[9px] leading-tight text-[#102C57]">
-                      <div><span className="font-black text-[#64748b]">วันที่พิมพ์:</span> {printedAtLabel}</div>
-                      <div><span className="font-black text-[#64748b]">ผู้ออกรายงาน:</span> {profile.username || "System"}</div>
-                    </div>
-                  </div>
-                </th>
-              </tr>
-              <tr className="print-report-meta">
-                <th colSpan={3} className="text-left">แผนก: <span className="font-black">{departmentName || "-"}</span></th>
-                <th colSpan={2} className="text-center">ช่วงวันที่: <span className="font-black">{reportPeriodLabel}</span></th>
-                <th colSpan={2} className="text-right">ขอบเขต: <span className="font-black">{selectedProductCountLabel}</span></th>
-              </tr>
+              <ReportHeader
+                title={filters.recordType === "return" ? "รายงานชั่งคืนวัตถุดิบละเอียด" : "รายงานชั่งน้ำหนักละเอียด"}
+                subtitle={filters.recordType === "return" ? "Detailed Return Report" : "Detailed Weight Report"}
+                meta={[
+                  { label: "แผนก", value: departmentName || "-" },
+                  { label: "ช่วงวันที่", value: reportPeriodLabel },
+                  { label: "ขอบเขต", value: selectedProductCountLabel },
+                ]}
+                printedAt={printedAtLabel}
+                printedBy={profile.username || "System"}
+                variant="table-rows"
+                colSpan={7}
+              />
               <tr className="table-header">
                 <th>ลำดับ</th>
                 <th>บาร์โค้ด</th>

@@ -84,26 +84,9 @@ export default function CreateUserForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Editorial Form Info */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 pb-4 border-b border-slate-100 select-none">
-        <div>
-          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#d4af37]">
-            Account Setup
-          </span>
-          <h2 className="text-[16px] font-black text-[#102C57] mt-0.5">
-            ข้อมูลสำหรับเข้าสู่ระบบ
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            กำหนดชื่อผู้ใช้และรหัสผ่านสำหรับการใช้งาน
-          </p>
-        </div>
-        <div className="border border-[#102C57]/20 bg-[#fdf7e6] px-3 py-1.5 text-[10px] font-bold text-[#102C57] tracking-wider uppercase rounded-[2px]">
-          ADMIN ONLY ACTION
-        </div>
-      </div>
-
-      {/* Sleek Grid Fields */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 py-4">
+      <div className="settings-create-grid">
+        <section className="settings-create-section">
+          <h2>ข้อมูลเข้าสู่ระบบ</h2><p>กำหนดชื่อผู้ใช้และรหัสผ่านสำหรับการใช้งาน</p>
         {/* Username */}
         <div className="space-y-1.5">
           <label className="text-[11px] font-black uppercase tracking-wider text-slate-600">
@@ -149,6 +132,9 @@ export default function CreateUserForm({
           <p className="text-[10px] text-slate-400 italic">ควรมีตัวเลขและอักขระพิเศษเพื่อความปลอดภัย</p>
         </div>
 
+        </section>
+        <section className="settings-create-section">
+          <h2>บทบาทและแผนก</h2><p>กำหนดบทบาทและแผนกของผู้ใช้งาน</p>
         {/* Role Select */}
         <div className="space-y-1.5">
           <label className="text-[11px] font-black uppercase tracking-wider text-slate-600">
@@ -200,10 +186,20 @@ export default function CreateUserForm({
             </select>
           </div>
         </div>
+        </section>
+        <section className="settings-create-section">
+          <h2>ตรวจสอบข้อมูล</h2><p>กรุณาตรวจสอบข้อมูลก่อนสร้างผู้ใช้</p>
+          <dl className="settings-create-summary">
+            <dt>ชื่อผู้ใช้งาน</dt><dd>{username.trim() || "—"}</dd>
+            <dt>บทบาท</dt><dd>{roles.find((role) => role.id === roleId)?.name || "—"}</dd>
+            <dt>แผนก</dt><dd>{departments.find((department) => department.id === departmentId)?.name || "—"}</dd>
+          </dl>
+        </section>
       </div>
 
       {/* Add Department Inline Section */}
-      <div className="border border-slate-200 bg-slate-50/50 p-4 rounded-[2px]">
+      <details className="border border-slate-200 bg-slate-50/50 p-4 rounded-[2px]">
+        <summary className="cursor-pointer text-sm font-semibold">เพิ่มแผนก (ถ้ามี)</summary>
         <label className="block text-[11px] font-black uppercase tracking-wider text-slate-600">
           หากไม่พบแผนก สามารถเพิ่มแผนกใหม่ได้ที่นี่
         </label>
@@ -219,13 +215,13 @@ export default function CreateUserForm({
             type="button"
             onClick={handleAddDepartment}
             disabled={isLoading || isAddingDepartment}
-            className="h-9 px-4 bg-[#102C57] text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition hover:bg-[#d4af37] hover:text-[#102C57] rounded-[2px] border border-[#102C57] hover:border-[#d4af37]"
+            className="h-9 px-4 bg-[var(--surface-navy,#102C57)] text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition hover:bg-[#d4af37] hover:text-[#102C57] rounded-[2px] border border-[#102C57] hover:border-[#d4af37]"
           >
             <Plus size={12} />
             {isAddingDepartment ? "กำลังบันทึก" : "เพิ่มแผนก"}
           </button>
         </div>
-      </div>
+      </details>
 
       {/* Form Submission Footer */}
       <div className="border-t border-[#e2e8f0] pt-6 mt-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -242,7 +238,7 @@ export default function CreateUserForm({
         <button
           type="submit"
           disabled={isLoading || isSubmitting}
-          className="w-full sm:w-auto h-11 px-8 bg-[#d4af37] hover:bg-[#102C57] text-[#102C57] hover:text-white text-xs font-black uppercase tracking-widest transition-all duration-150 rounded-[2px] border border-[#d4af37] hover:border-[#102C57] shrink-0"
+          className="w-full sm:w-auto h-11 px-8 bg-[#d4af37] hover:bg-[var(--surface-navy,#102C57)] text-[#102C57] hover:text-white text-xs font-black uppercase tracking-widest transition-all duration-150 rounded-[2px] border border-[#d4af37] hover:border-[#102C57] shrink-0"
         >
           {isSubmitting ? "กำลังบันทึก" : "สร้างผู้ใช้งาน"}
         </button>

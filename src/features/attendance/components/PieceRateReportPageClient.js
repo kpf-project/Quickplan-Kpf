@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { ReportHeader, ReportFilterBar } from "@/components/print";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { memo, startTransition, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -243,7 +244,7 @@ function ModeButton({ active, children, onClick }) {
       type="button"
       onClick={onClick}
       className={`h-8 rounded-md px-3 text-[11px] font-bold transition ${active
-        ? "bg-[#102C57] text-white"
+        ? "bg-[var(--surface-navy,#102C57)] text-white"
         : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
         }`}
     >
@@ -1942,9 +1943,10 @@ export default function PieceRateReportPageClient({ initialViewMode = DEFAULT_VI
     thead { display: table-header-group; }
     tfoot { display: table-footer-group; }
     thead th {
-      background: #102C57 !important;
-      color: #fff !important;
+      background: #f8f9fa !important;
+      color: #1a1c1e !important;
       border: 1px solid #000;
+      border-bottom: 2px solid #1a1c1e !important;
       font-weight: 700;
       font-size: 10.5px;
       text-transform: none;
@@ -2286,9 +2288,10 @@ export default function PieceRateReportPageClient({ initialViewMode = DEFAULT_VI
     thead { display: table-header-group; }
     tfoot { display: table-footer-group; }
     thead th {
-      background: #102C57 !important;
-      color: #fff !important;
+      background: #f8f9fa !important;
+      color: #1a1c1e !important;
       border: 1px solid #000;
+      border-bottom: 2px solid #1a1c1e !important;
       font-weight: 700;
       font-size: 10.5px;
       text-transform: none;
@@ -2528,99 +2531,59 @@ export default function PieceRateReportPageClient({ initialViewMode = DEFAULT_VI
       <div className="relative flex min-h-screen flex-col px-4 py-6 md:px-6">
         <section className="piece-rate-print-sheet w-full rounded-lg border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-4 py-4">
-            <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.72fr)_minmax(0,0.72fr)_auto]">
-              <div className="relative">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  value={searchInput}
-                  onChange={(event) => setSearchInput(event.target.value)}
-                  onKeyDown={(event) => event.key === "Enter" && runSearch()}
-                  placeholder="ค้นหาเอกสาร / พนักงาน / สินค้า / แบรนด์"
-                  className="h-9 w-full rounded-md border border-slate-200 pl-9 pr-3 text-sm"
-                />
-              </div>
-              <div className="relative">
-                <CalendarDays size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="date"
-                  value={dateFromInput}
-                  onChange={(event) => setDateFromInput(event.target.value)}
-                  className="h-9 w-full rounded-md border border-slate-200 pl-9 pr-3 text-sm"
-                />
-              </div>
-              <div className="relative">
-                <CalendarDays size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="date"
-                  value={dateToInput}
-                  onChange={(event) => setDateToInput(event.target.value)}
-                  className="h-9 w-full rounded-md border border-slate-200 pl-9 pr-3 text-sm"
-                />
-              </div>
-              <div className="flex flex-wrap gap-2 xl:justify-end">
-                <button
-                  type="button"
-                  onClick={runSearch}
-                  className="h-9 rounded-md bg-[#102C57] px-4 text-xs font-bold text-white"
-                >
-                  ค้นหา
-                </button>
-                <button
-                  type="button"
-                  onClick={runReset}
-                  className="h-9 rounded-md border border-slate-200 px-4 text-xs font-bold text-slate-700"
-                >
-                  ล้างค่า
-                </button>
-                <Link
-                  href="/production-line/attendance/piece-rate-scan"
-                  className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  <ChevronLeft size={14} />
-                  หน้าสแกน
-                </Link>
-                {capabilities.canEdit && username === "apexechelon" && (
-                  <button
-                    type="button"
-                    onClick={openManualModal}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-md bg-[#102C57] px-3 text-xs font-semibold text-white hover:bg-[#102C57]/90 transition"
+            <ReportFilterBar
+              dateMode="range"
+              dateFrom={dateFromInput}
+              dateTo={dateToInput}
+              onDateFromChange={setDateFromInput}
+              onDateToChange={setDateToInput}
+              searchQuery={searchInput}
+              onSearchQueryChange={setSearchInput}
+              searchPlaceholder="ค้นหาเอกสาร / พนักงาน / สินค้า / แบรนด์"
+              searchLabel="ค้นหาเอกสาร / พนักงาน / สินค้า"
+              isLoading={isLoading}
+              onSearch={runSearch}
+              onReset={runReset}
+              onPrint={handlePrintTable}
+              printButtonLabel={viewMode === "product" ? "พิมพ์ A4 แนวตั้ง" : "พิมพ์ A4 แนวนอน"}
+              printButtonTitle={viewMode === "product" ? "พิมพ์รายงาน A4 แนวตั้ง" : "พิมพ์รายงาน A4 แนวนอน"}
+              isPrinting={printingReport}
+              onExportExcel={handleExportExcel}
+              excelButtonLabel={exportingExcel ? "กำลังส่งออก..." : "Excel"}
+              isExporting={exportingExcel}
+              actions={
+                <div className="flex flex-wrap items-center gap-2">
+                  <Link
+                    href="/production-line/attendance/piece-rate-scan"
+                    className="inline-flex h-10 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
                   >
-                    <Plus size={14} />
-                    บันทึกแมนวลย้อนหลัง
-                  </button>
-                )}
-                {capabilities.canEdit && username === "apexechelon" && (
-                  <button
-                    type="button"
-                    onClick={() => setImportModalOpen(true)}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition"
-                  >
-                    <Download size={14} className="rotate-180" />
-                    นำเข้า Excel
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={handlePrintTable}
-                  disabled={printingReport}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-[#102C57] text-[#102C57] hover:bg-[#102C57] hover:text-white disabled:cursor-wait disabled:opacity-60"
-                  title={viewMode === "product" ? "พิมพ์รายงาน A4 แนวตั้ง" : "พิมพ์รายงาน A4 แนวนอน"}
-                  aria-label={viewMode === "product" ? "พิมพ์รายงาน A4 แนวตั้ง" : "พิมพ์รายงาน A4 แนวนอน"}
-                >
-                  <Printer size={14} />
-                </button>
-                <button
-                  type="button"
-                  onClick={handleExportExcel}
-                  disabled={exportingExcel}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-md border border-emerald-200 px-3 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
-                >
-                  <Download size={14} />
-                  {exportingExcel ? "กำลังส่งออก..." : "Excel"}
-                </button>
-              </div>
-            </div>
+                    <ChevronLeft size={14} />
+                    หน้าสแกน
+                  </Link>
+                  {capabilities.canEdit && username === "apexechelon" && (
+                    <button
+                      type="button"
+                      onClick={openManualModal}
+                      className="inline-flex h-10 items-center gap-1.5 rounded-md bg-[var(--surface-navy,#102C57)] px-3 text-xs font-semibold text-white hover:bg-[var(--surface-navy,#102C57)]/90 transition"
+                    >
+                      <Plus size={14} />
+                      บันทึกแมนวล
+                    </button>
+                  )}
+                  {capabilities.canEdit && username === "apexechelon" && (
+                    <button
+                      type="button"
+                      onClick={() => setImportModalOpen(true)}
+                      className="inline-flex h-10 items-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition"
+                    >
+                      <Download size={14} className="rotate-180" />
+                      นำเข้า Excel
+                    </button>
+                  )}
+                </div>
+              }
+              className="mb-0 border-0 bg-transparent p-0 shadow-none"
+            />
 
             <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap gap-2">
@@ -2848,28 +2811,16 @@ export default function PieceRateReportPageClient({ initialViewMode = DEFAULT_VI
             {viewMode === "product" ? (
               <div className="mt-4 overflow-x-auto pb-4">
                 <div className="mx-auto w-full max-w-[210mm] border border-slate-300 bg-white shadow-[0_18px_45px_rgba(2,6,23,0.08)]">
-                  <div className="mb-3 flex items-start justify-between gap-4 border-b border-dashed border-slate-300 px-5 pb-3 pt-3">
-                    <div className="flex items-start gap-3">
-                      <div className="mt-0.5 flex h-14 w-14 items-center justify-center">
-                        <Image
-                          src="/brand/LOGO-KPF1.png"
-                          alt="KPF Logo"
-                          width={56}
-                          height={56}
-                          className="h-14 w-14 object-contain"
-                        />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-semibold text-slate-900">รายงานสรุปผลิตภัณฑ์</h3>
-                        <p className="mt-1 text-[11px] text-slate-500">
-                          ช่วงวันที่ {formatDateToDDMMYYYY(filters.dateFrom)} ถึง {formatDateToDDMMYYYY(filters.dateTo)}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="space-y-1 text-right">
-                      <p className="text-[11px] text-slate-500">พิมพ์เมื่อ {new Date().toLocaleDateString("en-GB")}</p>
-                      <p className="text-[11px] font-semibold text-slate-600">หน้า 1</p>
-                    </div>
+                  <div className="p-4 border-b border-slate-200">
+                    <ReportHeader
+                      title="รายงานสรุปผลิตภัณฑ์"
+                      subtitle="PRODUCT SUMMARY REPORT"
+                      printedAt={new Date().toLocaleDateString("en-GB")}
+                      page={1}
+                      meta={[
+                        { label: "ช่วงวันที่", value: `${formatDateToDDMMYYYY(filters.dateFrom)} ถึง ${formatDateToDDMMYYYY(filters.dateTo)}` },
+                      ]}
+                    />
                   </div>
                   <div ref={tableWrapRef} className="overflow-hidden border border-slate-300 bg-white">
                     <table className="w-full table-fixed text-[12px] text-slate-900 text-center">
@@ -2882,7 +2833,7 @@ export default function PieceRateReportPageClient({ initialViewMode = DEFAULT_VI
                         <col className="w-[11%]" />
                         <col className="w-[13%]" />
                       </colgroup>
-                      <thead className="bg-[#102C57] text-[11px] uppercase tracking-[0.14em] text-white">
+                      <thead className="bg-[var(--surface-navy,#102C57)] text-[11px] uppercase tracking-[0.14em] text-white">
                         <tr>
                           <th className="border-r border-[#0f1c36] px-2.5 py-2 text-center leading-tight whitespace-nowrap">ลำดับ</th>
                           <th className="border-r border-[#0f1c36] px-2.5 py-2 text-center leading-tight whitespace-nowrap">วันที่</th>
@@ -2957,31 +2908,16 @@ export default function PieceRateReportPageClient({ initialViewMode = DEFAULT_VI
             ) : viewMode === "employee" ? (
               <div className="mt-4 overflow-x-auto pb-4">
                 <div className="mx-auto w-full max-w-[297mm] border border-slate-300 bg-white shadow-[0_18px_45px_rgba(2,6,23,0.08)]">
-                  <div className="mb-3 flex items-start justify-between gap-4 border-b border-dashed border-slate-300 px-5 pb-3 pt-3">
-                    <div className="flex items-start gap-3">
-                      <div className="mt-0.5 flex h-14 w-14 items-center justify-center">
-                        <Image
-                          src="/brand/LOGO-KPF1.png"
-                          alt="KPF Logo"
-                          width={56}
-                          height={56}
-                          className="h-14 w-14 object-contain"
-                        />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-semibold text-slate-900">{"\u0e23\u0e32\u0e22\u0e07\u0e32\u0e19\u0e2a\u0e23\u0e38\u0e1b\u0e04\u0e48\u0e32\u0e41\u0e23\u0e07"}</h3>
-                        <p className="mt-1 text-[11px] text-slate-500">
-                          {`\u0e0a\u0e48\u0e27\u0e07\u0e27\u0e31\u0e19\u0e17\u0e35\u0e48 ${formatDateToDDMMYYYY(filters.dateFrom)} \u0e16\u0e36\u0e07 ${formatDateToDDMMYYYY(filters.dateTo)}`}
-                        </p>
-                        <p className="mt-1 text-[11px] text-slate-500">
-                          {`\u0e1b\u0e23\u0e30\u0e40\u0e20\u0e17\u0e07\u0e32\u0e19: ${employeeWorkTypeLabel}`}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="space-y-1 text-right">
-                      <p className="text-[11px] text-slate-500">{`\u0e1e\u0e34\u0e21\u0e1e\u0e4c\u0e40\u0e21\u0e37\u0e48\u0e2d ${new Date().toLocaleDateString("en-GB")}`}</p>
-                      <p className="text-[11px] font-semibold text-slate-600">{"A4 \u0e41\u0e19\u0e27\u0e19\u0e2d\u0e19"}</p>
-                    </div>
+                  <div className="p-4 border-b border-slate-200">
+                    <ReportHeader
+                      title="รายงานสรุปค่าแรง"
+                      subtitle="PIECE RATE WAGES SUMMARY REPORT"
+                      printedAt={new Date().toLocaleDateString("en-GB")}
+                      meta={[
+                        { label: "ช่วงวันที่", value: `${formatDateToDDMMYYYY(filters.dateFrom)} ถึง ${formatDateToDDMMYYYY(filters.dateTo)}` },
+                        { label: "ประเภทงาน", value: employeeWorkTypeLabel },
+                      ]}
+                    />
                   </div>
                     <div ref={tableWrapRef} className="overflow-x-auto border border-slate-300 bg-white">
                       <table className="w-full text-[12px] text-slate-900">
@@ -2997,7 +2933,7 @@ export default function PieceRateReportPageClient({ initialViewMode = DEFAULT_VI
                           {capabilities.canViewMoney ? <col className="w-[8%]" /> : null}
                           <col className="print-piece-rate-hide-col w-[6%]" />
                         </colgroup>
-                      <thead className="bg-[#102C57] text-[11px] uppercase tracking-[0.14em] text-white">
+                      <thead className="bg-[var(--surface-navy,#102C57)] text-[11px] uppercase tracking-[0.14em] text-white">
                         <tr>
                           <th className="border-r border-[#0f1c36] px-3 py-2 text-center leading-tight">รหัส</th>
                           <th className="border-r border-[#0f1c36] px-3 py-2 text-center leading-tight">ชื่อพนักงาน</th>
@@ -3127,7 +3063,7 @@ export default function PieceRateReportPageClient({ initialViewMode = DEFAULT_VI
                     {capabilities.canViewMoney ? <col className="w-[8%]" /> : null}
                     {detailCanEdit ? <col className="piece-rate-action-col w-[6%]" /> : null}
                   </colgroup>
-                  <thead className="bg-[#102C57] text-[12px] uppercase tracking-wide text-white">
+                  <thead className="bg-[var(--surface-navy,#102C57)] text-[12px] uppercase tracking-wide text-white">
                     <tr>
                       <th className="border-r border-[#0f1c36] px-2 py-2 text-center leading-tight">
                         {viewMode === "grouped" ? "วันที่" : "เวลาชั่งจริง / ผู้บันทึก"}
@@ -3373,7 +3309,7 @@ export default function PieceRateReportPageClient({ initialViewMode = DEFAULT_VI
             </div>
 
             <div className="space-y-4 px-5 py-4">
-              <div className="rounded-2xl border border-[#C9A227] bg-[#102C57] px-4 py-4 text-white">
+              <div className="rounded-2xl border border-[#C9A227] bg-[var(--surface-navy,#102C57)] px-4 py-4 text-white">
                 <label className="flex flex-col gap-2 text-sm">
                   <span className="font-semibold tracking-[0.08em] text-[#F3D27A]">สินค้า</span>
                   <select
@@ -3484,7 +3420,7 @@ export default function PieceRateReportPageClient({ initialViewMode = DEFAULT_VI
                 type="button"
                 onClick={handleSaveEdit}
                 disabled={savingEdit}
-                className="rounded-xl bg-[#102C57] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                className="rounded-xl bg-[var(--surface-navy,#102C57)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
               >
                 {savingEdit ? "กำลังดำเนินการ..." : "ยืนยันออกเอกสารใหม่"}
               </button>
@@ -3572,7 +3508,7 @@ export default function PieceRateReportPageClient({ initialViewMode = DEFAULT_VI
                     type="button"
                     onClick={handleManualEmployeeLookup}
                     disabled={employeeLookupLoading}
-                    className="h-10 rounded-xl bg-[#102C57] text-white hover:bg-[#102C57]/90 text-xs font-semibold px-4 transition disabled:opacity-60"
+                    className="h-10 rounded-xl bg-[var(--surface-navy,#102C57)] text-white hover:bg-[var(--surface-navy,#102C57)]/90 text-xs font-semibold px-4 transition disabled:opacity-60"
                   >
                     {employeeLookupLoading ? "กำลังตรวจสอบ..." : "ตรวจสอบ"}
                   </button>
@@ -3605,7 +3541,7 @@ export default function PieceRateReportPageClient({ initialViewMode = DEFAULT_VI
               </div>
 
               {/* Product Selection */}
-              <div className="rounded-xl border border-[#C9A227] bg-[#102C57] px-4 py-4 text-white space-y-3">
+              <div className="rounded-xl border border-[#C9A227] bg-[var(--surface-navy,#102C57)] px-4 py-4 text-white space-y-3">
                 <label className="flex flex-col gap-2 text-sm">
                   <span className="font-semibold tracking-[0.08em] text-[#F3D27A]">ค้นหา/เลือกสินค้า</span>
                   <select
@@ -3729,7 +3665,7 @@ export default function PieceRateReportPageClient({ initialViewMode = DEFAULT_VI
                 type="button"
                 onClick={handleSaveManual}
                 disabled={savingManual}
-                className="h-10 rounded-xl bg-[#102C57] px-5 text-xs font-bold text-white hover:bg-[#102C57]/90 disabled:opacity-60 transition"
+                className="h-10 rounded-xl bg-[var(--surface-navy,#102C57)] px-5 text-xs font-bold text-white hover:bg-[var(--surface-navy,#102C57)]/90 disabled:opacity-60 transition"
               >
                 {savingManual ? "กำลังบันทึก..." : "บันทึกข้อมูล"}
               </button>

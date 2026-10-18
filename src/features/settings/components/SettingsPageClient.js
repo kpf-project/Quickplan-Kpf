@@ -2,7 +2,8 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, Menu, Settings, UserPlus, X } from "lucide-react";
+import { AlertCircle, UserPlus } from "lucide-react";
+import "@/components/settings/settings.css";
 import PermissionGate from "@/components/PermissionGate";
 import { adminFetch } from "@/lib/adminClient";
 import { buildPermissionGroups } from "@/lib/permissionGroups";
@@ -96,12 +97,20 @@ function SettingsPageContent() {
   const permissionState = usePermissions();
   const [activeTab, setActiveTab] = useState("users");
   const [activeSubTab, setActiveSubTab] = useState("users-create");
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [roles, setRoles] = useState([]);
   const [permissions, setPermissions] = useState([]);
+  const [taskPermissionsEnabled, setTaskPermissionsEnabled] = useState(false);
   const [departments, setDepartments] = useState(DEFAULT_DEPARTMENTS);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [permissionDraft, setPermissionDraft] = useState({ dirty: false, busy: false });
+
+  function switchSection(tabId, itemId) {
+    if (activeSubTab === itemId || permissionDraft.busy) return;
+    if (permissionDraft.dirty && !window.confirm("มีสิทธิ์ที่ยังไม่บันทึก ต้องการละทิ้งการเปลี่ยนแปลงหรือไม่?")) return;
+    setActiveTab(tabId);
+    setActiveSubTab(itemId);
+  }
 
   useEffect(() => {
     let isActive = true;
@@ -117,6 +126,7 @@ function SettingsPageContent() {
         if (!isActive) return;
         setRoles(rolesResponse.roles ?? []);
         setPermissions(permissionsResponse.permissions ?? []);
+        setTaskPermissionsEnabled(permissionsResponse.task_permissions_enabled === true);
         const activeDepartments = (departmentsResponse.departments ?? []).filter(
           (dept) => dept.is_active !== false
         );
@@ -198,6 +208,7 @@ function SettingsPageContent() {
         body: JSON.stringify({
           name: trimmedName,
           permission_ids: role.permissions,
+          expected_permission_ids: role.expectedPermissions,
         }),
       });
     } else {
@@ -249,265 +260,23 @@ function SettingsPageContent() {
   );
 
   return (
-    <div className="settings-main-container flex h-screen w-screen overflow-hidden bg-[#ffffff] text-[#1e293b] font-sans">
-      <style dangerouslySetInnerHTML={{ __html: `
-        /* Premium custom CSS overrides for settings forms and panels */
-        .settings-main-container {
-          --color-navy: #102C57;
-          --color-dark-navy: #0A1931;
-          --color-gold: #d4af37;
-          --color-gold-light: #fdf7e6;
-          --color-border: #e2e8f0;
-          --color-text-main: #181818;
-          --color-text-muted: #666666;
-        }
-
-        .settings-main-container,
-        .settings-main-container input,
-        .settings-main-container select,
-        .settings-main-container textarea,
-        .settings-main-container button {
-          font-family: var(--font-sans), system-ui, sans-serif !important;
-        }
-
-        /* Override border radius of all components inside settings page */
-        .settings-main-container .rounded-2xl,
-        .settings-main-container .rounded-xl,
-        .settings-main-container .rounded-lg,
-        .settings-main-container .rounded-md,
-        .settings-main-container input,
-        .settings-main-container select,
-        .settings-main-container textarea,
-        .settings-main-container button {
-          border-radius: 2px !important;
-        }
-
-        /* Remove heavy box shadows for flat architectural look */
-        .settings-main-container .shadow-sm,
-        .settings-main-container .shadow-md,
-        .settings-main-container .shadow-lg,
-        .settings-main-container .shadow-xl {
-          box-shadow: none !important;
-          border: 1px solid var(--color-border) !important;
-        }
-
-        /* Custom Input styling */
-        .settings-main-container input,
-        .settings-main-container select,
-        .settings-main-container textarea {
-          border: 1px solid #cbd5e1 !important;
-          background-color: #ffffff !important;
-          color: var(--color-text-main) !important;
-          transition: border-color 0.2s, box-shadow 0.2s !important;
-        }
-        .settings-main-container input:focus,
-        .settings-main-container select:focus,
-        .settings-main-container textarea:focus {
-          border-color: var(--color-gold) !important;
-          outline: none !important;
-          box-shadow: 0 0 0 1px var(--color-gold) !important;
-        }
-
-        /* Custom Button styling */
-        .settings-main-container button.bg-\[\#102C57\],
-        .settings-main-container button.bg-slate-900,
-        .settings-main-container button.bg-slate-800 {
-          background-color: var(--color-navy) !important;
-          color: #ffffff !important;
-          border: 1px solid var(--color-navy) !important;
-          transition: all 0.2s !important;
-        }
-        .settings-main-container button.bg-\[\#102C57\]:hover,
-        .settings-main-container button.bg-slate-900:hover,
-        .settings-main-container button.bg-slate-800:hover {
-          background-color: var(--color-gold) !important;
-          color: var(--color-navy) !important;
-          border-color: var(--color-gold) !important;
-        }
-
-        .settings-main-container button.bg-\[\#d4af37\] {
-          background-color: var(--color-gold) !important;
-          color: var(--color-navy) !important;
-          border: 1px solid var(--color-gold) !important;
-          transition: all 0.2s !important;
-        }
-        .settings-main-container button.bg-\[\#d4af37\]:hover {
-          background-color: var(--color-navy) !important;
-          color: #ffffff !important;
-          border-color: var(--color-navy) !important;
-        }
-
-        .settings-main-container button.border-gray-300,
-        .settings-main-container button.border-slate-200 {
-          border-color: #cbd5e1 !important;
-          color: var(--color-text-main) !important;
-        }
-        .settings-main-container button.border-gray-300:hover,
-        .settings-main-container button.border-slate-200:hover {
-          background-color: var(--color-gold-light) !important;
-          border-color: var(--color-gold) !important;
-          color: var(--color-navy) !important;
-        }
-
-        /* Custom Scrollbar for sidebar and content */
-        .settings-scrollbar::-webkit-scrollbar {
-          width: 6px;
-          height: 6px;
-        }
-        .settings-scrollbar::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .settings-scrollbar::-webkit-scrollbar-thumb {
-          background: rgba(212, 175, 55, 0.2);
-          border-radius: 3px;
-        }
-        .settings-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: var(--color-gold);
-        }
-
-        /* Sidebar active link styling */
-        .sidebar-link-active {
-          background-color: var(--color-gold-light) !important;
-          color: var(--color-navy) !important;
-          border-left: 3px solid var(--color-gold) !important;
-          font-weight: 700 !important;
-        }
-      ` }} />
-
-      {/* Sidebar Backdrop Overlay on Mobile */}
-      {isSidebarOpen && (
-        <div
-          onClick={() => setIsSidebarOpen(false)}
-          className="fixed inset-0 z-40 bg-black/60 transition-opacity duration-300 md:hidden animate-fade-in"
-        />
-      )}
-
-      {/* 1. Deep Navy Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-50 w-[280px] bg-[#0A1931] text-white flex flex-col h-full shrink-0 border-r border-[#d4af37]/20 select-none transition-transform duration-300 ease-in-out md:static md:translate-x-0 ${
-        isSidebarOpen ? "translate-x-0" : "-translate-x-full"
-      }`}>
-        {/* Sidebar Brand Header */}
-        <div className="p-6 border-b border-[#d4af37]/10 flex flex-col items-center text-center relative">
-          {/* Mobile Close Button */}
-          <button
-            type="button"
-            onClick={() => setIsSidebarOpen(false)}
-            className="md:hidden absolute top-4 right-4 p-1.5 text-white/50 hover:text-white transition"
-          >
-            <X size={18} />
-          </button>
-          
-          <div className="w-12 h-12 flex items-center justify-center bg-[#d4af37] text-[#0A1931] rounded-[2px] mb-3 shadow-[0_4px_12px_rgba(212,175,55,0.2)]">
-            <Settings className="w-6 h-6 stroke-[2.5]" />
-          </div>
-          <span className="text-[10px] font-black uppercase tracking-[0.25em] text-[#d4af37] mb-1">
-            System Configuration
-          </span>
-          <h2 className="text-lg font-bold text-white tracking-wide">ตั้งค่าระบบ</h2>
-          <span className="text-[9px] text-white/50 tracking-wider mt-0.5">บริษัท เคพีฟู้ดส์ จำกัด</span>
-        </div>
-
-        {/* Sidebar Navigation Items */}
-        <nav className="flex-1 overflow-y-auto p-4 space-y-6 settings-scrollbar">
-          {availableTabs.map((tab) => {
-            const visibleSubItems = tab.items.filter(
-              (item) => !item.adminOnly || permissionState.isAdmin
-            );
-            if (!visibleSubItems.length) return null;
-
-            return (
-              <div key={tab.id} className="space-y-2">
-                <span className="block px-3 text-[10px] font-black uppercase tracking-[0.15em] text-[#d4af37]/70">
-                  {tab.label}
-                </span>
-                <div className="space-y-1">
-                  {visibleSubItems.map((item) => {
-                    const isActive = item.id === activeSubTab;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => {
-                          if (item.disabled) return;
-                          setActiveTab(tab.id);
-                          setActiveSubTab(item.id);
-                          setIsSidebarOpen(false); // Close sidebar on selection (mobile)
-                        }}
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 text-left text-xs tracking-wide transition-all duration-150 border-l-[3px] border-l-transparent rounded-[2px] group ${
-                          isActive
-                            ? "sidebar-link-active"
-                            : "text-white/70 hover:text-white hover:bg-white/5 hover:border-l-[#d4af37]/50"
-                        }`}
-                      >
-                        <div className="flex-1 min-w-0">
-                          <span className="block font-bold truncate">{item.label}</span>
-                          <span className={`block text-[10px] truncate ${isActive ? 'text-[#102C57]/70' : 'text-white/40'}`}>
-                            {item.description}
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </nav>
-
-        {/* Sidebar Footer Stats */}
-        <div className="p-4 border-t border-[#d4af37]/10 bg-black/20 text-center flex items-center justify-around text-[11px] text-white/60">
-          <div className="flex flex-col">
-            <span className="text-[10px] font-bold text-[#d4af37]">{roles.length}</span>
-            <span className="text-[9px] uppercase tracking-wider text-white/40">บทบาท</span>
-          </div>
-          <div className="h-6 w-px bg-[#d4af37]/10" />
-          <div className="flex flex-col">
-            <span className="text-[10px] font-bold text-[#d4af37]">{departments.length}</span>
-            <span className="text-[9px] uppercase tracking-wider text-white/40">แผนก</span>
-          </div>
-        </div>
-      </aside>
-
+    <div className="settings-main-container flex min-h-0 w-full min-w-0 bg-[#ffffff] text-[#1e293b] font-sans">
       {/* 2. Main Content Area */}
-      <main className="flex-1 flex flex-col h-full min-w-0 bg-[#ffffff]">
-        {/* Content Header */}
-        <header className="px-6 md:px-8 py-5 border-b border-[#e2e8f0] flex items-center justify-between bg-white select-none gap-4">
-          <div className="flex items-center gap-3">
-            {/* Hamburger Toggle Button for Mobile */}
-            <button
-              type="button"
-              onClick={() => setIsSidebarOpen(true)}
-              className="md:hidden p-1.5 border border-slate-200 hover:bg-slate-50 text-[#102C57] transition rounded-[2px] shrink-0"
-            >
-              <Menu size={18} />
-            </button>
-            
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-[#d4af37]">
-                  {activeTabConfig?.label}
-                </span>
-                <span className="text-slate-300">/</span>
-                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-[#102C57]">
-                  {activeSubTabConfig?.label}
-                </span>
-              </div>
-              <h1 className="text-lg md:text-xl font-black text-[#102C57] mt-0.5 tracking-wide">
-                {activeSubTabConfig?.label}
-              </h1>
-              <p className="hidden sm:block text-xs text-[#666666] mt-0.5">
-                {activeSubTabConfig?.description}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 text-xs text-slate-500 font-medium shrink-0">
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span className="hidden sm:inline">เชื่อมต่อเซิร์ฟเวอร์เสร็จสิ้น</span>
-          </div>
+      <main className="flex-1 flex flex-col min-h-0 min-w-0 bg-[#ffffff]">
+        <header className="settings-page-header">
+          <h1>ตั้งค่าระบบ</h1>
+          <nav className="settings-horizontal-tabs" aria-label="ส่วนตั้งค่าระบบ">
+            {[...availableTabs].sort((a, b) => a.id === "users" ? -1 : b.id === "users" ? 1 : 0).flatMap((tab) => tab.items.filter((item) => !item.adminOnly || permissionState.isAdmin).map((item) => (
+              <button key={item.id} type="button" aria-pressed={activeSubTab === item.id}
+                onClick={() => switchSection(tab.id, item.id)}>
+                {item.content === "audit-logs" ? "ประวัติการใช้งาน" : item.label}
+              </button>
+            )))}
+          </nav>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-8 bg-[#fafafb] settings-scrollbar">
-          <div className="max-w-5xl mx-auto">
+        <div className="flex-1 overflow-y-auto p-5 bg-[#f7f9fc] settings-scrollbar">
+          <div className="w-full mx-auto">
             {loadError && (
               <div className="mb-6 rounded-[2px] border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700 flex items-center gap-2">
                 <AlertCircle size={14} />
@@ -515,7 +284,7 @@ function SettingsPageContent() {
               </div>
             )}
 
-            <div className="bg-white border border-[#e2e8f0] p-6 sm:p-8 rounded-[2px]">
+            <div className="bg-white border border-[#e2e8f0] p-4 rounded-[4px]">
               {!activeSubTabConfig || activeSubTabConfig.disabled ? (
                 <div className="border border-dashed border-slate-200 bg-slate-50 px-6 py-12 text-center rounded-[2px]">
                   <p className="text-sm font-bold text-[#102C57] uppercase tracking-wider">
@@ -535,6 +304,8 @@ function SettingsPageContent() {
                 />
               ) : activeSubTabConfig.content === "roles" ? (
                 <RolePermissionsForm
+                  taskPermissionsEnabled={taskPermissionsEnabled}
+                  onDraftChange={setPermissionDraft}
                   roles={roles}
                   permissionGroups={permissionGroups}
                   onSaveRole={handleSaveRole}

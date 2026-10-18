@@ -1,5 +1,5 @@
 import { jsonError, readJson } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import {
   createPieceRatePrisonIssue,
   listPieceRatePrisonIssueLots,
@@ -8,14 +8,10 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const PERMISSION_KEYS = [
-  "production-line-attendance-view",
-  "production-line-attendance-manage",
-];
 
 export async function GET(request) {
   try {
-    await requirePermissionKeys(request, PERMISSION_KEYS);
+    await requireTaskPermission(request, "production-piece-rate-prison-issue-view");
     return Response.json(await listPieceRatePrisonIssueLots());
   } catch (error) {
     return jsonError(error);
@@ -25,7 +21,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const [permission, body] = await Promise.all([
-      requirePermissionKeys(request, PERMISSION_KEYS),
+      requireTaskPermission(request, "production-piece-rate-prison-issue-write"),
       readJson(request),
     ]);
     return Response.json(await createPieceRatePrisonIssue(permission, body), { status: 201 });

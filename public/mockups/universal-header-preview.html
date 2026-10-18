@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KPF Universal Global Header Preview</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family: 'Noto Sans Thai', sans-serif; background-color: #08111e; color: #f1f5f9; }
+  </style>
+</head>
+<body class="p-4 md:p-8 space-y-10 max-w-7xl mx-auto">
+
+  <!-- Title & Philosophy -->
+  <div class="border-b border-white/10 pb-5">
+    <div class="inline-block bg-[#d4af37]/20 border border-[#d4af37]/40 text-[#d4af37] text-xs px-2.5 py-0.5 rounded font-bold uppercase tracking-wider mb-2">
+      Architecture Standard
+    </div>
+    <h1 class="text-2xl md:text-3xl font-extrabold text-white">Universal Global Header (Header กลางระดับทั้งระบบ)</h1>
+    <p class="text-slate-400 text-sm mt-1">
+      เป็นแถบกลางมาตรฐานสูงเพียง <strong class="text-emerald-400">48px</strong> ทำหน้าที่เหมือนกัน <strong class="text-white">"ทุกหน้าในระบบ 100%"</strong> ไม่มีข้อมูลหรือปุ่มเฉพาะหน้ามาปะปน แต่ดึงข้อมูลผู้ใช้, เวลาโรงงาน, ตำแหน่งหน้า (Breadcrumb), และศูนย์แจ้งเตือนกลาง (Notification Center) มาแสดงผลอย่างสะอาด ทางการ และหรูหรา
+    </p>
+  </div>
+
+  <!-- THE UNIVERSAL HEADER BREAKDOWN -->
+  <section class="space-y-4">
+    <div class="flex items-center justify-between">
+      <h2 class="text-base font-bold text-white flex items-center gap-2">
+        <span class="w-2.5 h-2.5 rounded-full bg-[#d4af37]"></span>
+        โครงสร้าง Header กลางตัวจริง (ความสูงคงที่ 48px ทุกลูป)
+      </h2>
+      <span class="text-xs text-slate-400 font-mono">Height: 48px | Sticky Top</span>
+    </div>
+
+    <!-- The Universal Header Bar -->
+    <header class="bg-[#102C57] border-b border-white/10 text-white px-4 py-2 flex items-center justify-between shadow-lg rounded-xl">
+      <!-- 1. LEFT: Brand & Breadcrumb -->
+      <div class="flex items-center gap-3 min-w-0">
+        <!-- Logo / Brand Tag -->
+        <div class="flex items-center gap-2 shrink-0 pr-3 border-r border-white/15">
+          <div class="w-7 h-7 rounded bg-[#d4af37] flex items-center justify-center text-[#102C57] font-black text-xs">
+            KPF
+          </div>
+          <span class="font-extrabold text-xs tracking-wider text-white hidden sm:inline">QUICKPLAN</span>
+        </div>
+
+        <!-- Dynamic Breadcrumb (เปลี่ยนตามหน้าจออัตโนมัติ) -->
+        <nav class="flex items-center gap-1.5 text-xs text-white/70 overflow-hidden text-ellipsis whitespace-nowrap">
+          <span class="text-white/50">ไลน์ผลิต</span>
+          <span class="text-white/30 text-[10px]">/</span>
+          <span class="text-white font-bold text-slate-100 flex items-center gap-1">
+            วางแผนการผลิต
+          </span>
+        </nav>
+      </div>
+
+      <!-- 2. CENTER: Factory Live Time & Shift (Essential for factory ops) -->
+      <div class="hidden lg:flex items-center gap-3 bg-black/25 px-3 py-1 rounded-lg border border-white/5 text-xs">
+        <div class="flex items-center gap-1.5 text-white/90 font-mono font-medium">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span>04 ต.ค. 2569 • 23:25 น.</span>
+        </div>
+        <span class="text-white/20">|</span>
+        <span class="px-2 py-0.2 rounded text-[11px] font-bold bg-[#d4af37]/20 text-[#d4af37] border border-[#d4af37]/30">
+          กะ 1 (เช้า)
+        </span>
+      </div>
+
+      <!-- 3. RIGHT: Notifications & User Profile -->
+      <div class="flex items-center gap-3 shrink-0">
+        <!-- Universal Notification Bell with Popover Trigger -->
+        <div class="relative">
+          <button id="bellBtn" onclick="toggleNotif()" class="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 flex items-center justify-center transition relative text-white">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+            </svg>
+            <!-- Badge -->
+            <span class="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.2 rounded-full">
+              3
+            </span>
+          </button>
+
+          <!-- Dropdown Popover Preview -->
+          <div id="notifDropdown" class="absolute right-0 mt-2 w-80 sm:w-96 bg-[#0f1f38] border border-white/15 rounded-xl shadow-2xl p-3 z-50 text-xs">
+            <div class="flex items-center justify-between pb-2 border-b border-white/10 mb-2">
+              <div class="font-bold text-white flex items-center gap-1.5">
+                <span>ศูนย์แจ้งเตือนสายการผลิต</span>
+                <span class="bg-red-500/20 text-red-400 px-1.5 py-0.2 rounded text-[10px]">3 รายการด่วน</span>
+              </div>
+              <button class="text-[10px] text-[#d4af37] hover:underline">อ่านทั้งหมด</button>
+            </div>
+
+            <div class="space-y-2 max-h-72 overflow-y-auto">
+              <!-- Alert Item 1 -->
+              <a href="#" class="block p-2 rounded-lg bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 transition">
+                <div class="flex items-center justify-between">
+                  <span class="font-bold text-red-300">🔴 ถังค้างชั่งคืนข้ามกะ (2 ถัง)</span>
+                  <span class="text-[10px] text-slate-400">10 นาทีที่แล้ว</span>
+                </div>
+                <p class="text-slate-300 mt-0.5 text-[11px]">แป้งผสม WKB-0053 LOT 240826 ยังไม่มีการสแกนคืนสต็อก</p>
+              </a>
+
+              <!-- Alert Item 2 -->
+              <a href="#" class="block p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 transition">
+                <div class="flex items-center justify-between">
+                  <span class="font-bold text-amber-300">🟡 สูตรการผลิตใหม่รอ QA อนุมัติ</span>
+                  <span class="text-[10px] text-slate-400">35 นาทีที่แล้ว</span>
+                </div>
+                <p class="text-slate-300 mt-0.5 text-[11px]">สูตร BL0-5001 Rev.3 ส่งขออนุมัติจากฝ่ายวางแผน</p>
+              </a>
+
+              <!-- Alert Item 3 -->
+              <a href="#" class="block p-2 rounded-lg bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 transition">
+                <div class="flex items-center justify-between">
+                  <span class="font-bold text-blue-300">🔵 แผนผลิตหลัก MP-2026-10-002 เผยแพร่</span>
+                  <span class="text-[10px] text-slate-400">1 ชม. ที่แล้ว</span>
+                </div>
+                <p class="text-slate-300 mt-0.5 text-[11px]">รอหัวหน้าแผนกยืนยันแผนย่อย (Sub-plan) ประจำแผนก</p>
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <!-- User Profile Pill -->
+        <div class="flex items-center gap-2 pl-2 border-l border-white/15">
+          <div class="w-7 h-7 rounded-full bg-slate-700 border border-white/20 flex items-center justify-center font-bold text-xs text-[#d4af37]">
+            ส
+          </div>
+          <div class="hidden md:block text-left text-xs leading-tight">
+            <div class="font-bold text-white">สมชาย ม.</div>
+            <div class="text-[10px] text-[#d4af37]">หัวหน้าแผนก / Leader</div>
+          </div>
+        </div>
+      </div>
+    </header>
+  </section>
+
+  <!-- DEMONSTRATION ACROSS 3 DIFFERENT PAGES -->
+  <section class="space-y-6 pt-4 border-t border-white/10">
+    <div>
+      <h3 class="text-base font-bold text-white">ตัวอย่างการใช้งานจริงใน 3 หน้าจอที่แตกต่างกัน:</h3>
+      <p class="text-slate-400 text-xs mt-0.5">สังเกตว่าตัว Header ด้านบนสุดจะ <strong>คงที่ สวย สะอาด เป็นตัวกลาง 100%</strong> ส่วนเนื้อหาหรือแท็บย่อยของหน้านั้น ๆ จะอยู่ด้านในตัวเพจเอง</p>
+    </div>
+
+    <!-- Screen 1: Planning -->
+    <div class="rounded-xl border border-slate-700 bg-[#0d1829] overflow-hidden shadow-lg">
+      <div class="bg-[#102C57] px-4 py-2 flex items-center justify-between text-xs border-b border-white/10">
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-blue-400"></span>
+          <span class="text-white/50">ไลน์ผลิต /</span>
+          <span class="text-white font-bold">วางแผนการผลิต</span>
+        </div>
+        <div class="flex items-center gap-3 text-white/80">
+          <span class="font-mono">🕒 23:25</span>
+          <span class="text-[#d4af37] font-bold">🔔 (3)</span>
+          <span>👤 สมชาย ม.</span>
+        </div>
+      </div>
+      <!-- Planning Page Sub-Tabs (อยู่ระดับ Page Content ไม่กวน Header กลาง) -->
+      <div class="p-4 space-y-3">
+        <div class="flex items-center gap-1 bg-white/5 p-1 rounded-lg w-max border border-white/10 text-xs">
+          <span class="bg-[#d4af37] text-[#102C57] px-3 py-1 rounded font-bold">แผนหลัก</span>
+          <span class="text-slate-300 px-3 py-1">งานแผนก</span>
+          <span class="text-slate-300 px-3 py-1">รายงาน & ปรับแผน</span>
+          <span class="text-slate-300 px-3 py-1">Preview ใบเบิก</span>
+          <span class="text-slate-300 px-3 py-1">แจ้งเตือน</span>
+        </div>
+        <div class="bg-black/20 p-4 rounded-lg border border-white/5 text-xs text-slate-400">
+          [ตารางแผนการผลิต จันทร์-เสาร์ สัปดาห์ที่ 40 แสดงผลเต็มจอได้อย่างกว้างขวาง]
+        </div>
+      </div>
+    </div>
+
+    <!-- Screen 2: Weight Scale -->
+    <div class="rounded-xl border border-slate-700 bg-[#0d1829] overflow-hidden shadow-lg">
+      <div class="bg-[#102C57] px-4 py-2 flex items-center justify-between text-xs border-b border-white/10">
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+          <span class="text-white/50">ไลน์ผลิต /</span>
+          <span class="text-white font-bold">ชั่งน้ำหนักและเบิกจ่าย (Weight Scale)</span>
+        </div>
+        <div class="flex items-center gap-3 text-white/80">
+          <span class="font-mono">🕒 23:25</span>
+          <span class="text-[#d4af37] font-bold">🔔 (3)</span>
+          <span>👤 สมชาย ม.</span>
+        </div>
+      </div>
+      <div class="p-4 space-y-3">
+        <div class="bg-black/20 p-4 rounded-lg border border-white/5 text-xs text-slate-400 flex items-center justify-between">
+          <span>สถานะตาชั่ง: <strong class="text-emerald-400">ONLINE (Port 41952)</strong></span>
+          <span class="font-mono text-lg font-bold text-white">0.000 kg (STABLE)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Screen 3: Raw Materials Warehouse -->
+    <div class="rounded-xl border border-slate-700 bg-[#0d1829] overflow-hidden shadow-lg">
+      <div class="bg-[#102C57] px-4 py-2 flex items-center justify-between text-xs border-b border-white/10">
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-purple-400"></span>
+          <span class="text-white/50">คลังวัตถุดิบ /</span>
+          <span class="text-white font-bold">ตรวจสอบสต็อกล็อต (LOT Balance)</span>
+        </div>
+        <div class="flex items-center gap-3 text-white/80">
+          <span class="font-mono">🕒 23:25</span>
+          <span class="text-[#d4af37] font-bold">🔔 (3)</span>
+          <span>👤 สมชาย ม.</span>
+        </div>
+      </div>
+      <div class="p-4">
+        <div class="bg-black/20 p-4 rounded-lg border border-white/5 text-xs text-slate-400">
+          [รายการวัตถุดิบ ERP: M01-0004 น้ำตาลทราย, M01-0001 แป้งสาลี, B03-0003 แยมสับปะรด]
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    function toggleNotif() {
+      const dd = document.getElementById('notifDropdown');
+      dd.classList.toggle('hidden');
+    }
+  </script>
+</body>
+</html>

@@ -108,6 +108,7 @@ export async function GET(request) {
     const deptId        = sp.get("deptId");
     const weekStartDate = sp.get("weekStartDate");
     const periodEnd     = normalizeDateOnly(sp.get("periodEnd") || sp.get("dateTo"));
+    const masterPlanNo  = normalizeMasterPlanNoInput(sp.get("masterPlanNo"));
 
     const db = getSupabaseAdmin();
     let q = db
@@ -118,6 +119,7 @@ export async function GET(request) {
     if (deptId)        q = q.eq("dept_id", deptId);
     if (weekStartDate) q = q.eq("week_start_date", weekStartDate);
     if (periodEnd)     q = q.eq("period_end", periodEnd);
+    if (masterPlanNo)  q = q.eq("master_plan_no", masterPlanNo);
 
     const { data, error } = await q;
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -146,13 +148,27 @@ export async function POST(request) {
     const hasMasterPlanNo = hasOwn(body, "masterPlanNo");
     const requestedMasterPlanNo = normalizeMasterPlanNoInput(body?.masterPlanNo);
 
-    const existingResult = await db
-      .from("production_schedule_plans")
-      .select("id,template_id,status,notes,master_plan_no,period_end")
-      .eq("dept_id", deptId)
-      .eq("week_start_date", weekStartDate)
-      .eq("period_end", periodEnd)
-      .maybeSingle();
+    let existingResult = null;
+    if (requestedMasterPlanNo) {
+      existingResult = await db
+        .from("production_schedule_plans")
+        .select("id,template_id,status,notes,master_plan_no,period_end,week_start_date")
+        .eq("dept_id", deptId)
+        .eq("master_plan_no", requestedMasterPlanNo)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+    }
+    if (!existingResult?.data) {
+      existingResult = await db
+        .from("production_schedule_plans")
+        .select("id,template_id,status,notes,master_plan_no,period_end,week_start_date")
+        .eq("dept_id", deptId)
+        .eq("week_start_date", weekStartDate)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+    }
 
     if (existingResult.error) {
       return NextResponse.json({ error: existingResult.error.message }, { status: 500 });
@@ -165,6 +181,12 @@ export async function POST(request) {
       if (hasTemplateId) patch.template_id = body?.templateId ?? null;
       if (hasStatus) patch.status = normalizeSchedulePlanStatus(body?.status, "draft");
       if (hasNotes) patch.notes = body?.notes ?? null;
+      if (periodEnd && existing.period_end !== periodEnd) {
+        patch.period_end = periodEnd;
+      }
+      if (weekStartDate && existing.week_start_date !== weekStartDate) {
+        patch.week_start_date = weekStartDate;
+      }
       if (hasMasterPlanNo && requestedMasterPlanNo) {
         // Only overwrite if client sent an actual non-empty master plan number
         patch.master_plan_no = requestedMasterPlanNo;

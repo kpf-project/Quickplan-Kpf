@@ -34,7 +34,7 @@ export default function ApkDownloadPageClient({ release, baseUrl }) {
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_18%,rgba(212,175,55,0.16),transparent_42%),radial-gradient(circle_at_85%_12%,rgba(16,44,87,0.12),transparent_42%)]" />
         <div className="absolute -left-28 top-28 h-64 w-64 rounded-full bg-[#d4af37]/15 blur-3xl" />
-        <div className="absolute -right-24 bottom-16 h-64 w-64 rounded-full bg-[#102C57]/10 blur-3xl" />
+        <div className="absolute -right-24 bottom-16 h-64 w-64 rounded-full bg-[var(--surface-navy,#102C57)]/10 blur-3xl" />
       </div>
 
       <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
@@ -102,17 +102,17 @@ export default function ApkDownloadPageClient({ release, baseUrl }) {
             <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#102C57]/70">Quick Steps</p>
             <ol className="mt-4 space-y-3 text-sm text-[#334155]">
               <li className="flex gap-3">
-                <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#102C57] text-[11px] font-bold text-white">1</span>
+                <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--surface-navy,#102C57)] text-[11px] font-bold text-white">1</span>
                 เปิดสิทธิ์{" "}
                 <span className="font-semibold">Install unknown apps</span>{" "}
                 ให้ Browser หรือ File Manager
               </li>
               <li className="flex gap-3">
-                <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#102C57] text-[11px] font-bold text-white">2</span>
+                <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--surface-navy,#102C57)] text-[11px] font-bold text-white">2</span>
                 กดปุ่มดาวน์โหลด หรือสแกน QR เพื่อโหลดไฟล์ APK
               </li>
               <li className="flex gap-3">
-                <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#102C57] text-[11px] font-bold text-white">3</span>
+                <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--surface-navy,#102C57)] text-[11px] font-bold text-white">3</span>
                 กด Install และเปิดแอป จากนั้นทดสอบพิมพ์ 1 ใบ
               </li>
             </ol>

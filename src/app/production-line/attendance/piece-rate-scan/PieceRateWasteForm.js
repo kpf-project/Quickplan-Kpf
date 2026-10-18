@@ -191,7 +191,7 @@ export default function PieceRateWasteForm({
 
   const hasScaleBridge = !desktopMode && hasAndroidScaleBridge();
   const isScaleConnected = desktopMode
-    ? Boolean(desktopScale?.agentConnected && desktopScale?.portOpen)
+    ? Boolean(desktopScale?.agentConnected && desktopScale?.portOpen !== false && desktopScale?.isReadingFresh)
     : hasScaleBridge && Boolean(scaleStatus?.connected);
   const exactWeightKg = desktopMode ? parseScaleNumber(desktopScale?.weightKg, { allowZero: true }) : resolveScaleResultWeightKg(scaleWeight)
     ?? extractDisplayWeight(scaleStatus?.latestDisplayText)
@@ -200,6 +200,9 @@ export default function PieceRateWasteForm({
     ? Boolean(desktopScale?.isStable && desktopScale?.isReadingFresh)
     : Boolean(scaleWeight?.stable || scaleStatus?.state === "stable");
   const displayedWeight = isScaleConnected ? exactWeightKg : parseScaleNumber(manualWeight, { allowZero: true });
+  const hasValidWeight = isScaleConnected
+    ? (isDeviceStable && Number(displayedWeight || 0) > 0)
+    : Number(displayedWeight || 0) > 0;
 
   useEffect(() => {
     if (desktopMode || !hasScaleBridge) return undefined;
@@ -243,7 +246,7 @@ export default function PieceRateWasteForm({
       return;
     }
 
-    if (!submitLockRef.current.tryAcquire()) {
+    if (!submitLockRef.current.tryStart()) {
       return;
     }
 
@@ -267,10 +270,18 @@ export default function PieceRateWasteForm({
         }
         resolvedWeight = stableWeightKg;
       } else if (desktopMode) {
-        if (!isScaleConnected || !isDeviceStable || Number(exactWeightKg || 0) <= 0) {
-          throw new Error("เครื่องชั่งเดสก์ท็อปยังไม่พร้อมหรือน้ำหนักไม่นิ่ง");
+        if (isScaleConnected) {
+          if (!isDeviceStable || Number(exactWeightKg || 0) <= 0) {
+            throw new Error("เครื่องชั่งเดสก์ท็อปยังไม่พร้อมหรือน้ำหนักไม่นิ่ง");
+          }
+          resolvedWeight = exactWeightKg;
+        } else {
+          const parsedManual = parseScaleNumber(manualWeight);
+          if (parsedManual === null || parsedManual <= 0) {
+            throw new Error("กรุณากรอกน้ำหนักของเสียที่ถูกต้อง");
+          }
+          resolvedWeight = parsedManual;
         }
-        resolvedWeight = exactWeightKg;
       } else {
         const parsedManual = parseScaleNumber(manualWeight);
         if (parsedManual === null || parsedManual <= 0) {
@@ -281,8 +292,20 @@ export default function PieceRateWasteForm({
 
       const product = resolveSavedProduct(productLookup);
       const machineCode = normalizeText(resolvedMachineCode)
-        || (typeof window !== "undefined" ? normalizeText(window.localStorage.getItem(MACHINE_STORAGE_KEY)) : "");
-      const validMachineCode = MACHINE_CODE_REGEX.test(machineCode) ? machineCode : null;
+        || (typeof window !== "undefined" ? normalizeText(window.localStorage.getItem(MACHINE_STORAGE_KEY)) : "")
+        || "MC01";
+      const validMachineCode = MACHINE_CODE_REGEX.test(machineCode) ? machineCode : "MC01";
+      const productBarcode = normalizeText(
+        productLookup?.productBarcode ||
+        productLookup?.barcode ||
+        productScanValue ||
+        product.goodsCode ||
+        product.code
+      );
+      if (!productBarcode) {
+        throw new Error("ไม่พบบาร์โค้ดสินค้า กรุณาสแกนหรือเลือกสินค้าใหม่อีกครั้ง");
+      }
+
       const telemetry = buildWasteSubmitTelemetry({
         exactWeightKg,
         displayedWeight: resolvedWeight,
@@ -296,6 +319,8 @@ export default function PieceRateWasteForm({
 
       const result = await submitPieceRateWasteLog({
         requestId: requestIdRef.current,
+        productBarcode,
+        product_barcode: productBarcode,
         productCode: product.code,
         goodsCode: product.goodsCode,
         skuCode: product.skuCode,
@@ -303,7 +328,8 @@ export default function PieceRateWasteForm({
         wasteCategory,
         wasteWeightKg: resolvedWeight,
         machineCode: validMachineCode,
-        rawProductQrPayload: productScanValue || productLookup?.productBarcode || product.code,
+        rawProductQrPayload: productScanValue || productBarcode,
+        rawProductBarcodePayload: productScanValue || productBarcode,
         telemetry,
       });
 
@@ -384,7 +410,7 @@ export default function PieceRateWasteForm({
                 );
               })}
             </div>
-            <div className={styles.scaleStatus} data-ready={Boolean(desktopScale?.agentConnected && desktopScale?.portOpen)}><Scale size={18} /> Scale Agent {desktopScale?.agentConnected ? (desktopScale?.portOpen ? "เชื่อมต่อ" : "รอพอร์ต") : "ออฟไลน์"}<i /></div>
+            <div className={styles.scaleStatus} data-ready={Boolean(desktopScale?.agentConnected && desktopScale?.portOpen !== false)}><Scale size={18} /> Scale Agent {desktopScale?.agentConnected ? (desktopScale?.portOpen === false ? "รอพอร์ต" : "เชื่อมต่อ") : "ออฟไลน์"}<i /></div>
             <div className={styles.weight}>{formatWeight(displayedWeight)}<small>kg</small></div>
             <div className={styles.badge}>{savedData ? "บันทึกสำเร็จ" : isDeviceStable ? "น้ำหนักนิ่ง" : "รอน้ำหนักนิ่ง"}</div>
             {errorMessage ? <div className={styles.error}><AlertTriangle className="inline" size={16} /> {errorMessage}</div> : null}
@@ -392,14 +418,21 @@ export default function PieceRateWasteForm({
             {savedData ? (
               <button type="button" className={styles.action} onClick={onNextAssignment}>ชั่งรายการถัดไป</button>
             ) : (
-              <button type="button" className={styles.action} onClick={() => void handleSubmit()} disabled={isSubmitting || isScaleBusy || !wasteCategory || !isScaleConnected || !isDeviceStable || Number(displayedWeight || 0) <= 0}>{isSubmitting || isScaleBusy ? "กำลังบันทึก..." : "บันทึกของเสีย"}</button>
+              <button
+                type="button"
+                className={styles.action}
+                onClick={() => void handleSubmit()}
+                disabled={isSubmitting || isScaleBusy || !wasteCategory || !hasValidWeight}
+              >
+                {isSubmitting || isScaleBusy ? "กำลังบันทึก..." : "บันทึกของเสีย"}
+              </button>
             )}
-            {!savedData && (!wasteCategory || !isScaleConnected || !isDeviceStable || Number(displayedWeight || 0) <= 0) ? (
+            {!savedData && (!wasteCategory || !hasValidWeight) ? (
               <p className={styles.actionHint}>
                 {!wasteCategory
                   ? "เลือกประเภทของเสียเพื่อเปิดปุ่มบันทึก"
                   : !isScaleConnected
-                    ? "กรุณาเชื่อมต่อ Scale Agent และเปิดพอร์ตเครื่องชั่ง"
+                    ? "กรุณาเชื่อมต่อ Scale Agent หรือกรอกน้ำหนัก"
                     : !isDeviceStable || Number(displayedWeight || 0) <= 0
                       ? "วางของบนเครื่องชั่งและรอให้น้ำหนักนิ่ง"
                       : ""}
@@ -549,13 +582,19 @@ export default function PieceRateWasteForm({
         <button
           type="button"
           onClick={() => void handleSubmit()}
-          disabled={isSubmitting || isScaleBusy || !wasteCategory}
+          disabled={isSubmitting || isScaleBusy || !wasteCategory || !hasValidWeight}
           className="flex h-20 w-full items-center justify-center gap-3 bg-[#0f2747] text-lg font-black tracking-[0.15em] text-[#f8df8a] shadow-xl active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isSubmitting || isScaleBusy ? <Loader2 className="animate-spin" size={28} /> : <Scale size={28} />}
           บันทึกของเสีย
         </button>
-        {!wasteCategory ? <p className="-mt-2 text-center text-sm font-bold text-amber-700">เลือกประเภทของเสียเพื่อเปิดปุ่มบันทึก</p> : null}
+        {!wasteCategory ? (
+          <p className="-mt-2 text-center text-sm font-bold text-amber-700">เลือกประเภทของเสียเพื่อเปิดปุ่มบันทึก</p>
+        ) : !hasValidWeight ? (
+          <p className="-mt-2 text-center text-sm font-bold text-amber-700">
+            {isScaleConnected ? "วางของบนเครื่องชั่งและรอให้น้ำหนักนิ่ง" : "กรุณากรอกน้ำหนักของเสีย"}
+          </p>
+        ) : null}
       </main>
     </div>
   );

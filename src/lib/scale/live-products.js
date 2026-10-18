@@ -1,17 +1,14 @@
 import "server-only";
-
 import { getSupabaseAdmin } from "@/lib/adminApi";
+
+const normalizeScaleSkuCode = (value) => String(value || "").trim().toUpperCase();
+const buildScaleLotStatusLabel = () => "ยังไม่ตั้งค่า";
 import {
-  buildScaleLotStatusLabel,
-  loadScaleLotsForConfigs,
-  normalizeScaleSkuCode,
-} from "@/lib/scale/catalog";
-import {
-  LIVE_SCALE_WEIGHT_SOURCE,
   LIVE_SCALE_WIP_CATEGORY_CODE,
   loadWeightScaleLiveDepartmentScope,
+  loadWeightScaleLiveExcludedProductCodes,
 } from "@/lib/scale/live-access";
-import { loadScaleRecentReceiptsData } from "@/lib/scale/receipts";
+
 
 function buildProductKey(departmentId, skuCode) {
   return `${String(departmentId || "").trim()}::${normalizeScaleSkuCode(skuCode)}`;
@@ -97,18 +94,19 @@ export async function loadWeightScaleLiveProductsData(
 
   const mappingResult = await supabaseAdmin
     .from("production_department_products")
-    .select("department_id,sku_code,is_owner")
+    .select("department_id,sku_code,is_owner,subcategory_id")
     .in("department_id", departmentIds);
 
   if (mappingResult.error) {
     throw new Error("Failed to load live scale department products");
   }
 
+  const excludedCodes = await loadWeightScaleLiveExcludedProductCodes(supabaseAdmin);
   const skuCodes = Array.from(
     new Set(
       (mappingResult.data ?? [])
         .map((row) => normalizeScaleSkuCode(row?.sku_code))
-        .filter(Boolean)
+        .filter(code => code && !excludedCodes.has(code))
     )
   );
 
@@ -132,7 +130,7 @@ export async function loadWeightScaleLiveProductsData(
 
   const productResult = await supabaseAdmin
     .from("products_cache")
-    .select("sku_code,sku_name,uom_name,iccat_code,iccat_name")
+    .select("sku_code,sku_name,uom_name,iccat_code,iccat_name,image_url")
     .in("sku_code", skuCodes)
     .eq("iccat_code", LIVE_SCALE_WIP_CATEGORY_CODE);
 
@@ -146,6 +144,7 @@ export async function loadWeightScaleLiveProductsData(
       {
         code: normalizeScaleSkuCode(row?.sku_code),
         name: String(row?.sku_name || "").trim(),
+        imageUrl: row?.image_url || null,
         unit: String(row?.uom_name || "").trim(),
         categoryCode: String(row?.iccat_code || "").trim(),
         categoryName: String(row?.iccat_name || "").trim(),
@@ -153,12 +152,29 @@ export async function loadWeightScaleLiveProductsData(
     ])
   );
 
+  const subcategoryIds = Array.from(
+    new Set((mappingResult.data ?? []).map((row) => row?.subcategory_id).filter(Boolean))
+  );
+  let subcategoryById = new Map();
+  if (subcategoryIds.length) {
+    const subcategoryResult = await supabaseAdmin
+      .from("production_department_product_subcategories")
+      .select("id,name")
+      .in("id", subcategoryIds);
+    if (subcategoryResult.error) {
+      throw new Error("Failed to load live scale product subcategories");
+    }
+    subcategoryById = new Map(
+      (subcategoryResult.data ?? []).map((row) => [row.id, row.name])
+    );
+  }
+
   const candidates = (mappingResult.data ?? [])
     .map((row) => {
       const departmentId = String(row?.department_id || "").trim();
       const department = departmentById.get(departmentId);
       const product = productByCode.get(normalizeScaleSkuCode(row?.sku_code));
-      if (!department || !product) {
+      if (!department || !product || !["KG", "KGS", "กก.", "กก", "กิโลกรัม"].includes(product.unit.toUpperCase())) {
         return null;
       }
 
@@ -170,6 +186,7 @@ export async function loadWeightScaleLiveProductsData(
         accessRole: scope.isAdmin ? "admin" : department.role,
         canOperate: scope.isAdmin || department.role === "editor",
         isOwner: Boolean(row?.is_owner),
+        subcategoryName: String(subcategoryById.get(row?.subcategory_id) || "").trim(),
       };
     })
     .filter(Boolean)
@@ -177,8 +194,9 @@ export async function loadWeightScaleLiveProductsData(
 
   const chosenBySku = new Map();
   candidates.forEach((candidate) => {
-    if (!chosenBySku.has(candidate.code)) {
-      chosenBySku.set(candidate.code, candidate);
+    const key = buildProductKey(candidate.departmentId, candidate.code);
+    if (!chosenBySku.has(key)) {
+      chosenBySku.set(key, candidate);
     }
   });
   const chosenProducts = Array.from(chosenBySku.values());
@@ -187,46 +205,8 @@ export async function loadWeightScaleLiveProductsData(
   );
   const chosenSkuCodes = chosenProducts.map((product) => product.code);
 
-  let configRows = [];
-  if (chosenDepartmentIds.length && chosenSkuCodes.length) {
-    const configResult = await supabaseAdmin
-      .from("production_weight_scale_products")
-      .select(
-        "id,department_id,sku_code,lot_format,pass_weight_kg,tare_weight_kg,amount_per_pallet,is_active,current_lot_id"
-      )
-      .in("department_id", chosenDepartmentIds)
-      .in("sku_code", chosenSkuCodes);
-
-    if (configResult.error) {
-      throw new Error("Failed to load live scale WIP configs");
-    }
-    configRows = configResult.data ?? [];
-  }
-
-  const configByProductKey = new Map(
-    configRows.map((row) => [
-      buildProductKey(row?.department_id, row?.sku_code),
-      {
-        id: row.id,
-        lotFormat: String(row?.lot_format || "").trim(),
-        passWeightKg: Number.isFinite(Number(row?.pass_weight_kg))
-          ? Number(row.pass_weight_kg)
-          : null,
-        tareWeightKg: Number.isFinite(Number(row?.tare_weight_kg))
-          ? Number(row.tare_weight_kg)
-          : null,
-        amountPerPallet: Number.isFinite(Number(row?.amount_per_pallet))
-          ? Number(row.amount_per_pallet)
-          : null,
-        isActive: row?.is_active !== false,
-        currentLotId: row?.current_lot_id || null,
-      },
-    ])
-  );
-  const lotResult = await loadScaleLotsForConfigs(supabaseAdmin, {
-    productConfigIds: configRows.map((row) => row.id),
-  });
-  const lotById = new Map(lotResult.lots.map((lot) => [lot.id, lot]));
+  const configByProductKey = new Map();
+  const lotById = new Map();
 
   const products = chosenProducts
     .map((product) => {
@@ -276,61 +256,10 @@ export async function loadWeightScaleLiveProductsData(
   };
 }
 
-export async function loadWeightScaleLiveRecentReceiptsData(
-  supabaseAdmin = getSupabaseAdmin(),
-  { departmentIds = [], limit = 20 } = {}
-) {
-  const normalizedDepartmentIds = Array.from(
-    new Set(departmentIds.map((value) => String(value || "").trim()).filter(Boolean))
-  );
-
-  if (!normalizedDepartmentIds.length) {
-    return {
-      available: true,
-      receipts: [],
-      summary: {
-        totalCount: 0,
-        actualCount: 0,
-        testCount: 0,
-        totalNetWeightKg: 0,
-      },
-    };
-  }
-
-  const payloads = await Promise.all(
-    normalizedDepartmentIds.map((departmentId) =>
-      loadScaleRecentReceiptsData(supabaseAdmin, {
-        departmentId,
-        limit,
-        weightSource: LIVE_SCALE_WEIGHT_SOURCE,
-      })
-    )
-  );
-  const receipts = payloads
-    .flatMap((payload) => payload.receipts || [])
-    .sort((left, right) =>
-      String(right?.weighedAt || "").localeCompare(String(left?.weighedAt || ""))
-    )
-    .slice(0, limit);
-
+export async function loadWeightScaleLiveRecentReceiptsData() {
   return {
-    available: payloads.every((payload) => payload.available !== false),
-    receipts,
-    summary: payloads.reduce(
-      (summary, payload) => ({
-        totalCount: summary.totalCount + Number(payload?.summary?.totalCount || 0),
-        actualCount: summary.actualCount + Number(payload?.summary?.actualCount || 0),
-        testCount: summary.testCount + Number(payload?.summary?.testCount || 0),
-        totalNetWeightKg:
-          summary.totalNetWeightKg
-          + Number(payload?.summary?.totalNetWeightKg || 0),
-      }),
-      {
-        totalCount: 0,
-        actualCount: 0,
-        testCount: 0,
-        totalNetWeightKg: 0,
-      }
-    ),
+    available: false,
+    receipts: [],
+    summary: { totalCount: 0, actualCount: 0, testCount: 0, totalNetWeightKg: 0 },
   };
 }

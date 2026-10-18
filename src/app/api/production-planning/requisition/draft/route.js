@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ApiError, getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
 import { requirePermissionKeys } from "@/lib/permissionGuard";
 import { normalizeMasterPlanNo } from "@/lib/planNo";
+import { isRequisitionDraftStale, loadPlanningSourceRevision } from "@/lib/planningRelease";
 import {
   buildRequisitionDraftScopeKey,
   loadRequisitionAccessScope,
@@ -38,6 +39,25 @@ function normalizeDraftText(value, fieldName) {
   return text;
 }
 
+function normalizeLotAllocationsByDate(value) {
+  return Object.fromEntries(
+    Object.entries(value && typeof value === "object" && !Array.isArray(value) ? value : {})
+      .map(([dateValue, allocations]) => {
+        const date = normalizeDateOnly(dateValue);
+        if (!date || !Array.isArray(allocations)) return null;
+        const rows = allocations
+          .slice(0, 100)
+          .map((item) => ({
+            lotNo: normalizeDraftText(item?.lotNo, "lotNo"),
+            qty: roundQty(item?.qty),
+          }))
+          .filter((item) => item.qty > 0);
+        return rows.length ? [date, rows] : null;
+      })
+      .filter(Boolean)
+  );
+}
+
 function normalizeLine(line) {
   const materialSkuCode = normalizeDraftText(line?.materialSkuCode, "materialSkuCode");
   const materialGoodsCode = normalizeDraftText(line?.materialGoodsCode || materialSkuCode || "", "materialGoodsCode");
@@ -64,6 +84,7 @@ function normalizeLine(line) {
     qtyByDate,
     totalQty,
     isManual: line?.isManual === true,
+    lotAllocationsByDate: normalizeLotAllocationsByDate(line?.lotAllocationsByDate),
   };
 }
 
@@ -105,14 +126,17 @@ function assertDraftObject(value) {
   return value;
 }
 
-function buildDraftResponse({ scopeKey, masterPlanNo, dateFrom, dateTo, drafts, updatedAt, updatedBy }) {
+function buildDraftResponse({ scopeKey, masterPlanNo, dateFrom, dateTo, drafts, updatedAt, updatedBy, sourceRevision, staleDraft = false }) {
   return {
     data: {
       scopeKey,
       masterPlanNo,
       dateFrom: dateFrom || null,
       dateTo: dateTo || null,
-      drafts: normalizeDraftPayload(drafts),
+      drafts: staleDraft ? {} : normalizeDraftPayload(drafts),
+      previousDrafts: staleDraft ? normalizeDraftPayload(drafts) : null,
+      staleDraft,
+      sourceRevision,
       updatedAt: updatedAt || null,
       updatedBy: updatedBy || null,
     },
@@ -189,6 +213,7 @@ export async function GET(request) {
       allowLegacyFallback: scope.canManageGlobal,
     });
 
+    const sourceRevision = await loadPlanningSourceRevision(supabaseAdmin, masterPlanNo);
     return NextResponse.json(
       buildDraftResponse({
         scopeKey: row?.scope_key || scopeKey,
@@ -198,6 +223,8 @@ export async function GET(request) {
         drafts: row?.draft_payload || {},
         updatedAt: row?.updated_at || null,
         updatedBy: row?.updated_by || null,
+        sourceRevision,
+        staleDraft: isRequisitionDraftStale(row, sourceRevision),
       })
     );
   } catch (error) {
@@ -228,6 +255,10 @@ export async function POST(request) {
     });
     const scopeKey = buildRequisitionDraftScopeKey(masterPlanNo, dateFrom, dateTo, scope);
     const drafts = normalizeDraftPayload(assertDraftObject(body?.drafts));
+    const sourceRevision = await loadPlanningSourceRevision(supabaseAdmin, masterPlanNo);
+    if (body?.sourceRevision !== sourceRevision) {
+      throw new ApiError(409, "แผนที่ยืนยัน/เผยแพร่เปลี่ยนแล้ว กรุณาโหลดข้อมูลล่าสุดก่อนบันทึก");
+    }
 
     const upsertPayload = {
       scope_key: scopeKey,
@@ -235,6 +266,7 @@ export async function POST(request) {
       date_from: dateFrom,
       date_to: dateTo,
       draft_payload: drafts,
+      source_revision: sourceRevision,
       updated_by: permission.userId,
       updated_at: new Date().toISOString(),
     };
@@ -274,6 +306,7 @@ export async function POST(request) {
         drafts: result.data.draft_payload || {},
         updatedAt: result.data.updated_at || null,
         updatedBy: result.data.updated_by || null,
+        sourceRevision,
       })
     );
   } catch (error) {

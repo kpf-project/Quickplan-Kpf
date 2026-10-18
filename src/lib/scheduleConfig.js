@@ -1,5 +1,6 @@
 import "server-only";
 import { getSupabaseAdmin } from "@/lib/adminApi";
+import { attachDateLayouts } from "@/lib/scheduleDateLayout";
 
 // ── Template loaders ───────────────────────────────────────────────────────────
 
@@ -29,7 +30,7 @@ export async function loadTemplate(templateId) {
   ]);
 
   if (tplRes.error || !tplRes.data) return null;
-  return { ...tplRes.data, sections: secRes.data ?? [] };
+  return { ...tplRes.data, sections: await attachDateLayouts(db, secRes.data ?? []) };
 }
 
 /**

@@ -1,4 +1,4 @@
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { fetchGatewayJson } from "@/lib/gatewayClient";
 import { normalizeParam, parsePaginationParams } from "@/lib/validation";
 import { createAppError, fail, ok } from "@/lib/result";
@@ -8,7 +8,7 @@ function getDefaultDate() {
 }
 
 export async function listConsolidated(request) {
-  await requirePermissionKeys(request, ["admin-consolidated"]);
+  await requireTaskPermission(request, "hr-consolidated-view");
   const { searchParams } = new URL(request.url);
   const { page, pageSize } = parsePaginationParams(searchParams, { pageSize: 20 });
   const startDate = normalizeParam(searchParams.get("startDate")) ?? getDefaultDate();

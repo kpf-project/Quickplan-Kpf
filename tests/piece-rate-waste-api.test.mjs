@@ -17,7 +17,7 @@ test("piece-rate waste API is permission protected and isolated from wage and st
   const client = readFileSync(clientPath, "utf8");
   const pieceRateService = readFileSync(pieceRateServicePath, "utf8");
 
-  assert.match(route, /requirePermissionKeys/);
+  assert.match(route, /requireTaskPermission\(request, "production-piece-rate-waste-write"\)/);
   assert.match(route, /createPieceRateWasteLog/);
   assert.match(route, /runtime = "nodejs"/);
   assert.match(service, /production_piece_rate_waste_logs/);
@@ -33,4 +33,26 @@ test("piece-rate waste API is permission protected and isolated from wage and st
   assert.doesNotMatch(service, /production_stock_movements|create_production_stock_waste/);
   assert.match(client, /\/api\/attendance\/piece-rate\/waste/);
   assert.match(pieceRateService, /export async function resolvePieceRateProductByBarcode/);
+});
+
+test("piece-rate waste form and submitLock contract", async () => {
+  const { createSubmitLock } = await import("../src/lib/submitLock.js");
+  const lock = createSubmitLock();
+  assert.equal(typeof lock.tryStart, "function");
+  assert.equal(typeof lock.tryAcquire, "function");
+  assert.equal(lock.tryStart(), true);
+  assert.equal(lock.tryStart(), false);
+  assert.equal(lock.tryAcquire(), false);
+  lock.release();
+  assert.equal(lock.tryAcquire(), true);
+  assert.equal(lock.tryAcquire(), false);
+  lock.release();
+
+  const wasteFormSource = readFileSync("src/app/production-line/attendance/piece-rate-scan/PieceRateWasteForm.js", "utf8");
+  assert.match(wasteFormSource, /productBarcode[,:]/);
+  assert.match(wasteFormSource, /hasValidWeight/);
+  assert.doesNotMatch(wasteFormSource, /submitLockRef\.current\.tryAcquire/);
+
+  const pageClientSource = readFileSync("src/app/production-line/attendance/piece-rate-scan/PieceRateScanPageClient.js", "utf8");
+  assert.match(pageClientSource, /scanMode === "waste"/);
 });

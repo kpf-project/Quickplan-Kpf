@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>โครงสร้าง Logic กลาง: การสืบย้อนและคำนวณต้นทุนการผลิตจริง | Quickplan KPF</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: #f1f5f9;
+      font-family: 'Sarabun', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: #0f172a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px;
+      min-height: 100vh;
+    }
+    .container {
+      width: 100%;
+      max-width: 1360px;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 16px;
+      box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08);
+      overflow: hidden;
+    }
+    .header-bar {
+      background: linear-gradient(135deg, #0f294a 0%, #1e3a8a 100%);
+      padding: 24px 32px;
+      color: #ffffff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 3px solid #3b82f6;
+    }
+    .header-title h1 {
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      margin-bottom: 4px;
+    }
+    .header-title p {
+      font-size: 14px;
+      font-weight: 500;
+      color: #93c5fd;
+    }
+    .badge-status {
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #f8fafc;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .svg-wrapper {
+      padding: 24px 20px 20px 20px;
+      display: flex;
+      justify-content: center;
+      background: #f8fafc;
+    }
+    svg {
+      width: 100%;
+      height: auto;
+      max-width: 1300px;
+      display: block;
+      border-radius: 12px;
+    }
+    .footer-note {
+      background: #ffffff;
+      border-top: 1px solid #e2e8f0;
+      padding: 16px 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: #334155;
+    }
+    .rule-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #e0f2fe;
+      color: #0369a1;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="header-bar">
+      <div class="header-title">
+        <h1>โครงสร้าง Logic กลาง: การสืบย้อนและคำนวณต้นทุนการผลิตจริง</h1>
+        <p>Universal Costing Traceability Architecture: บรรจุภัณฑ์เบิกหักคืน • ตรวจ Input/Output • สืบย้อน LOT ต้นทาง • ปันส่วนวัตถุดิบตามสูตร BOM</p>
+      </div>
+      <div class="badge-status">UNIVERSAL CORE SPEC</div>
+    </div>
+
+    <div class="svg-wrapper">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1260 860" width="100%" height="100%">
+        <defs>
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap');
+            
+            text {
+              font-family: 'Sarabun', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              fill: #0f172a;
+            }
+            .code-text {
+              font-family: 'JetBrains Mono', monospace;
+              font-size: 12px;
+              fill: #1e293b;
+            }
+            .badge-text {
+              font-family: 'Sarabun', sans-serif;
+              font-size: 11px;
+              font-weight: 700;
+              fill: #ffffff;
+              letter-spacing: 0.02em;
+            }
+            .thai-bold { font-weight: 700; }
+            .thai-semi { font-weight: 600; }
+            .thai-regular { font-weight: 400; }
+            .thai-muted { font-weight: 400; fill: #64748b; }
+            .formula-box {
+              font-family: 'JetBrains Mono', monospace;
+              font-size: 12px;
+              fill: #0f294a;
+              font-weight: 600;
+            }
+          </style>
+
+          <!-- Drop Shadows -->
+          <filter id="svg-card-shadow" x="-4%" y="-3%" width="108%" height="108%" filterUnits="userSpaceOnUse">
+            <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.06" />
+            <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#0f172a" flood-opacity="0.04" />
+          </filter>
+          <filter id="svg-pop-shadow" x="-5%" y="-4%" width="110%" height="110%" filterUnits="userSpaceOnUse">
+            <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#0f172a" flood-opacity="0.10" />
+          </filter>
+
+          <!-- Arrow Marker (Universal Gray-Slate) -->
+          <marker id="svg-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#475569" />
+          </marker>
+          <!-- Arrow Marker (Blue) -->
+          <marker id="svg-arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#2563eb" />
+          </marker>
+          <!-- Arrow Marker (Emerald) -->
+          <marker id="svg-arrow-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#059669" />
+          </marker>
+        </defs>
+
+        <!-- Background Base Canvas -->
+        <rect width="1260" height="860" fill="#f8fafc" />
+
+        <!-- Outer Header Card -->
+        <rect x="24" y="16" width="1212" height="66" rx="8" fill="#0f294a" />
+        <text x="44" y="44" class="thai-bold" font-size="20" fill="#ffffff">โครงสร้าง Logic กลาง: การสืบย้อนและคำนวณต้นทุนการผลิตจริง (Universal Costing Traceability Flow)</text>
+        <text x="44" y="66" class="thai-regular" font-size="13" fill="#93c5fd">มาตรฐานคำนวณต้นทุนอัตโนมัติ: บรรจุภัณฑ์เบิกหักคืน • ตรวจการใช้ WIP/ตัวเปล่า • สืบย้อน LOT ต้นทาง • ปันส่วนวัตถุดิบตามสูตร BOM</text>
+
+        <!-- ================= LANE HEADERS ================= -->
+        <!-- Lane 1: Packaging & Finished Goods -->
+        <rect x="24" y="94" width="380" height="34" rx="6" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.2" />
+        <circle cx="44" cy="111" r="9" fill="#2563eb" />
+        <text x="41" y="115" font-size="11" font-weight="700" fill="#ffffff">1</text>
+        <text x="62" y="116" class="thai-bold" font-size="14" fill="#1e3a8a">สายที่ 1 : ต้นทุนบรรจุภัณฑ์ (Packaging)</text>
+
+        <!-- Lane 2: WIP Usage & LOT Classification -->
+        <rect x="424" y="94" width="390" height="34" rx="6" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1.2" />
+        <circle cx="444" cy="111" r="9" fill="#059669" />
+        <text x="441" y="115" font-size="11" font-weight="700" fill="#ffffff">2</text>
+        <text x="462" y="116" class="thai-bold" font-size="14" fill="#065f46">สายที่ 2 : ตรวจการใช้ WIP / เปลือก (WIP Usage Trace)</text>
+
+        <!-- Lane 3: Upstream Trace & BOM Allocation -->
+        <rect x="834" y="94" width="402" height="34" rx="6" fill="#fefce8" stroke="#fef08a" stroke-width="1.2" />
+        <circle cx="854" cy="111" r="9" fill="#ca8a04" />
+        <text x="851" y="115" font-size="11" font-weight="700" fill="#ffffff">3</text>
+        <text x="872" y="116" class="thai-bold" font-size="14" fill="#854d0e">สายที่ 3 : สืบย้อน LOT ต้นทาง &amp; ปันส่วนสูตร BOM</text>
+
+        <!-- ================= LANE 1 CONTENT ================= -->
+        <!-- Card 1.1: Target Selection -->
+        <g filter="url(#svg-card-shadow)">
+          <rect x="24" y="138" width="380" height="150" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" />
+          <rect x="36" y="148" width="132" height="20" rx="4" fill="#1e40af" />
+          <text x="44" y="162" class="badge-text">1.1 ระบุเป้าหมายคำนวณ</text>
+
+          <text x="36" y="190" class="thai-bold" font-size="14">เลือกสินค้าเป้าหมาย (FG / WIP) + วันที่ผลิต</text>
+          <text x="36" y="211" class="thai-regular" font-size="13">• ระบุรหัสสินค้า (SKU Code) และวันผลิต (Production Date)</text>
+          <text x="36" y="231" class="thai-regular" font-size="13">• ดึงยอดผลผลิตสำเร็จรูปสุทธิจากรายงานชั่งรับเข้า / ป้ายแยม</text>
+          <rect x="36" y="244" width="356" height="32" rx="4" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1" />
+          <text x="46" y="264" class="formula-box">ฐานผลผลิต = Actual Output Qty (ชิ้น / กก. / ปี๊บ)</text>
+        </g>
+
+        <!-- Down Arrow 1.1 -> 1.2 -->
+        <path d="M 214 288 L 214 308" stroke="#2563eb" stroke-width="2" marker-end="url(#svg-arrow-blue)" />
+
+        <!-- Card 1.2: Packaging Requisition & Returns -->
+        <g filter="url(#svg-card-shadow)">
+          <rect x="24" y="312" width="380" height="236" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" />
+          <rect x="36" y="322" width="144" height="20" rx="4" fill="#0284c7" />
+          <text x="44" y="336" class="badge-text">1.2 บรรจุภัณฑ์เบิกหักคืน</text>
+
+          <text x="36" y="362" class="thai-bold" font-size="14">ค้นหาใบเบิก &amp; ใบคืนจากห้องบรรจุ</text>
+          <text x="36" y="383" class="thai-regular" font-size="13">• เข้าดูหน้า <tspan class="thai-semi" fill="#0284c7">Preview ใบเบิก</tspan> ประจำแผนก/ห้องบรรจุ</text>
+          <text x="36" y="403" class="thai-regular" font-size="13">• คัดกรองใบเบิกเฉพาะรายการของสินค้าเป้าหมาย</text>
+          <text x="36" y="423" class="thai-regular" font-size="13">• เชื่อมโยง <tspan class="thai-semi" fill="#b91c1c">แท็บใบคืน (Returns)</tspan> เพื่อหักกลบลบยอดคืน</text>
+
+          <!-- Formula Box -->
+          <rect x="36" y="438" width="356" height="58" rx="4" fill="#f0f9ff" stroke="#bae6fd" stroke-width="1" />
+          <text x="46" y="458" class="thai-bold" font-size="12" fill="#0369a1">สูตรคำนวณการใช้บรรจุภัณฑ์สุทธิ :</text>
+          <text x="46" y="480" class="formula-box">ยอดใช้สุทธิ = ยอดเบิกจริง (Issue) - ยอดคืน (Return)</text>
+
+          <text x="36" y="516" class="thai-muted" font-size="12">* กรณีเบิกแล้วคืนครบ ยอดใช้จริง = 0 ไม่คิดเป็นต้นทุน</text>
+          <text x="36" y="534" class="thai-muted" font-size="12">* คิดมูลค่าตามต้นทุนจริงต่อหน่วยในเอกสาร ERP / ล็อตรับเข้า</text>
+        </g>
+
+        <!-- Down Arrow 1.2 -> 1.3 -->
+        <path d="M 214 548 L 214 570" stroke="#2563eb" stroke-width="2" marker-end="url(#svg-arrow-blue)" />
+
+        <!-- Card 1.3: Total Cost Consolidation -->
+        <g filter="url(#svg-pop-shadow)">
+          <rect x="24" y="574" width="380" height="264" rx="8" fill="#ffffff" stroke="#0f294a" stroke-width="1.8" />
+          <rect x="36" y="584" width="138" height="20" rx="4" fill="#0f294a" />
+          <text x="44" y="598" class="badge-text">1.3 สรุปต้นทุนรวมสุทธิ</text>
+
+          <text x="36" y="624" class="thai-bold" font-size="15" fill="#0f294a">รวมต้นทุนทุกองค์ประกอบ (Cost Sheet)</text>
+
+          <rect x="36" y="636" width="356" height="116" rx="6" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1" />
+          <text x="46" y="658" class="thai-semi" font-size="13">1) ต้นทุนบรรจุภัณฑ์สุทธิ (Net Packaging Cost)</text>
+          <text x="46" y="680" class="thai-semi" font-size="13">2) ต้นทุน WIP / เปลือก (รวมทุกล็อตที่เบิกใช้จริง)</text>
+          <text x="46" y="702" class="thai-semi" font-size="13">3) วัตถุดิบผสมโดยตรง (Direct Ingredients ถ้ามี)</text>
+          <line x1="46" y1="712" x2="382" y2="712" stroke="#cbd5e1" stroke-width="1" />
+          <text x="46" y="734" class="formula-box" fill="#047857">ต้นทุนรวม = บรรจุภัณฑ์ + ∑(ยอดใช้ WIP × ต้นทุน LOT)</text>
+
+          <text x="36" y="774" class="thai-bold" font-size="14" fill="#0f294a">ผลลัพธ์รายงานต้นทุน (/costing) :</text>
+          <text x="36" y="796" class="thai-semi" font-size="13">• ต้นทุนรวมทั้งรุ่นการผลิต (Total Batch Cost - บาท)</text>
+          <text x="36" y="816" class="thai-bold" font-size="13" fill="#2563eb">• ต้นทุนเฉลี่ยต่อหน่วย (Unit Cost - บาท/ชิ้น, บาท/กก., บาท/ปี๊บ)</text>
+        </g>
+
+        <!-- ================= LANE 2 CONTENT ================= -->
+        <!-- Card 2.1: Input/Output Daily Report -->
+        <g filter="url(#svg-card-shadow)">
+          <rect x="424" y="138" width="390" height="226" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" />
+          <rect x="436" y="148" width="168" height="20" rx="4" fill="#059669" />
+          <text x="444" y="162" class="badge-text">2.1 ตรวจรายงาน Input / Output</text>
+
+          <text x="436" y="190" class="thai-bold" font-size="14">จับคู่แถวผลผลิตในรายงาน Input / Output ประจำวัน</text>
+          <text x="436" y="211" class="thai-regular" font-size="13">• ตรวจดูว่าสินค้าเป้าหมาย มีการเบิกใช้ WIP/ตัวเปล่า อะไรบ้าง</text>
+          <text x="436" y="231" class="thai-regular" font-size="13">• ตรวจสอบรายการส่วนผสมร่วมตามสูตร (เช่น แยม, ครีม ฯลฯ)</text>
+
+          <!-- Business Rule Alert -->
+          <rect x="436" y="246" width="366" height="74" rx="6" fill="#f0fdf4" stroke="#86efac" stroke-width="1" />
+          <text x="448" y="268" class="thai-bold" font-size="13" fill="#166534">กฎตรวจสอบความสอดคล้องของสูตร (Recipe Consistency) :</text>
+          <text x="448" y="289" class="thai-regular" font-size="12" fill="#14532d">• หาก BOM สินค้าไม่มีส่วนผสมเสริม (เช่น ไม่มีแยม/ครีม)</text>
+          <text x="448" y="307" class="thai-bold" font-size="12" fill="#166534">  → ระบบจะไม่ปันส่วนส่วนผสมเสริมเข้าสินค้านี้เด็ดขาด</text>
+
+          <text x="436" y="344" class="thai-muted" font-size="12">ป้องกันปัญหาต้นทุนปนเปื้อนข้ามสายการผลิต</text>
+        </g>
+
+        <!-- Down Arrow 2.1 -> 2.2 -->
+        <path d="M 619 364 L 619 388" stroke="#059669" stroke-width="2" marker-end="url(#svg-arrow-green)" />
+
+        <!-- Card 2.2: LOT Disaggregation -->
+        <g filter="url(#svg-card-shadow)">
+          <rect x="424" y="392" width="390" height="256" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" />
+          <rect x="436" y="402" width="168" height="20" rx="4" fill="#047857" />
+          <text x="444" y="416" class="badge-text">2.2 จำแนกการใช้ตามแต่ละ LOT</text>
+
+          <text x="436" y="442" class="thai-bold" font-size="14">จำแนกปริมาณการใช้จริงตามแต่ละเลข LOT ของ WIP</text>
+          <text x="436" y="463" class="thai-regular" font-size="13">ในวันผลิตเดียว อาจเบิก WIP จากหลาย LOT ที่ผลิตคนละวัน :</text>
+
+          <!-- LOT Breakdown Concept Box -->
+          <rect x="436" y="478" width="366" height="106" rx="6" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1" />
+          <text x="448" y="499" class="thai-semi" font-size="13" fill="#0f172a">• [LOT A] ผลิตวันก่อนหน้า : น้ำหนักที่ใช้ A กก.</text>
+          <text x="460" y="519" class="thai-regular" font-size="12" fill="#475569">→ สืบย้อนหาต้นทุนต่อหน่วยของ LOT A (Unit Cost A)</text>
+          <text x="448" y="543" class="thai-semi" font-size="13" fill="#0f172a">• [LOT B] ผลิตอีกวันหนึ่ง : น้ำหนักที่ใช้ B กก.</text>
+          <text x="460" y="563" class="thai-regular" font-size="12" fill="#475569">→ สืบย้อนหาต้นทุนต่อหน่วยของ LOT B (Unit Cost B)</text>
+
+          <!-- Formula -->
+          <rect x="436" y="594" width="366" height="42" rx="4" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1" />
+          <text x="448" y="618" class="formula-box" fill="#065f46">มูลค่า WIP = ∑ (ปริมาณใช้ LOT_i × ต้นทุนต่อหน่วย LOT_i)</text>
+        </g>
+
+        <!-- Connector from Lane 2 to Lane 1 Total Consolidation Card -->
+        <path d="M 424 530 C 370 530, 370 650, 404 650" stroke="#059669" stroke-width="2" stroke-dasharray="4 4" marker-end="url(#svg-arrow-green)" />
+
+        <!-- ================= LANE 3 CONTENT ================= -->
+        <!-- Card 3.1: Upstream LOT Date & Room Identification -->
+        <g filter="url(#svg-card-shadow)">
+          <rect x="834" y="138" width="402" height="196" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" />
+          <rect x="846" y="148" width="168" height="20" rx="4" fill="#b45309" />
+          <text x="854" y="162" class="badge-text">3.1 ถอดรหัส LOT &amp; ระบุห้องผลิต</text>
+
+          <text x="846" y="190" class="thai-bold" font-size="14">แกะรอยวันที่ผลิตต้นทางจากโครงสร้างเลข LOT</text>
+          <text x="846" y="211" class="thai-regular" font-size="13">• รูปแบบเลข LOT: <tspan class="code-text" fill="#b45309">DDMMYYxxxx-x</tspan> → สกัดเป็นวันผลิตต้นทาง</text>
+          <text x="846" y="231" class="thai-regular" font-size="13">• ค้นหาใน Preview ใบเบิก เพื่อระบุ <tspan class="thai-semi" fill="#b45309">ห้องผลิต/เครื่องจักร</tspan> ที่ผลิต WIP นั้น</text>
+
+          <!-- Multi-output Room Notice -->
+          <rect x="846" y="246" width="378" height="74" rx="6" fill="#fffbeb" stroke="#fde68a" stroke-width="1" />
+          <text x="858" y="268" class="thai-bold" font-size="13" fill="#92400e">ตรวจจับ WIP ร่วมห้อง (Co-produced WIPs) :</text>
+          <text x="858" y="289" class="thai-regular" font-size="12" fill="#78350f">• ตรวจสอบว่าในห้องผลิตนั้น ณ วันดังกล่าว มีการเดิน WIP กี่ชนิด</text>
+          <text x="858" y="307" class="thai-regular" font-size="12" fill="#78350f">• ดึงใบเบิกวัตถุดิบทั้งหมดที่เปิดขึ้นสำหรับห้องผลิตนั้น</text>
+        </g>
+
+        <!-- Down Arrow 3.1 -> 3.2 -->
+        <path d="M 1035 334 L 1035 358" stroke="#ca8a04" stroke-width="2" marker-end="url(#svg-arrow)" />
+
+        <!-- Card 3.2: Requisitions & Actual Weight Receipts -->
+        <g filter="url(#svg-card-shadow)">
+          <rect x="834" y="362" width="402" height="196" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" />
+          <rect x="846" y="372" width="176" height="20" rx="4" fill="#d97706" />
+          <text x="854" y="386" class="badge-text">3.2 ใบเบิกห้อง &amp; ผลผลิตชั่งรับเข้า</text>
+
+          <text x="846" y="412" class="thai-bold" font-size="14">รวบรวมข้อมูลใบเบิกจริง &amp; ยอดรับเข้าจริงของห้อง</text>
+          <text x="846" y="433" class="thai-regular" font-size="13">1) <tspan class="thai-semi">ใบเบิกวัตถุดิบทั้งหมด</tspan> ของห้องผลิตในวันนั้น (หักใบคืนสุทธิ)</text>
+          <text x="846" y="453" class="thai-regular" font-size="13">2) <tspan class="thai-semi">ยอดชั่งรับเข้าจริง (/weight-scale)</tspan> ของ WIP แต่ละตัวในห้อง</text>
+          
+          <rect x="846" y="468" width="378" height="76" rx="6" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1" />
+          <text x="858" y="490" class="thai-bold" font-size="13" fill="#0f294a">ข้อมูลหลักที่ใช้เป็นฐานจัดสรร (Allocation Base) :</text>
+          <text x="858" y="511" class="thai-regular" font-size="12">• ยอดรับเข้าจริงของ WIP แต่ละตัว (Actual Weight kg จากการชั่ง)</text>
+          <text x="858" y="530" class="thai-regular" font-size="12">• สูตรมาตรฐาน Approved Master BOM ของ WIP แต่ละตัว</text>
+        </g>
+
+        <!-- Down Arrow 3.2 -> 3.3 -->
+        <path d="M 1035 558 L 1035 582" stroke="#ca8a04" stroke-width="2" marker-end="url(#svg-arrow)" />
+
+        <!-- Card 3.3: BOM Demand Allocation & Exceptions -->
+        <g filter="url(#svg-card-shadow)">
+          <rect x="834" y="586" width="402" height="252" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" />
+          <rect x="846" y="596" width="186" height="20" rx="4" fill="#ea580c" />
+          <text x="854" y="610" class="badge-text">3.3 ปันส่วนวัตถุดิบตามสูตร BOM</text>
+
+          <text x="846" y="636" class="thai-bold" font-size="14">คำนวณสัดส่วนความต้องการ (BOM Demand Allocation)</text>
+          
+          <!-- Formula Box -->
+          <rect x="846" y="648" width="378" height="42" rx="4" fill="#fff7ed" stroke="#fed7aa" stroke-width="1" />
+          <text x="856" y="666" class="formula-box" fill="#c2410c">BOM Demand = ยอดรับเข้าจริง × (BOM Qty / Base Batch)</text>
+          <text x="856" y="682" class="formula-box" fill="#9a3412">ยอดจัดสรร = ยอดเบิกสุทธิ × (Demand ของ WIP / ∑ Demand รวม)</text>
+
+          <!-- Exception Handling Rules -->
+          <text x="846" y="710" class="thai-bold" font-size="13" fill="#b45309">การจัดการข้อยกเว้นอัตโนมัติ (Exception Handling) :</text>
+          <rect x="846" y="718" width="378" height="74" rx="6" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1" />
+          <text x="856" y="738" class="thai-semi" font-size="12" fill="#0f172a">• <tspan fill="#b45309">เบิกจริงแต่ไม่มีใน BOM :</tspan> ดึงเข้าต้นทุน + Remark ตรวจสอบ</text>
+          <text x="856" y="757" class="thai-semi" font-size="12" fill="#0f172a">• <tspan fill="#64748b">มีใน BOM แต่ไม่พบใบเบิก :</tspan> แสดง Missing Qty=0 รอตรวจนับ</text>
+          <text x="856" y="776" class="thai-semi" font-size="12" fill="#047857">• <tspan fill="#047857">สืบย้อนลึกหลายขั้น :</tspan> หากวัตถุดิบเป็น WIP ให้ทำซ้ำแบบ Recursive</text>
+
+          <!-- Return value -->
+          <text x="846" y="812" class="thai-bold" font-size="13" fill="#065f46">→ ผลลัพธ์: ได้ต้นทุนต่อหน่วย (฿/กก.) ของ WIP LOT นั้นส่งกลับ Lane 2</text>
+        </g>
+
+        <!-- Connector from Lane 3 back to Lane 2 LOT Disaggregation -->
+        <path d="M 834 680 C 780 680, 780 520, 814 520" stroke="#ca8a04" stroke-width="2" stroke-dasharray="4 4" marker-end="url(#svg-arrow)" />
+
+      </svg>
+    </div>
+
+    <div class="footer-note">
+      <div>
+        <span class="rule-tag">CORE LOGIC</span>
+        &nbsp; โครงสร้างนี้เป็น Logic กลางที่ทุกกลุ่มสินค้า (บิสกิต, เวเฟอร์, ขนมปังกรอบ) ใช้ร่วมกันในการคำนวณต้นทุนต่อหน่วย
+      </div>
+      <div>
+        Quickplan Production Costing Engine v2.0
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

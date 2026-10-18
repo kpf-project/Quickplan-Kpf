@@ -234,7 +234,7 @@ function ConsolidatedPageContent() {
           {/* Desktop Table */}
           <div className="hidden lg:block overflow-x-auto">
             <table className="w-full text-left border-collapse table-fixed md:table-auto">
-              <thead className="bg-[#102C57] text-white sticky top-0 z-20 shadow-md">
+              <thead className="bg-[var(--surface-navy,#102C57)] text-white sticky top-0 z-20 shadow-md">
                 <tr>
                   <th className="py-3 px-2 lg:px-6 text-xs font-bold uppercase tracking-wider border-b border-[#0f172a] w-24">วันที่</th>
                   <th className="py-3 px-2 lg:px-6 text-xs font-bold uppercase tracking-wider border-b border-[#0f172a] w-28">รหัส</th>
@@ -332,7 +332,7 @@ function ConsolidatedPageContent() {
                   <div key={idx} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
                     <div className="flex justify-between items-start mb-2">
                       <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-[#102C57] text-white flex items-center justify-center text-xs font-bold">
+                        <div className="w-8 h-8 rounded-full bg-[var(--surface-navy,#102C57)] text-white flex items-center justify-center text-xs font-bold">
                           {row.Name.charAt(0)}
                         </div>
                         <div>
@@ -376,7 +376,7 @@ function ConsolidatedPageContent() {
 
 export default function ConsolidatedPage() {
   return (
-    <PermissionGate permissionsAny={["admin-consolidated"]}>
+    <PermissionGate permissionsAny={["admin-consolidated", "hr-consolidated-view"]}>
       <ConsolidatedPageContent />
     </PermissionGate>
   );

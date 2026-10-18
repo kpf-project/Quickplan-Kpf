@@ -1,5 +1,5 @@
 import { getSupabaseAdmin, jsonError } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { fetchAllSupabaseRows } from "@/lib/supabaseRangeFetch";
 import { normalizeParam } from "@/lib/validation";
 import { resolvePieceRateInboundQuantity } from "@/lib/pieceRateInboundQuantity";
@@ -12,12 +12,6 @@ import { verifyInboundExcelToken } from "@/lib/inboundExcelToken";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const PERMISSION_KEYS = [
-  "production-line-attendance-view",
-  "production-line-attendance-manage",
-  "production-line-attendance-report-view",
-  "production-line-attendance-report-manage",
-];
 
 const REPORT_TYPES = new Set(["inbound", "inbound-fg", "issue", "movement", "balance", "prison"]);
 const PIECE_RATE_REPORT_START_DATE = "2026-08-11";
@@ -639,7 +633,7 @@ export async function GET(request) {
         return Response.json({ error: "Invalid Excel report token" }, { status: 401 });
       }
     } else {
-      await requirePermissionKeys(request, PERMISSION_KEYS);
+      await requireTaskPermission(request, "production-piece-rate-stock-report");
     }
     const dateFrom = normalizeParam(searchParams.get("dateFrom")) || PIECE_RATE_REPORT_START_DATE;
     const dateTo = normalizeParam(searchParams.get("dateTo")) || bangkokDate();

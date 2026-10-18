@@ -1,5 +1,5 @@
 import { getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import {
   mapSectionShiftRow,
   normalizeSectionShiftInput,
@@ -7,9 +7,7 @@ import {
 
 export async function PUT(request, { params }) {
   try {
-    const { userId } = await requirePermissionKeys(request, [
-      "production-line-settings-manage",
-    ]);
+    const { userId } = await requireTaskPermission(request, "production-settings-section-shifts-edit");
     const { id } = await params;
     const input = normalizeSectionShiftInput(await readJson(request));
     if (input.errors.length) {
@@ -68,9 +66,7 @@ export async function PUT(request, { params }) {
 
 export async function DELETE(request, { params }) {
   try {
-    const { userId } = await requirePermissionKeys(request, [
-      "production-line-settings-manage",
-    ]);
+    const { userId } = await requireTaskPermission(request, "production-settings-section-shifts-delete");
     const { id } = await params;
     const supabaseAdmin = getSupabaseAdmin();
     const { error } = await supabaseAdmin

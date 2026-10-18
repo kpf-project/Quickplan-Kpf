@@ -74,7 +74,8 @@ export default async function DynamicProductionPlanning({
   const dataSource = readSearchParam(initialSearchParams, ["source", "dataSource"]).toLowerCase() === "legacy"
     ? "legacy"
     : "schedule";
-  const shouldPreloadPlanData = isPlanOrReportView;
+  // Ponytail: Avoid blocking SSR with self-referencing HTTP loopback requests; client SWR handles fetching with instant cache.
+  const shouldPreloadPlanData = false;
   const initialWorkbenchPlanNo = readSearchParam(initialSearchParams, ["planNo", "masterPlanNo"]).toUpperCase();
   const initialReportPlanNo = readSearchParam(initialSearchParams, ["reportPlanNo"]).toUpperCase();
   const initialWorkbenchQuery = readSearchParam(initialSearchParams, ["q", "query", "workbenchQuery"]);

@@ -418,7 +418,7 @@ export default function LinePlanningBoard({
               type="button"
               onClick={handleAdd}
               disabled={isAdding}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#102C57] px-5 text-sm font-semibold text-white transition hover:bg-[#0b2244] disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--surface-navy,#102C57)] px-5 text-sm font-semibold text-white transition hover:bg-[#0b2244] disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus size={16} />
               {isAdding ? "กำลังเพิ่ม..." : "เพิ่มลงตาราง"}

@@ -118,7 +118,7 @@ function EditableQtyCell({
           type="button"
           onClick={onConfirmVerify}
           disabled={verifyDisabled}
-          className="whitespace-nowrap border border-[#102C57]/30 bg-white px-1.5 py-0.5 text-[9px] font-bold text-[#102C57] transition hover:bg-[#102C57] hover:text-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300"
+          className="whitespace-nowrap border border-[#102C57]/30 bg-white px-1.5 py-0.5 text-[9px] font-bold text-[#102C57] transition hover:bg-[var(--surface-navy,#102C57)] hover:text-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300"
         >
           ยืนยันตรวจสอบ
         </button>
@@ -185,7 +185,7 @@ function ReplaceMaterialDrawer({
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-slate-950/35" onClick={saving ? undefined : onClose} />
       <div className="relative flex h-full w-full max-w-[1120px] flex-col border-l border-slate-400 bg-white shadow-none">
-        <div className="shrink-0 border-b border-slate-400 bg-[#102C57] px-5 py-4 text-white">
+        <div className="shrink-0 border-b border-slate-400 bg-[var(--surface-navy,#102C57)] px-5 py-4 text-white">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#f2d68a]">Material Verify</div>
@@ -265,7 +265,7 @@ function ReplaceMaterialDrawer({
                       >
                         <td className="px-2 py-3">
                           <div className={`flex h-5 w-5 items-center justify-center rounded border ${
-                            isSelected ? "border-[#102C57] bg-[#102C57] text-white" : "border-slate-300 bg-white"
+                            isSelected ? "border-[#102C57] bg-[var(--surface-navy,#102C57)] text-white" : "border-slate-300 bg-white"
                           }`}>
                             {isSelected ? (
                               <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -338,7 +338,7 @@ function ReplaceMaterialDrawer({
                 type="button"
                 onClick={() => selectedOption && onSelect(selectedOption)}
                 disabled={!selectedOption || saving}
-                className="h-11 w-full rounded-xl bg-[#102C57] text-sm font-bold text-white transition hover:bg-[#1a3d6b] disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-11 w-full rounded-xl bg-[var(--surface-navy,#102C57)] text-sm font-bold text-white transition hover:bg-[#1a3d6b] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saving ? "กำลังบันทึก..." : "ยืนยันการเปลี่ยน"}
               </button>
@@ -442,7 +442,7 @@ function MaterialTable({
                             type="button"
                             onClick={() => handleConfirmDate(date)}
                             disabled={isPast || isConfirmingDate}
-                            className="border border-[#102C57] bg-white px-2 py-0.5 text-[9px] font-bold tracking-[0.04em] text-[#102C57] transition-colors hover:bg-[#102C57] hover:text-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300"
+                            className="border border-[#102C57] bg-white px-2 py-0.5 text-[9px] font-bold tracking-[0.04em] text-[#102C57] transition-colors hover:bg-[var(--surface-navy,#102C57)] hover:text-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300"
                           >
                             {isConfirmingDate ? "กำลังยืนยัน..." : "ยืนยันวันนี้"}
                           </button>
@@ -568,7 +568,7 @@ function MaterialTable({
                         <tr key={`${rowKey}|${deptRow.deptId}`} className="border-b border-slate-300 bg-[#F3F6FA]">
                           <td className="sticky left-0 z-10 border-r border-slate-300 bg-[#F3F6FA] px-2.5 py-2">
                             <div className="ml-7 flex items-center gap-1.5">
-                              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#102C57]/60" />
+                              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--surface-navy,#102C57)]/60" />
                               <span className="text-[11px] font-semibold text-slate-600" title={deptRow.deptName}>
                                 {deptRow.deptName}
                               </span>
@@ -981,7 +981,7 @@ export default function MaterialVerifyClient({
                   type="button"
                   onClick={() => handleVerifyAction("accept")}
                   disabled={isActing}
-                  className="flex-1 h-9 rounded-none bg-[#102C57] border border-[#102C57] text-white hover:bg-[#0b1f3f] text-xs font-bold transition-all flex items-center justify-center gap-1 disabled:opacity-50"
+                  className="flex-1 h-9 rounded-none bg-[var(--surface-navy,#102C57)] border border-[#102C57] text-white hover:bg-[#0b1f3f] text-xs font-bold transition-all flex items-center justify-center gap-1 disabled:opacity-50"
                 >
                   {isActing ? (
                     <div className="h-3 w-3 animate-spin border-2 border-white border-t-transparent rounded-full" />
@@ -1026,7 +1026,7 @@ export default function MaterialVerifyClient({
                   onClick={() => setActiveTab(tab.id)}
                   className={`border px-3 py-1.5 text-xs font-bold uppercase tracking-[0.08em] transition-colors lg:px-2.5 lg:py-1 lg:text-[11px] ${
                     isActive
-                      ? "border-[#102C57] bg-[#102C57] text-white"
+                      ? "border-[#102C57] bg-[var(--surface-navy,#102C57)] text-white"
                       : "border-slate-300 bg-white text-[#102C57] hover:bg-[#EEF3F8]"
                   }`}
                 >

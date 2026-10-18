@@ -1,5 +1,5 @@
 const assert = require("node:assert/strict");
-const { parseReadingLine } = require("./server.js");
+const { createWeighingCycleTracker, parseReadingLine } = require("./server.js");
 
 const cases = [
   {
@@ -74,3 +74,14 @@ for (const testCase of cases) {
 }
 
 console.log(`\n${cases.length} parser tests passed.`);
+
+const cycleIds = ["cycle-a", "cycle-b"];
+const trackCycle = createWeighingCycleTracker({
+  createId: () => cycleIds.shift(),
+});
+assert.equal(trackCycle(0), null, "zero weight has no cycle");
+assert.equal(trackCycle(10), "cycle-a", "first item starts a cycle");
+assert.equal(trackCycle(10.001), "cycle-a", "the same item keeps its cycle");
+assert.equal(trackCycle(0.04), null, "clearing the scale ends the cycle");
+assert.equal(trackCycle(8), "cycle-b", "the next item starts a new cycle");
+console.log("ok - weighing cycle remains unique until the scale is cleared");

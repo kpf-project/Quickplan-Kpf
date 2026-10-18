@@ -1,7 +1,9 @@
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
+import { canViewDataTaskCosts, redactDataTaskCosts } from "@/lib/dataTaskPermissions";
 import { fetchGatewayJson } from "@/lib/gatewayClient";
 import { normalizeCsvParam, normalizeParam, parsePaginationParams } from "@/lib/validation";
 import { createAppError, fail, ok } from "@/lib/result";
+import { enrichFlourProductionReceipts } from "@/lib/productionCostingService";
 
 const DEFAULT_ICCAT_CODES = "01,02,03,05,08,10";
 
@@ -37,7 +39,7 @@ function applyCacheBypass(params, request) {
 }
 
 export async function listRawMaterials(request) {
-  await requirePermissionKeys(request, ["raw-materials-lot"]);
+  const permission = await requireTaskPermission(request, "raw-materials-lot-view");
   const { searchParams } = new URL(request.url);
   const { page, pageSize } = parsePaginationParams(searchParams);
   const paginationCheck = validatePagination(page, pageSize);
@@ -92,11 +94,11 @@ export async function listRawMaterials(request) {
   if (!result.ok) {
     return result;
   }
-  return ok(result.data, { status: result.status });
+  return ok(redactDataTaskCosts(result.data, permission, "raw-materials-cost-view", process.env.ROLE_TASK_PERMISSIONS_ENABLED === "true"), { status: result.status });
 }
 
 export async function listRawMaterialsSummary(request) {
-  await requirePermissionKeys(request, ["raw-materials-summary"]);
+  await requireTaskPermission(request, "raw-materials-summary-view");
   const { searchParams } = new URL(request.url);
   const { page, pageSize } = parsePaginationParams(searchParams);
   const paginationCheck = validatePagination(page, pageSize);
@@ -143,7 +145,7 @@ export async function listRawMaterialsSummary(request) {
 }
 
 export async function listRawMaterialsMovement(request) {
-  await requirePermissionKeys(request, ["raw-materials-movement"]);
+  await requireTaskPermission(request, "raw-materials-movement-view");
   const { searchParams } = new URL(request.url);
   const { page, pageSize } = parsePaginationParams(searchParams);
   const paginationCheck = validatePagination(page, pageSize);
@@ -189,7 +191,7 @@ export async function listRawMaterialsMovement(request) {
 }
 
 export async function listRawMaterialLotCosts(request) {
-  await requirePermissionKeys(request, ["raw-materials-lot"]);
+  await requireTaskPermission(request, "raw-materials-cost-view");
   const { searchParams } = new URL(request.url);
   const { page, pageSize } = parsePaginationParams(searchParams);
   const paginationCheck = validatePagination(page, pageSize);
@@ -200,7 +202,7 @@ export async function listRawMaterialLotCosts(request) {
     pageSize: pageSize.toString(),
     costSchema: "1",
   });
-  for (const key of ["search", "iccatCodes", "costStatus", "cursor"]) {
+  for (const key of ["search", "skuCode", "lotNo", "iccatCodes", "costStatus", "cursor"]) {
     const value = normalizeParam(searchParams.get(key));
     if (value) params.set(key, value);
   }
@@ -211,7 +213,7 @@ export async function listRawMaterialLotCosts(request) {
 }
 
 export async function listRawMaterialReceipts(request) {
-  await requirePermissionKeys(request, ["raw-materials-lot"]);
+  const permission = await requireTaskPermission(request, "raw-materials-receipts-view");
   const { searchParams } = new URL(request.url);
   const { page, pageSize } = parsePaginationParams(searchParams);
   const paginationCheck = validatePagination(page, pageSize);
@@ -220,7 +222,7 @@ export async function listRawMaterialReceipts(request) {
   const params = new URLSearchParams({
     page: page.toString(),
     pageSize: pageSize.toString(),
-    receiptCostSchema: "3",
+    receiptCostSchema: "4",
   });
   for (const key of [
     "search",
@@ -238,11 +240,11 @@ export async function listRawMaterialReceipts(request) {
   applyCacheBypass(params, request);
 
   const result = await fetchGatewayJson("/api/raw-material-receipts", params, "production");
-  return result.ok ? ok(result.data, { status: result.status }) : result;
+  return result.ok ? ok(redactDataTaskCosts(result.data, permission, "raw-materials-cost-view", process.env.ROLE_TASK_PERMISSIONS_ENABLED === "true"), { status: result.status }) : result;
 }
 
 export async function listProductionReceipts(request) {
-  await requirePermissionKeys(request, ["raw-materials-lot"]);
+  const permission = await requireTaskPermission(request, "raw-materials-production-receipts-view");
   const { searchParams } = new URL(request.url);
   const { page, pageSize } = parsePaginationParams(searchParams);
   const paginationCheck = validatePagination(page, pageSize);
@@ -251,7 +253,7 @@ export async function listProductionReceipts(request) {
   const params = new URLSearchParams({
     page: page.toString(),
     pageSize: pageSize.toString(),
-    schema: "1",
+    schema: "2",
   });
   for (const key of [
     "search",
@@ -268,11 +270,16 @@ export async function listProductionReceipts(request) {
   applyCacheBypass(params, request);
 
   const result = await fetchGatewayJson("/api/production-receipts", params, "production");
-  return result.ok ? ok(result.data, { status: result.status }) : result;
+  if (!result.ok) return result;
+  const enabled = process.env.ROLE_TASK_PERMISSIONS_ENABLED === "true";
+  const payload = canViewDataTaskCosts(permission, "raw-materials-cost-view", enabled)
+    ? await enrichFlourProductionReceipts(result.data)
+    : result.data;
+  return ok(redactDataTaskCosts(payload, permission, "raw-materials-cost-view", enabled), { status: result.status });
 }
 
 export async function listRawMaterialReturns(request) {
-  await requirePermissionKeys(request, ["raw-material-returns"]);
+  const permission = await requireTaskPermission(request, "raw-materials-returns-view");
   const { searchParams } = new URL(request.url);
   const { page, pageSize } = parsePaginationParams(searchParams);
   const paginationCheck = validatePagination(page, pageSize);
@@ -305,11 +312,11 @@ export async function listRawMaterialReturns(request) {
   if (!result.ok) {
     return result;
   }
-  return ok(result.data, { status: result.status });
+  return ok(redactDataTaskCosts(result.data, permission, "raw-materials-returns-cost-view", process.env.ROLE_TASK_PERMISSIONS_ENABLED === "true"), { status: result.status });
 }
 
 export async function listRawMaterialRequisitions(request) {
-  await requirePermissionKeys(request, ["admin-requisition"]);
+  const permission = await requireTaskPermission(request, "raw-materials-requisitions-view");
   const { searchParams } = new URL(request.url);
   const { page, pageSize } = parsePaginationParams(searchParams);
   const paginationCheck = validatePagination(page, pageSize);
@@ -342,5 +349,5 @@ export async function listRawMaterialRequisitions(request) {
   if (!result.ok) {
     return result;
   }
-  return ok(result.data, { status: result.status });
+  return ok(redactDataTaskCosts(result.data, permission, "raw-materials-requisitions-cost-view", process.env.ROLE_TASK_PERMISSIONS_ENABLED === "true"), { status: result.status });
 }

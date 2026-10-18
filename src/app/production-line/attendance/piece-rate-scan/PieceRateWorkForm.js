@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronDown, ChevronUp, Loader2, Lock, Printer, Radar, Keyboard } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CalendarDays, CheckCircle2, ChevronDown, ChevronUp, Loader2, Lock, Printer, Radar, Keyboard } from "lucide-react";
 import { submitPieceRateLog } from "@/features/attendance/services/pieceRateWorkClient";
 import { normalizeEmployeeCode } from "@/lib/employeeCode";
 import { printPieceRateSlipDirect } from "@/features/printing/sunmiDirectPrintClient";
 import { printPieceRateLabelViaAgent } from "@/features/production-line/services/localPrintAgentClient";
 import { buildPieceRateDesktopLabel } from "@/lib/piece-rate-desktop-label";
+import { resolvePieceRateWorkTimestamp } from "@/lib/piece-rate-work-date";
 import {
   findPieceRateOutboxDuplicate,
   getPieceRateNeedsReviewEntries,
@@ -159,16 +160,6 @@ async function resolveMachineCode() {
     }
   }
   return normalizeMachineCode(window.localStorage?.getItem(MACHINE_STORAGE_KEY));
-}
-
-function getBangkokDateKey(date = new Date()) {
-  const utc = date.getTime() + (date.getTimezoneOffset() * 60000);
-  const bangkokDate = new Date(utc + (3600000 * 7));
-  return [
-    bangkokDate.getFullYear(),
-    String(bangkokDate.getMonth() + 1).padStart(2, "0"),
-    String(bangkokDate.getDate()).padStart(2, "0"),
-  ].join("");
 }
 
 const PIECE_RATE_DOC_SEQ_MAX = 999;
@@ -508,6 +499,11 @@ function buildSlipPayload(savedData = {}, fallback = {}) {
     dateText,
     operatorUsername: savedData.operatorUsername || fallback.operatorUsername || "-",
     inputValue: savedData.inputValue ?? fallback.inputValue ?? null,
+    normalizedKgAmount: savedData.normalizedKgAmount
+      ?? fallback.normalizedKgAmount
+      ?? fallback.actualWeightKg
+      ?? fallback.inputValue
+      ?? null,
     countValue: savedData.countValue ?? fallback.countValue ?? 1,
     wageAmount: savedData.wageAmount ?? fallback.wageAmount ?? 0,
     loggedAt: savedData.loggedAt || fallback.loggedAt || new Date().toISOString(),
@@ -534,10 +530,14 @@ export default function PieceRateWorkForm({
   onWorkflowModeChange,
   onOpenProductPicker,
   onOpenEmployeePicker,
+  workDate,
+  maxWorkDate,
+  onWorkDateChange,
 }) {
   const initialScaleWeightSnapshot = getLatestScaleWeightSnapshot();
   const requestIdRef = useRef(buildRequestId());
   const [inputValue, setInputValue] = useState("");
+  const [pailWeightKg, setPailWeightKg] = useState("");
   const [submitError, setSubmitError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitPhase, setSubmitPhase] = useState("idle");
@@ -619,6 +619,13 @@ export default function PieceRateWorkForm({
   const standardWeightKg = parsePositiveScaleNumber(productLookup?.pieceRate?.weightKg);
   const inputLabel = productLookup?.pieceRate?.inputLabel || "น้ำหนัก";
   const inputUnitLabel = productLookup?.pieceRate?.inputUnitLabel || "กก.";
+  const handlePailCountChange = (value) => {
+    setInputValue(value);
+    const count = parsePositiveScaleNumber(value);
+    setPailWeightKg(count !== null && standardWeightKg !== null
+      ? String(Number((count * standardWeightKg).toFixed(3)))
+      : "");
+  };
   
   const scalePreviewStatus = !hasScaleBridge
     ? {
@@ -927,7 +934,7 @@ export default function PieceRateWorkForm({
           productName: slipPayload.productName,
           employeeCode: slipPayload.employeeCode,
           employeeName: slipPayload.employeeName,
-          weightKg: slipPayload.inputValue,
+          weightKg: slipPayload.normalizedKgAmount,
           countValue: slipPayload.countValue,
           wageAmount: slipPayload.wageAmount,
           recordedAt: slipPayload.loggedAt,
@@ -999,14 +1006,8 @@ export default function PieceRateWorkForm({
   const saveLastProductForEmployee = (employeeCode, productBarcode) => {
     if (typeof window === "undefined" || !employeeCode || !productBarcode) return;
     try {
-      const d = new Date();
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, "0");
-      const day = String(d.getDate()).padStart(2, "0");
-      const today = `${year}-${month}-${day}`;
-      
       const key = `piece_rate_last_prod_${employeeCode}`;
-      localStorage.setItem(key, JSON.stringify({ barcode: productBarcode, date: today }));
+      localStorage.setItem(key, JSON.stringify({ barcode: productBarcode, date: workDate }));
     } catch (err) {
       console.error("Failed to save last product for employee", err);
     }
@@ -1028,9 +1029,17 @@ export default function PieceRateWorkForm({
     };
 
     let resolvedInputValue = parsePositiveScaleNumber(inputValue);
+    const actualPailWeightKg = inputMode === "pail"
+      ? parsePositiveScaleNumber(pailWeightKg)
+      : null;
     if (resolvedInputValue === null && !isScaleConnected) {
       releaseSubmitLock();
       setSubmitError(`กรุณากรอก${inputLabel}ให้มากกว่า 0`);
+      return;
+    }
+    if (inputMode === "pail" && actualPailWeightKg === null) {
+      releaseSubmitLock();
+      setSubmitError("กรุณากรอกน้ำหนักจริงรวมให้มากกว่า 0");
       return;
     }
 
@@ -1098,6 +1107,15 @@ export default function PieceRateWorkForm({
     }
 
     const scannedEmployeeCode = normalizeEmployeeCode(employeeScanValue || employee?.employeeCode);
+    const capturedAt = new Date();
+    let loggedAt;
+    try {
+      loggedAt = resolvePieceRateWorkTimestamp({ workDate, capturedAt });
+    } catch (error) {
+      releaseSubmitLock();
+      setSubmitError(error?.message || "วันที่ทำงานไม่ถูกต้อง");
+      return;
+    }
     const payload = {
       requestId: requestIdRef.current,
       productBarcode: productLookup?.productBarcode || productScanValue,
@@ -1115,7 +1133,10 @@ export default function PieceRateWorkForm({
         checkOut: employee?.checkOut || null,
       },
       inputValue: resolvedInputValue,
+      actualWeightKg: actualPailWeightKg,
       countValue: 1,
+      workDate,
+      loggedAt,
       source: "piece_rate_scan",
       machineCode: machineCodeResult,
       rawProductBarcodePayload: productScanValue || productLookup?.productBarcode || null,
@@ -1126,14 +1147,17 @@ export default function PieceRateWorkForm({
         inputMode,
         wageBasis,
         countValue: 1,
+        workDate,
         scaleConnected: isScaleConnected,
         scaleAudit,
+        actualWeightKg: actualPailWeightKg,
       },
     };
 
     // Raise-Before-Reserve: let the server lift its per-machine counter past
     // our local high-water mark before reserving a new online doc number.
-    payload.docCounterHint = { lastSeq: readLocalPieceRateCounter(getBangkokDateKey()).lastSeq };
+    const workDateKey = workDate.replaceAll("-", "");
+    payload.docCounterHint = { lastSeq: readLocalPieceRateCounter(workDateKey).lastSeq };
 
     const localDuplicate = await findPieceRateOutboxDuplicate(payload);
     if (localDuplicate) {
@@ -1171,8 +1195,7 @@ export default function PieceRateWorkForm({
     if (shouldQueueOffline) {
       try {
         const offlineLogId = payload.requestId;
-        const now = new Date();
-        const docDateKey = getBangkokDateKey(now);
+        const docDateKey = workDateKey;
         const localCounter = readLocalPieceRateCounter(docDateKey);
         const nextSeq = localCounter.lastSeq + 1;
         if (nextSeq > PIECE_RATE_DOC_SEQ_MAX) {
@@ -1189,7 +1212,6 @@ export default function PieceRateWorkForm({
           ...payload,
           id: offlineLogId,
           docNo: generatedDocNo,
-          loggedAt: now.toISOString(),
         };
 
         const queueResult = await queuePieceRateSubmission(offlinePayload, {
@@ -1206,17 +1228,7 @@ export default function PieceRateWorkForm({
         await refreshOfflineState();
         saveLastProductForEmployee(scannedEmployeeCode, payload.productBarcode);
 
-        const timeText = new Intl.DateTimeFormat("th-TH", {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          hour12: false,
-        }).format(now);
-        const dateText = new Intl.DateTimeFormat("th-TH", {
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric",
-        }).format(now);
+        const { timeText, dateText } = formatPrintTimestamp(loggedAt);
 
         const slipPayload = {
           docNo: generatedDocNo,
@@ -1231,11 +1243,12 @@ export default function PieceRateWorkForm({
           branchName: employee?.branch || "-",
           amountText: formatAmount(resolvedInputValue, inputMode),
           inputValue: resolvedInputValue,
+          normalizedKgAmount: actualPailWeightKg || resolvedInputValue,
           countValue: 1,
           wageAmount: wageBasis === "count"
             ? Number(productLookup?.pieceRate?.payRatePerUnit || 0)
-            : Number((resolvedInputValue * Number(productLookup?.pieceRate?.payRatePerKg || 0)).toFixed(2)),
-          loggedAt: now.toISOString(),
+            : Number(((actualPailWeightKg || resolvedInputValue) * Number(productLookup?.pieceRate?.payRatePerKg || 0)).toFixed(2)),
+          loggedAt,
           valueLabel: inputLabel || "จำนวน",
           unitLabel: inputUnitLabel || "หน่วย",
           timeText,
@@ -1304,6 +1317,7 @@ export default function PieceRateWorkForm({
           employeeDepartment: employee?.departmentName,
           employeeBranch: employee?.branch,
           inputValue: resolvedInputValue,
+          actualWeightKg: actualPailWeightKg,
           inputMode,
           inputLabel,
           inputUnitLabel,
@@ -1347,6 +1361,7 @@ export default function PieceRateWorkForm({
         employeeDepartment: employee?.departmentName,
         employeeBranch: employee?.branch,
         inputValue: resolvedInputValue,
+        actualWeightKg: actualPailWeightKg,
         inputMode,
         inputLabel,
         inputUnitLabel,
@@ -1398,6 +1413,7 @@ export default function PieceRateWorkForm({
         employeeDepartment: employee?.departmentName,
         employeeBranch: employee?.branch,
         inputValue: resolvedInputValue,
+        actualWeightKg: actualPailWeightKg,
         inputMode,
         inputLabel,
         inputUnitLabel,
@@ -1428,8 +1444,14 @@ export default function PieceRateWorkForm({
         refreshKey={desktopRefreshKey}
         workflowMode={workflowMode}
         onWorkflowModeChange={onWorkflowModeChange}
+        workDate={workDate}
+        maxWorkDate={maxWorkDate}
+        onWorkDateChange={onWorkDateChange}
         inputValue={inputValue}
         setInputValue={setInputValue}
+        pailWeightKg={pailWeightKg}
+        setPailWeightKg={setPailWeightKg}
+        onPailCountChange={handlePailCountChange}
       />
     );
   }
@@ -1492,6 +1514,11 @@ export default function PieceRateWorkForm({
             <div style={{ marginBottom: "0.8mm" }}>
               <strong>{printSlip.valueLabel} :</strong> {printSlip.amountText} {printSlip.unitLabel}
             </div>
+            {printSlip.normalizedKgAmount ? (
+              <div style={{ marginBottom: "0.8mm" }}>
+                <strong>น้ำหนักจริง :</strong> {Number(printSlip.normalizedKgAmount).toFixed(3)} กก.
+              </div>
+            ) : null}
             <div style={{ borderTop: "1px dashed #000", margin: "0.6mm 0 0.2mm" }} />
           </div>
         </section>
@@ -1511,6 +1538,17 @@ export default function PieceRateWorkForm({
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <label className={`flex items-center gap-1.5 border px-2 py-1.5 text-[10px] font-black ${workDate !== maxWorkDate ? "border-amber-400 bg-amber-50 text-amber-800" : "border-slate-200 bg-white text-[#0f2747]"}`}>
+            <CalendarDays size={14} />
+            <input
+              type="date"
+              value={workDate}
+              max={maxWorkDate}
+              onChange={(event) => onWorkDateChange?.(event.target.value)}
+              className="w-[110px] bg-transparent font-black outline-none"
+              aria-label="วันที่ทำงาน"
+            />
+          </label>
           <Link href="/production-line/attendance/report/piece-rate" className="p-2 text-slate-400 active:bg-slate-100 rounded-full">
             <Printer size={20} />
           </Link>
@@ -1628,8 +1666,34 @@ export default function PieceRateWorkForm({
               <div className="flex flex-col items-center justify-center min-h-[320px] relative w-full">
                 <ModernDigitalDisplay value={liveWeightText} isStable={exactDeviceStable} unit={inputUnitLabel} />
 
-                {/* Hidden Input for Manual Entry */}
-                {!isScaleConnected && (
+                {inputMode === "pail" ? (
+                  <div className="grid w-full max-w-md grid-cols-2 gap-3">
+                    <label className="text-center text-xs font-black text-slate-300">
+                      จำนวนปี๊บ
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min="1"
+                        step="1"
+                        value={inputValue}
+                        onChange={(event) => handlePailCountChange(event.target.value)}
+                        className="mt-2 h-16 w-full rounded-xl border-2 border-[#e4b625] bg-slate-900 px-3 text-center text-3xl font-black text-white outline-none"
+                      />
+                    </label>
+                    <label className="text-center text-xs font-black text-slate-300">
+                      น้ำหนักจริงรวม (กก.)
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min="0.001"
+                        step="0.001"
+                        value={pailWeightKg}
+                        onChange={(event) => setPailWeightKg(event.target.value)}
+                        className="mt-2 h-16 w-full rounded-xl border-2 border-emerald-500 bg-slate-900 px-3 text-center text-3xl font-black text-white outline-none"
+                      />
+                    </label>
+                  </div>
+                ) : !isScaleConnected ? (
                   <input
                     ref={inputRef}
                     type="number"
@@ -1639,7 +1703,7 @@ export default function PieceRateWorkForm({
                     onChange={(e) => setInputValue(e.target.value)}
                     className="absolute inset-0 opacity-0 cursor-pointer"
                   />
-                )}
+                ) : null}
               </div>
 
               {/* Diagnosis / Error Area */}

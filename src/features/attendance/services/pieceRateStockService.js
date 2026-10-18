@@ -1,7 +1,7 @@
 import "server-only";
 
 import { ApiError, getSupabaseAdmin } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { normalizeParam } from "@/lib/validation";
 import { fetchAllSupabaseRows, fetchSupabaseRowsByChunks } from "@/lib/supabaseRangeFetch";
 
@@ -9,12 +9,6 @@ const LOG_TABLE = "production_piece_rate_logs";
 const ISSUE_TABLE = "production_piece_rate_stock_issues";
 const RETURN_TABLE = "production_piece_rate_stock_returns";
 
-const PIECE_RATE_STOCK_PERMISSION_KEYS = [
-  "production-line-attendance-view",
-  "production-line-attendance-manage",
-  "production-line-attendance-report-view",
-  "production-line-attendance-report-manage",
-];
 
 function normalizeText(value) {
   const normalized = normalizeParam(value);
@@ -264,7 +258,7 @@ async function loadReturnsByIssueId(supabaseAdmin, issueId) {
 }
 
 export async function lookupPieceRateStockDocument(request, barcode) {
-  await requirePermissionKeys(request, PIECE_RATE_STOCK_PERMISSION_KEYS);
+  await requireTaskPermission(request, "production-piece-rate-stock-view");
   const supabaseAdmin = getSupabaseAdmin();
   const { log } = await loadStockLabelByBarcode(supabaseAdmin, barcode);
   const issueRow = await loadIssueByBarcode(supabaseAdmin, log.barcode);
@@ -281,7 +275,7 @@ export async function lookupPieceRateStockDocument(request, barcode) {
 }
 
 export async function listAvailablePieceRateStockLabels(request, productCode) {
-  await requirePermissionKeys(request, PIECE_RATE_STOCK_PERMISSION_KEYS);
+  await requireTaskPermission(request, "production-piece-rate-stock-view");
   const normalizedProductCode = normalizeLookupCode(productCode);
   const supabaseAdmin = getSupabaseAdmin();
   const buildLogsQuery = () => {
@@ -365,7 +359,7 @@ export async function listAvailablePieceRateStockLabels(request, productCode) {
 }
 
 export async function createPieceRateStockIssue(request, body = {}) {
-  const permission = await requirePermissionKeys(request, PIECE_RATE_STOCK_PERMISSION_KEYS);
+  const permission = await requireTaskPermission(request, "production-piece-rate-stock-issue-write");
   const supabaseAdmin = getSupabaseAdmin();
   const barcode = body.barcode || body.pieceRateBarcode || body.docNo;
   const { log } = await loadStockLabelByBarcode(supabaseAdmin, barcode);
@@ -450,7 +444,7 @@ export async function createPieceRateStockIssue(request, body = {}) {
 }
 
 export async function createPieceRateStockIssueBatch(request, body = {}) {
-  const permission = await requirePermissionKeys(request, PIECE_RATE_STOCK_PERMISSION_KEYS);
+  const permission = await requireTaskPermission(request, "production-piece-rate-stock-issue-write");
   const supabaseAdmin = getSupabaseAdmin();
   const barcodes = Array.from(new Set(
     (Array.isArray(body.barcodes) ? body.barcodes : [])
@@ -486,7 +480,7 @@ export async function createPieceRateStockIssueBatch(request, body = {}) {
 }
 
 export async function createPieceRateStockReturn(request, body = {}) {
-  const permission = await requirePermissionKeys(request, PIECE_RATE_STOCK_PERMISSION_KEYS);
+  const permission = await requireTaskPermission(request, "production-piece-rate-stock-return-write");
   const supabaseAdmin = getSupabaseAdmin();
   const barcode = body.barcode || body.pieceRateBarcode || body.docNo;
   const { log } = await loadStockLabelByBarcode(supabaseAdmin, barcode);
@@ -526,7 +520,7 @@ export async function createPieceRateStockReturn(request, body = {}) {
 }
 
 export async function cancelPieceRateStockIssue(request, body = {}) {
-  const permission = await requirePermissionKeys(request, PIECE_RATE_STOCK_PERMISSION_KEYS);
+  const permission = await requireTaskPermission(request, "production-piece-rate-stock-issue-cancel");
   const supabaseAdmin = getSupabaseAdmin();
   const barcode = body.barcode || body.pieceRateBarcode || body.docNo;
   const log = await loadPieceRateLogByBarcode(supabaseAdmin, barcode);
@@ -567,7 +561,7 @@ export async function cancelPieceRateStockIssue(request, body = {}) {
 }
 
 export async function cancelPieceRateWeigh(request, body = {}) {
-  const permission = await requirePermissionKeys(request, PIECE_RATE_STOCK_PERMISSION_KEYS);
+  const permission = await requireTaskPermission(request, "production-piece-rate-weigh-cancel");
   const supabaseAdmin = getSupabaseAdmin();
   const barcode = body.barcode || body.pieceRateBarcode || body.docNo;
   const log = await loadPieceRateLogByBarcode(supabaseAdmin, barcode);
@@ -601,7 +595,7 @@ export async function assertPieceRateLogHasNoActiveStockIssue(supabaseAdmin, log
 }
 
 export async function getBiscuitFgProducts(request) {
-  await requirePermissionKeys(request, PIECE_RATE_STOCK_PERMISSION_KEYS);
+  await requireTaskPermission(request, "production-piece-rate-stock-view");
   const supabaseAdmin = getSupabaseAdmin();
 
   // Find Biscuit department (KP13)

@@ -1,5 +1,5 @@
 import { unstable_cache } from "next/cache";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { createAppError, fail, ok } from "@/lib/result";
 import { normalizeParam, parsePaginationParams } from "@/lib/validation";
 
@@ -42,10 +42,7 @@ const getSkuMinMax = unstable_cache(fetchSkuMinMax, ["sku-min-max"], {
 });
 
 export async function listSkuMinMax(request) {
-  await requirePermissionKeys(request, [
-    "admin-sku-min-max",
-    "raw-materials-summary",
-  ]);
+  await requireTaskPermission(request, "data-sku-min-max-view");
   const { searchParams } = new URL(request.url);
   const { page, pageSize } = parsePaginationParams(searchParams);
   const iccatSearch = normalizeParam(searchParams.get("iccat")) ?? "";
@@ -67,10 +64,7 @@ export async function listSkuMinMax(request) {
 }
 
 export async function listSkuMinMaxBySku(request) {
-  await requirePermissionKeys(request, [
-    "admin-sku-min-max",
-    "raw-materials-summary",
-  ]);
+  await requireTaskPermission(request, "data-sku-min-max-view");
   const { searchParams } = new URL(request.url);
   const skus = normalizeParam(searchParams.get("skus")) ?? "";
   if (!skus.trim()) {

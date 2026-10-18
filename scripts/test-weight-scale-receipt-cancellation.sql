@@ -25,6 +25,8 @@ do $$
 declare
   v_id uuid;
   v_barcode text;
+  v_second_result jsonb;
+  v_reversal_count integer;
 begin
   select id, barcode into v_id, v_barcode from cancellation_candidate;
   if v_id is null then
@@ -47,6 +49,21 @@ begin
       and source_document_no = v_barcode
   ) then
     raise exception 'Receipt cancellation did not create its reversal movement';
+  end if;
+
+  v_second_result := public.cancel_production_weight_receipt(v_id, null, 'rollback retry test');
+  if coalesce((v_second_result ->> 'alreadyCancelled')::boolean, false) is not true then
+    raise exception 'Repeated cancellation was not reported as idempotent success';
+  end if;
+
+  select count(*) into v_reversal_count
+  from public.production_stock_movements
+  where movement_type = 'adjustment_out'
+    and source_document_type = 'weight_receipt_void'
+    and source_document_no = v_barcode;
+
+  if v_reversal_count <> 1 then
+    raise exception 'Repeated cancellation created % reversal movements instead of one', v_reversal_count;
   end if;
 end;
 $$;

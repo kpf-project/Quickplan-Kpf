@@ -7,7 +7,7 @@ import {
   loadWeightScaleLiveProductsData,
   loadWeightScaleLiveRecentReceiptsData,
 } from "@/lib/scale/live-products";
-import { loadScaleLotsData } from "@/lib/scale/lots";
+
 
 export const dynamic = "force-dynamic";
 
@@ -38,9 +38,7 @@ async function loadInitialWeightScaleLiveData() {
     }
 
     const [initialLotsPayload, initialReceiptsPayload] = await Promise.all([
-      loadScaleLotsData({
-        products: initialProductsPayload.products,
-      }),
+      Promise.resolve({ lots: [] }),
       loadWeightScaleLiveRecentReceiptsData(undefined, {
         departmentIds: initialProductsPayload.preset?.departmentIds || [],
         limit: 20,

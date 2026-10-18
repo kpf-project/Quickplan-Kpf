@@ -1,17 +1,10 @@
 import { getSupabaseAdmin } from "@/lib/adminApi";
 import { getEmployeeCodeMatchKey, normalizeEmployeeCode } from "@/lib/employeeCode";
 import { fetchGatewayJson } from "@/lib/gatewayClient";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { createAppError, fail, ok } from "@/lib/result";
 import { normalizeParam, parsePaginationParams } from "@/lib/validation";
 
-const VIEW_PERMISSIONS = [
-  "production-line-attendance-report-view",
-  "production-line-attendance-report-manage",
-  "production-line-attendance-view",
-  "production-line-attendance-manage",
-  "admin-attendance",
-];
 
 function toBangkokDateKey(value) {
   const date = new Date(value);
@@ -137,7 +130,7 @@ async function loadConsolidatedFingerMap(rows) {
 }
 
 export async function listAttendanceScanEvents(request) {
-  await requirePermissionKeys(request, VIEW_PERMISSIONS);
+  await requireTaskPermission(request, "production-attendance-scan-report");
 
   const { searchParams } = new URL(request.url);
   const { page, pageSize: rawPageSize } = parsePaginationParams(searchParams, {

@@ -1,5 +1,5 @@
 import { getSupabaseAdmin, jsonError } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { normalizeParam } from "@/lib/validation";
 
 function normalizeCode(value) {
@@ -174,12 +174,7 @@ async function explodeRecursive({
 
 export async function GET(request) {
   try {
-    await requirePermissionKeys(request, [
-      "production-line-settings-view",
-      "production-line-settings-manage",
-      "production-line-bom-view",
-      "production-line-bom-manage",
-    ]);
+    await requireTaskPermission(request, "production-settings-routing-components-explode-view");
 
     const { searchParams } = new URL(request.url);
     const fgSkuCode = normalizeCode(searchParams.get("fgSkuCode"));

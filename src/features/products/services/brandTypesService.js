@@ -1,5 +1,5 @@
 import { unstable_cache } from "next/cache";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { createAppError, fail, ok } from "@/lib/result";
 
 const getBrandTypes = unstable_cache(async () => {
@@ -22,7 +22,7 @@ const getBrandTypes = unstable_cache(async () => {
 }, ["brand-types"], { revalidate: 3600 });
 
 export async function listBrandTypes(request) {
-  await requirePermissionKeys(request, ["admin-products"]);
+  await requireTaskPermission(request, "data-brand-types-view");
   try {
     const payload = await getBrandTypes();
     return ok(payload, { status: 200 });

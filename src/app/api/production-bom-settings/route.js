@@ -1,16 +1,12 @@
 import { getSupabaseAdmin, jsonError } from "@/lib/adminApi";
 import { getBomApprovalSettings } from "@/lib/bomApprovalSettings";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request) {
   try {
-    await requirePermissionKeys(request, [
-      "production-line-bom-view",
-      "production-line-bom-manage",
-      "production-line-bom-approve",
-    ]);
+    await requireTaskPermission(request, "production-settings-bom-view");
     const supabaseAdmin = getSupabaseAdmin();
     const settings = await getBomApprovalSettings(supabaseAdmin);
     return Response.json({ settings });

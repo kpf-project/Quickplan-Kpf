@@ -1,47 +1,34 @@
-'use client';
+"use client";
 
-import { SWRConfig } from 'swr';
+import { SWRConfig } from "swr";
+import { fetcher } from "@/lib/clientFetch";
 
 /**
  * Global SWR configuration provider
  * Optimizes data fetching with caching, deduplication, and revalidation
  */
 
-// Default fetcher function for all SWR hooks
-const fetcher = async (url) => {
-    const response = await fetch(url);
-
-    if (!response.ok) {
-        const error = new Error('An error occurred while fetching the data.');
-        error.info = await response.json().catch(() => ({}));
-        error.status = response.status;
-        throw error;
-    }
-
-    return response.json();
-};
-
-// Global SWR configuration optimized for performance
+// Global SWR configuration optimized for perceived zero-latency performance
 const swrConfig = {
-    fetcher,
+  fetcher,
 
-    // Deduplication: prevent duplicate requests within 5 seconds
-    dedupingInterval: 5000,
+  // Deduplication: prevent duplicate requests within 10 seconds across page navigations
+  dedupingInterval: 10000,
 
-    // Revalidation settings
-    revalidateOnFocus: false,        // Don't revalidate when window regains focus
-    revalidateOnReconnect: true,     // Revalidate when network reconnects
-    revalidateIfStale: true,         // Revalidate if data is stale
+  // Revalidation settings (stale-while-revalidate)
+  revalidateOnFocus: false, // Don't revalidate when window regains focus
+  revalidateOnReconnect: true, // Revalidate when network reconnects
+  revalidateIfStale: true, // Serve cached data immediately, revalidate in background
 
-    // Error retry configuration
-    errorRetryCount: 3,              // Retry failed requests 3 times
-    errorRetryInterval: 5000,        // Wait 5 seconds between retries
+  // Error retry configuration
+  errorRetryCount: 2,
+  errorRetryInterval: 5000,
 
-    // Keep previous data while revalidating
-    keepPreviousData: true,
+  // Keep previous data while revalidating so UI never blanks out
+  keepPreviousData: true,
 
-    // Performance optimization
-    suspense: false,                 // Don't use React Suspense by default
+  // Performance optimization
+  suspense: false,
 };
 
 /**

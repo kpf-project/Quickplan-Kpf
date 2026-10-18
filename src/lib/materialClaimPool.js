@@ -1,6 +1,7 @@
 import "server-only";
 
 import { fetchGatewayJson } from "@/lib/gatewayClient";
+import { preferPlanningScheduleRows } from "@/lib/planningAdjustment";
 import {
   aggregateMaterialDemand,
   aggregateMaterialDemandByDepartment,
@@ -165,6 +166,17 @@ export async function loadSubplanRowsForClaimDemand(supabaseAdmin, options = {})
   const dateFrom = normalizeDateOnly(options?.dateFrom);
   const dateTo = normalizeDateOnly(options?.dateTo);
   if (!masterPlanNo) return [];
+
+  if (options.releasedOnly) {
+    const result = await supabaseAdmin.from("production_sub_plans")
+      .select("department_id,confirmed_snapshot,production_departments:department_id(code,name)")
+      .eq("master_plan_no", masterPlanNo).not("confirmed_snapshot", "is", null);
+    if (result.error) throw result.error;
+    return (result.data || []).flatMap((plan) => (plan.confirmed_snapshot || []).map((row) => ({
+      ...row, production_departments: plan.production_departments,
+    }))).filter((row) => (!dateFrom || normalizeDateOnly(row.period_start) >= dateFrom)
+      && (!dateTo || normalizeDateOnly(row.period_start) <= dateTo));
+  }
 
   let query = supabaseAdmin
     .from("production_plan_status")
@@ -353,14 +365,13 @@ export async function loadMainPlanRowsForClaimDemand(supabaseAdmin, options = {}
   if (!statusResult.error) {
     rows = Array.isArray(statusResult.data) ? statusResult.data : [];
   }
-  let fallbackRows = [];
-  if (!rows.length || rows.some((row) => !toPositiveNumber(row?.line_staff_count ?? row?.lineStaffCount))) {
-    fallbackRows = await loadMainPlanRowsForMasterPlan(supabaseAdmin, masterPlanNo);
-  }
-  if (rows.length) {
-    rows = mergeMissingMainPlanHeadcount(rows, fallbackRows);
-  } else {
-    rows = fallbackRows;
+  const publishedRows = rows;
+  const scheduleRows = await loadMainPlanRowsForMasterPlan(supabaseAdmin, masterPlanNo, {
+    releasedOnly: options.releasedOnly === true,
+  });
+  rows = options.releasedOnly ? scheduleRows : preferPlanningScheduleRows(scheduleRows, publishedRows);
+    if (!options.releasedOnly && scheduleRows.length && publishedRows.length) {
+    rows = mergeMissingMainPlanHeadcount(rows, publishedRows);
   }
   if (dateFrom || dateTo) {
     rows = rows.filter((row) => {

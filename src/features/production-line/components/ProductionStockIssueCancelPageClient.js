@@ -74,6 +74,8 @@ function normalizeRows(rows) {
     barcode: String(row?.barcode || "").trim() || "-",
     productCode: String(row?.productCode || "").trim().toUpperCase() || "-",
     productName: String(row?.productName || "").trim() || "-",
+    targetProductCode: String(row?.targetProductCode || "").trim().toUpperCase(),
+    targetProductName: String(row?.targetProductName || "").trim(),
     lotNo: String(row?.lotNo || "").trim() || "-",
     quantity: Number(row?.quantity || 0),
     weightKg: Number(row?.weightKg || 0),
@@ -717,6 +719,11 @@ export default function ProductionStockIssueCancelPageClient({
                         <p className="mt-1 text-lg sm:text-xl font-bold text-black">{formatWeight(lastScannedItem.weightKg)} <span className="text-xs sm:text-sm font-bold">Kg</span></p>
                       </div>
                     </div>
+                    {lastScannedItem.targetProductCode ? (
+                      <div className="border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-black text-amber-900">
+                        สินค้าปลายทางเดิม: {lastScannedItem.targetProductCode} - {lastScannedItem.targetProductName || "-"}
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </div>
@@ -725,7 +732,7 @@ export default function ProductionStockIssueCancelPageClient({
                 <button
                   type="button"
                   onClick={handleOpenCamera}
-                  className="flex items-center justify-center gap-2 h-14 border-2 border-[#102C57] text-[10px] font-black uppercase tracking-wider text-[#102C57] transition hover:bg-[#102C57] hover:text-white"
+                  className="flex items-center justify-center gap-2 h-14 border-2 border-[#102C57] text-[10px] font-black uppercase tracking-wider text-[#102C57] transition hover:bg-[var(--surface-navy,#102C57)] hover:text-white"
                 >
                   <Camera size={16} />
                   สแกนด้วยกล้อง
@@ -741,7 +748,7 @@ export default function ProductionStockIssueCancelPageClient({
               </div>
             </div>
 
-            <div className="relative bg-[#102C57] px-4 sm:px-10 py-8 text-center lg:py-12">
+            <div className="relative bg-[var(--surface-navy,#102C57)] px-4 sm:px-10 py-8 text-center lg:py-12">
               <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#d4af37_1px,transparent_1px)] [background-size:20px_20px]" />
               
               <div className="relative flex flex-col items-center justify-center">
@@ -798,6 +805,7 @@ export default function ProductionStockIssueCancelPageClient({
                     <th className="border border-[#d7dde5] px-4 py-4 text-center w-16">#</th>
                     <th className="border border-[#d7dde5] px-6 py-4 text-center">บาร์โค้ด</th>
                     <th className="border border-[#d7dde5] px-6 py-4 text-center">สินค้า</th>
+                    <th className="border border-[#d7dde5] px-6 py-4 text-center">สินค้าปลายทางเดิม</th>
                     <th className="border border-[#d7dde5] px-6 py-4 text-center">ล็อต</th>
                     <th className="border border-[#d7dde5] px-4 py-4 text-center w-24">จำนวน</th>
                     <th className="border border-[#d7dde5] px-6 py-4 text-center">น้ำหนัก</th>
@@ -807,7 +815,7 @@ export default function ProductionStockIssueCancelPageClient({
                 <tbody className="text-sm font-bold text-black">
                   {recentCancelations.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="border border-[#d7dde5] px-8 py-16 text-center uppercase tracking-widest text-[#a0aec0]">ยังไม่มีรายการยกเลิกในรอบนี้</td>
+                      <td colSpan={8} className="border border-[#d7dde5] px-8 py-16 text-center uppercase tracking-widest text-[#a0aec0]">ยังไม่มีรายการยกเลิกในรอบนี้</td>
                     </tr>
                   ) : (
                     recentCancelations.map((row, index) => (
@@ -820,6 +828,9 @@ export default function ProductionStockIssueCancelPageClient({
                         </td>
                         <td className="border border-[#d7dde5] px-6 py-4 text-center whitespace-nowrap">
                           {row.productCode}-{row.productName}
+                        </td>
+                        <td className="border border-[#d7dde5] px-6 py-4 text-center whitespace-nowrap">
+                          {row.targetProductCode ? `${row.targetProductCode}-${row.targetProductName}` : "ไม่ระบุ"}
                         </td>
                         <td className="border border-[#d7dde5] px-6 py-4 text-center">{row.lotNo}</td>
                         <td className="border border-[#d7dde5] px-4 py-4 text-center">{formatQuantity(row.quantity)}</td>
@@ -838,9 +849,9 @@ export default function ProductionStockIssueCancelPageClient({
       </div>
 
       {isCameraOpen ? (
-        <div className="fixed inset-0 z-[220] flex items-center justify-center bg-[#102C57]/80 px-4 py-6 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[220] flex items-center justify-center bg-[var(--surface-navy,#102C57)]/80 px-4 py-6 backdrop-blur-sm">
           <div className="relative w-full max-w-3xl border-2 border-[#d4af37] bg-white shadow-[0_24px_70px_rgba(8,17,29,0.35)]">
-            <div className="flex items-start justify-between gap-4 border-b border-[#d7dde5] bg-[#102C57] px-4 py-4 text-white sm:px-5">
+            <div className="flex items-start justify-between gap-4 border-b border-[#d7dde5] bg-[var(--surface-navy,#102C57)] px-4 py-4 text-white sm:px-5">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.2em] text-[#d4af37]">
                   Mobile Scanner
@@ -874,7 +885,7 @@ export default function ProductionStockIssueCancelPageClient({
             </div>
 
             <div className="bg-[#f8fafc] p-4 sm:p-5">
-              <div className="overflow-hidden border-2 border-[#d4af37] bg-[#102C57]">
+              <div className="overflow-hidden border-2 border-[#d4af37] bg-[var(--surface-navy,#102C57)]">
                 <div
                   id={scannerRegionIdRef.current}
                   className="mx-auto aspect-[4/3] w-full max-w-[34rem] overflow-hidden bg-black"
@@ -897,9 +908,9 @@ export default function ProductionStockIssueCancelPageClient({
       ) : null}
 
       {isPickerOpen ? (
-        <div className="fixed inset-0 z-[210] flex items-center justify-center bg-[#102C57]/78 px-3 py-4 backdrop-blur-sm sm:px-4 sm:py-6">
+        <div className="fixed inset-0 z-[210] flex items-center justify-center bg-[var(--surface-navy,#102C57)]/78 px-3 py-4 backdrop-blur-sm sm:px-4 sm:py-6">
           <div className="flex max-h-[92vh] w-full max-w-7xl flex-col overflow-hidden border-2 border-[#d4af37] bg-white shadow-[0_24px_70px_rgba(8,17,29,0.35)]">
-            <div className="flex items-start justify-between gap-4 border-b border-[#d7dde5] bg-[#102C57] px-6 py-4 text-white">
+            <div className="flex items-start justify-between gap-4 border-b border-[#d7dde5] bg-[var(--surface-navy,#102C57)] px-6 py-4 text-white">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#d4af37]">
                   ยกเลิกย้อนหลัง
@@ -1015,7 +1026,7 @@ export default function ProductionStockIssueCancelPageClient({
                       type="button"
                       onClick={handlePickerSearch}
                       disabled={isPending}
-                      className="inline-flex h-12 flex-1 items-center justify-center gap-2 border border-[#d4af37] bg-[#102C57] px-4 text-sm font-black uppercase tracking-[0.12em] text-[#fff7df] transition hover:bg-[#173b67] disabled:cursor-not-allowed disabled:opacity-60"
+                      className="inline-flex h-12 flex-1 items-center justify-center gap-2 border border-[#d4af37] bg-[var(--surface-navy,#102C57)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[#fff7df] transition hover:bg-[#173b67] disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {isPending ? (
                         <Loader2 size={16} className="animate-spin" />
@@ -1119,6 +1130,7 @@ export default function ProductionStockIssueCancelPageClient({
                       <th className="px-4 py-4 text-left">ประเภทการเบิก</th>
                       <th className="px-4 py-4 text-left font-mono">บาร์โค้ด</th>
                       <th className="px-4 py-4 text-left">สินค้า</th>
+                      <th className="px-4 py-4 text-left">สินค้าปลายทาง</th>
                       <th className="px-4 py-4 text-left">LOT</th>
                       <th className="px-4 py-4 text-center">จำนวน</th>
                       <th className="px-4 py-4 text-right">น้ำหนัก</th>
@@ -1139,6 +1151,11 @@ export default function ProductionStockIssueCancelPageClient({
                           <td className="whitespace-nowrap px-4 py-4 font-mono">{row.barcode}</td>
                           <td className="whitespace-nowrap px-4 py-4">
                             {row.productCode}-{row.productName}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-4">
+                            {row.targetProductCode
+                              ? `${row.targetProductCode}-${row.targetProductName}`
+                              : "ไม่ระบุ"}
                           </td>
                           <td className="whitespace-nowrap px-4 py-4">{row.lotNo}</td>
                           <td className="whitespace-nowrap px-4 py-4 text-center">
@@ -1167,7 +1184,7 @@ export default function ProductionStockIssueCancelPageClient({
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={8} className="px-4 py-16 text-center text-sm font-black uppercase tracking-widest text-[#a0aec0]">
+                        <td colSpan={9} className="px-4 py-16 text-center text-sm font-black uppercase tracking-widest text-[#a0aec0]">
                           ไม่พบรายการที่เบิกตามเงื่อนไข
                         </td>
                       </tr>
@@ -1197,7 +1214,7 @@ export default function ProductionStockIssueCancelPageClient({
                       || !pickerPagination.totalPages
                       || pickerPagination.page >= pickerPagination.totalPages
                     }
-                    className="inline-flex h-10 items-center justify-center border border-[#102C57] bg-[#102C57] px-4 text-[11px] font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#173b67] disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex h-10 items-center justify-center border border-[#102C57] bg-[var(--surface-navy,#102C57)] px-4 text-[11px] font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#173b67] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     ถัดไป
                   </button>

@@ -125,6 +125,48 @@ export async function unassignDepartmentProducts(departmentId, skuCodes) {
   });
 }
 
+export async function updateDepartmentProductSubcategory(
+  departmentId,
+  skuCodes,
+  subcategoryId,
+  action = "add"
+) {
+  return fetchJson("/api/production-department-products", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ departmentId, skuCodes, subcategoryId, action }),
+  });
+}
+
+export async function fetchDepartmentProductSubcategories(departmentId) {
+  const query = new URLSearchParams({ departmentId });
+  return fetchJson(`/api/production-department-product-subcategories?${query.toString()}`);
+}
+
+export async function createDepartmentProductSubcategory(departmentId, name) {
+  return fetchJson("/api/production-department-product-subcategories", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ departmentId, name }),
+  });
+}
+
+export async function renameDepartmentProductSubcategory(departmentId, subcategoryId, name) {
+  return fetchJson("/api/production-department-product-subcategories", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ departmentId, subcategoryId, name }),
+  });
+}
+
+export async function deleteDepartmentProductSubcategory(departmentId, subcategoryId) {
+  return fetchJson("/api/production-department-product-subcategories", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ departmentId, subcategoryId }),
+  });
+}
+
 export async function fetchProductionUsers(params = {}) {
   const query = new URLSearchParams(params);
   return fetchJson(`/api/production-users?${query.toString()}`);

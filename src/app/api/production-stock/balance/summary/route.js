@@ -1,19 +1,11 @@
 import { getSupabaseAdmin, jsonError } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { loadProductionStockMovementSummaryReportData } from "@/lib/production-stock-balance";
 import { normalizeParam } from "@/lib/validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const PRODUCTION_STOCK_PERMISSION_KEYS = [
-  "production-line-attendance-view",
-  "production-line-attendance-manage",
-  "production-line-attendance-report-view",
-  "production-line-attendance-report-manage",
-  "production-line-settings-view",
-  "production-line-settings-manage",
-];
 
 function normalizeLimit(value, fallback = 20) {
   const parsed = Number.parseInt(String(value ?? "").trim(), 10);
@@ -56,7 +48,7 @@ function normalizeLotNos(value) {
 
 export async function GET(request) {
   try {
-    await requirePermissionKeys(request, PRODUCTION_STOCK_PERMISSION_KEYS);
+    await requireTaskPermission(request, "production-stock-balance-view");
 
     const { searchParams } = new URL(request.url);
     const payload = await loadProductionStockMovementSummaryReportData(getSupabaseAdmin(), {

@@ -303,7 +303,7 @@ export default function WarehouseMaterialVerificationClient({
       <section className="border-b border-[#102C57]/15 bg-[#071b35] px-4 py-4 text-white lg:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center border border-[#d4af37]/70 bg-[#102C57] text-[#d4af37]">
+            <div className="flex h-11 w-11 items-center justify-center border border-[#d4af37]/70 bg-[var(--surface-navy,#102C57)] text-[#d4af37]">
               <Warehouse size={24} strokeWidth={1.8} />
             </div>
             <div>
@@ -413,7 +413,7 @@ export default function WarehouseMaterialVerificationClient({
                     onClick={() => setViewMode(mode)}
                     className={`h-8 border px-3 text-[11px] font-bold transition ${
                       viewMode === mode
-                        ? "border-[#102C57] bg-[#102C57] text-white"
+                        ? "border-[#102C57] bg-[var(--surface-navy,#102C57)] text-white"
                         : "border-slate-300 bg-white text-slate-600 hover:border-[#d4af37]"
                     }`}
                   >
@@ -430,7 +430,7 @@ export default function WarehouseMaterialVerificationClient({
             ) : (
               <div className="max-h-[620px] overflow-auto">
                 <table className="w-full min-w-[920px] border-collapse text-sm">
-                  <thead className="sticky top-0 z-10 bg-[#102C57] text-left text-[11px] font-bold text-white">
+                  <thead className="sticky top-0 z-10 bg-[var(--surface-navy,#102C57)] text-left text-[11px] font-bold text-white">
                     <tr>
                       <th className="px-3 py-3">รหัสวัตถุดิบ</th>
                       <th className="px-3 py-3">ชื่อวัตถุดิบ</th>
@@ -516,7 +516,7 @@ export default function WarehouseMaterialVerificationClient({
                     type="button"
                     onClick={() => submitAction("accept")}
                     disabled={!canAccept || isSubmitting}
-                    className="inline-flex h-10 items-center justify-center gap-2 border border-[#d4af37] bg-[#102C57] text-xs font-extrabold text-white transition hover:bg-[#0b2142] disabled:cursor-not-allowed disabled:opacity-45"
+                    className="inline-flex h-10 items-center justify-center gap-2 border border-[#d4af37] bg-[var(--surface-navy,#102C57)] text-xs font-extrabold text-white transition hover:bg-[#0b2142] disabled:cursor-not-allowed disabled:opacity-45"
                   >
                     <ClipboardCheck size={15} />
                     อนุมัติ

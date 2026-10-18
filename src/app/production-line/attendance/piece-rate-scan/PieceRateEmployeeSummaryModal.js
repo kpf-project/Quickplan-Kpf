@@ -136,7 +136,7 @@ export default function PieceRateEmployeeSummaryModal({
         {/* Header Bar */}
         <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-3.5 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#102C57] text-[#f8df8a] shadow-inner">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--surface-navy,#102C57)] text-[#f8df8a] shadow-inner">
               <Users size={22} />
             </div>
             <div>
@@ -250,7 +250,7 @@ export default function PieceRateEmployeeSummaryModal({
                         </p>
 
                         <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                          <span className="inline-flex items-center rounded-md bg-[#102C57] px-2 py-0.5 text-[10px] font-black text-[#f8df8a] shadow-xs">
+                          <span className="inline-flex items-center rounded-md bg-[var(--surface-navy,#102C57)] px-2 py-0.5 text-[10px] font-black text-[#f8df8a] shadow-xs">
                             {emp.totalCount} รายการ
                           </span>
                         </div>

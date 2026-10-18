@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState, useEffect } from "react";
+import { useCallback, useMemo, useState, useEffect, useSyncExternalStore } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -308,9 +308,17 @@ function shouldPrefetchNavigationRoute(href) {
   );
 }
 
+const emptySubscribe = () => () => {};
+
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const isEmbedded = useSyncExternalStore(
+    emptySubscribe,
+    () => typeof window !== "undefined" && (window.self !== window.top || window.location.search.includes("reportCenter=1")),
+    () => false
+  );
+
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
   const [mobileExpandedKey, setMobileExpandedKey] = useState(null);
   const [mobileAccountMenuOpen, setMobileAccountMenuOpen] = useState(false);
@@ -482,10 +490,14 @@ export default function Sidebar() {
     return () => clearTimeout(timer);
   }, [prefetchHrefs, router]);
 
+  if (isEmbedded) {
+    return null;
+  }
+
   return (
     <>
       <aside
-        className="app-sidebar-desktop hidden md:flex flex-col bg-[#102C57] text-white h-screen sticky top-0 transition-all duration-300 ease-in-out z-50"
+        className="app-sidebar-desktop hidden md:flex flex-col bg-[var(--surface-navy,#102C57)] text-white h-screen sticky top-0 transition-all duration-300 ease-in-out z-50"
         onMouseEnter={() => setIsSidebarExpanded(true)}
         onMouseLeave={() => setIsSidebarExpanded(false)}
         style={{
@@ -720,7 +732,7 @@ export default function Sidebar() {
           setMobileExpandedKey(null);
           setMobileAccountMenuOpen((prev) => !prev);
         }}
-        className="app-sidebar-mobile-trigger md:hidden fixed top-3 right-3 z-[60] inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/30 bg-[#102C57] text-white shadow-lg"
+        className="app-sidebar-mobile-trigger md:hidden fixed top-3 right-3 z-[60] inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/30 bg-[var(--surface-navy,#102C57)] text-white shadow-lg"
         aria-label="เมนูผู้ใช้"
       >
         <MoreVertical size={16} />
@@ -769,7 +781,7 @@ export default function Sidebar() {
                     onFocus={() => prefetchRoute(child.href)}
                     onClick={() => setMobileExpandedKey(null)}
                     className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-xs font-semibold transition ${active
-                      ? "border-[#d4af37] bg-[#102C57] text-[#f2d68a]"
+                      ? "border-[#d4af37] bg-[var(--surface-navy,#102C57)] text-[#f2d68a]"
                       : "border-white/10 text-white/70 hover:text-white hover:border-white/30"
                       }`}
                   >
@@ -782,7 +794,7 @@ export default function Sidebar() {
           </div>
         ) : null}
 
-        <nav className="bg-[#102C57] border-t border-white/10 text-white flex justify-around items-center px-2 py-2 shadow-[0_-6px_24px_rgba(15,23,42,0.25)]">
+        <nav className="bg-[var(--surface-navy,#102C57)] border-t border-white/10 text-white flex justify-around items-center px-2 py-2 shadow-[0_-6px_24px_rgba(15,23,42,0.25)]">
           {mobileNavItems.map((item) => {
             if (item.children) {
               const isChildActive = item.children.some((child) => isActiveLink(child.href));

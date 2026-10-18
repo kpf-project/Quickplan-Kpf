@@ -26,7 +26,7 @@
   justify-self: center;
   border: 2px solid #d9a514;
   border-radius: 999px;
-  background: #061f43;
+  background: var(--surface-navy, #061f43);
   color: #f3ce63;
 }
 

@@ -76,7 +76,7 @@ export default async function MaterialVerifyPage({ searchParams }) {
             </div>
             <Link
               href="/production-line/planning"
-              className="rounded-lg border border-[#102C57]/30 px-3 py-1.5 text-xs font-semibold text-[#102C57] transition-colors hover:bg-[#102C57]/5 lg:px-2.5 lg:py-1 lg:text-[11px]"
+              className="rounded-lg border border-[#102C57]/30 px-3 py-1.5 text-xs font-semibold text-[#102C57] transition-colors hover:bg-[var(--surface-navy,#102C57)]/5 lg:px-2.5 lg:py-1 lg:text-[11px]"
             >
               กลับหน้าวางแผน
             </Link>

@@ -263,7 +263,7 @@ export default function MaterialOwnerSettingsTab({ canManage = false }) {
         </div>
 
         <table className="w-full text-sm">
-          <thead className="bg-[#102C57]/5 text-[#102C57]">
+          <thead className="bg-[var(--surface-navy,#102C57)]/5 text-[#102C57]">
             <tr>
               <th className="px-4 py-3 text-left">รหัส</th>
               <th className="px-4 py-3 text-left">ชื่อวัตถุดิบ</th>

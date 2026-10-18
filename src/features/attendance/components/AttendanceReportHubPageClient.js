@@ -88,7 +88,7 @@ export default function AttendanceReportHubPageClient() {
               <Link
                 key={item.href}
                 href={item.href}
-                className="group relative flex min-h-[280px] flex-col rounded-2xl border border-[#d4af37]/25 bg-[#102C57] p-8 text-white shadow-xl transition-all duration-300 hover:border-[#f2b90d] hover:shadow-[0_10px_30px_rgba(242,185,13,0.18)]"
+                className="group relative flex min-h-[280px] flex-col rounded-2xl border border-[#d4af37]/25 bg-[var(--surface-navy,#102C57)] p-8 text-white shadow-xl transition-all duration-300 hover:border-[#f2b90d] hover:shadow-[0_10px_30px_rgba(242,185,13,0.18)]"
               >
                 <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-[#f2b90d]/10 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
                 <div className="relative z-10 flex h-full flex-col">

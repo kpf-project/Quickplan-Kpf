@@ -49,7 +49,7 @@ export default function BomExcelImportModal({
             
             <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-xl flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200 overflow-hidden">
                 {/* Header */}
-                <div className="flex items-center justify-between px-6 py-4 bg-[#102C57] text-white shrink-0">
+                <div className="flex items-center justify-between px-6 py-4 bg-[var(--surface-navy,#102C57)] text-white shrink-0">
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-white/10 rounded-lg">
                             <FileSpreadsheet className="w-6 h-6 text-[#d4af37]" />
@@ -196,7 +196,7 @@ export default function BomExcelImportModal({
                         <button
                             onClick={() => onConfirm(processedRows.filter(r => r.isValid), importMode)}
                             disabled={validCount === 0}
-                            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-[#102C57] text-sm font-semibold text-white shadow-lg shadow-blue-900/10 hover:bg-[#0a2345] hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-[var(--surface-navy,#102C57)] text-sm font-semibold text-white shadow-lg shadow-blue-900/10 hover:bg-[#0a2345] hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             ยืนยันการนำเข้า
                             <ArrowRight size={16} />

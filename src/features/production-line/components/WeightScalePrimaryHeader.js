@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   Ban,
   Boxes,
@@ -17,6 +17,7 @@ import {
   Trash2,
 } from "lucide-react";
 
+const emptySubscribe = () => () => {};
 const PRIMARY_NAV_LINKS = Object.freeze([]);
 
 function NavIcon({ item, size = 16, className = "" }) {
@@ -318,6 +319,14 @@ export default function WeightScalePrimaryHeader({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const isIframe = useSyncExternalStore(
+    emptySubscribe,
+    () => typeof window !== "undefined" && window.self !== window.top,
+    () => false
+  );
+  const isReportCenter = searchParams?.get("reportCenter") === "1" || isIframe;
+
   const menuAreaRef = useRef(null);
   const [openDropdownKey, setOpenDropdownKey] = useState(null);
   const [activeSectionKey, setActiveSectionKey] = useState(getFirstSectionKey("report"));
@@ -384,6 +393,10 @@ export default function WeightScalePrimaryHeader({
     document.addEventListener("mousedown", handlePointerDown);
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, [closeMenus, openDropdownKey]);
+
+  if (isReportCenter) {
+    return null;
+  }
 
   return (
     <section className="relative z-[40] bg-gradient-to-r from-[#102C57] via-[#122b4d] to-[#0f172a] text-white shadow-xl">
@@ -492,7 +505,7 @@ export default function WeightScalePrimaryHeader({
 
                   {isOpen ? (
                     <div
-                      className="absolute left-0 top-full z-50 mt-1 min-w-[280px] border-2 border-[#d4af37] bg-[#102C57] p-1 shadow-2xl backdrop-blur-sm"
+                      className="absolute left-0 top-full z-50 mt-1 min-w-[280px] border-2 border-[#d4af37] bg-[var(--surface-navy,#102C57)] p-1 shadow-2xl backdrop-blur-sm"
                       onMouseLeave={closeMenus}
                     >
                       {(dropdown.directItems || []).map((item) => {
@@ -508,7 +521,7 @@ export default function WeightScalePrimaryHeader({
                             className={`flex w-full items-center justify-between px-5 py-4 text-left transition ${
                               isItemActive
                                 ? "bg-[#d4af37] text-[#102C57]"
-                                : "bg-[#102C57] text-white/90 hover:bg-[#d4af37] hover:text-[#102C57]"
+                                : "bg-[var(--surface-navy,#102C57)] text-white/90 hover:bg-[#d4af37] hover:text-[#102C57]"
                             }`}
                           >
                             <div className="flex items-center gap-4">
@@ -549,7 +562,7 @@ export default function WeightScalePrimaryHeader({
                           </button>
 
                           {activeSectionKey === section.key ? (
-                            <div className="absolute left-full top-[-4px] ml-1 min-w-[340px] border-2 border-[#d4af37] bg-[#102C57] p-1 shadow-2xl">
+                            <div className="absolute left-full top-[-4px] ml-1 min-w-[340px] border-2 border-[#d4af37] bg-[var(--surface-navy,#102C57)] p-1 shadow-2xl">
                               {section.items.map((item) => {
                                 const isItemActive = isExactActivePath(pathname, item.href);
                                 return (

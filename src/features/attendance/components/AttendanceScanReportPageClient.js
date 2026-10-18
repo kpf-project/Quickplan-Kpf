@@ -14,6 +14,7 @@ import {
   Search,
 } from "lucide-react";
 import { fetchAttendanceScanEvents } from "@/features/attendance/services/attendanceScanEventsClient";
+import { ReportHeader, ReportFilterBar } from "@/components/print";
 
 const EMPTY_PAGINATION = { page: 1, pageSize: 20, totalPages: 1, totalRecords: 0 };
 const TABLE_COLUMN_COUNT = 11;
@@ -370,13 +371,14 @@ export default function AttendanceScanReportPageClient() {
                 break-after: auto !important;
               }
               thead th {
-                background-color: #102c57 !important;
-                color: #ffffff !important;
+                background-color: #f8f9fa !important;
+                color: #1a1c1e !important;
                 padding: 6px 4px !important;
                 font-size: 10.5px !important;
                 font-weight: bold !important;
                 line-height: 1.2 !important;
                 border: 1px solid #cbd5e1 !important;
+                border-bottom: 2px solid #1a1c1e !important;
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
               }
@@ -446,7 +448,7 @@ export default function AttendanceScanReportPageClient() {
               }
               .print-report-date-chip {
                 display: inline-block !important;
-                background: #102c57 !important;
+                background: var(--surface-navy, #102c57) !important;
                 color: #d4af37 !important;
                 border: 1px solid rgba(212, 175, 55, 0.7) !important;
                 padding: 2px 12px !important;
@@ -459,7 +461,7 @@ export default function AttendanceScanReportPageClient() {
         }}
       />
 
-      <div className="z-40 shrink-0 border-b-2 border-[#d4af37] bg-[#102c57] text-white print:hidden">
+      <div className="z-40 shrink-0 border-b-2 border-[#d4af37] bg-[var(--surface-navy,#102c57)] text-white print:hidden">
         <div className="mx-auto max-w-[95%] py-5">
           <div className="flex flex-col gap-4">
             <div className="flex flex-col items-start justify-between gap-4 lg:flex-row lg:items-center">
@@ -537,74 +539,33 @@ export default function AttendanceScanReportPageClient() {
 
         <div className="mx-auto w-full max-w-[98%] overflow-hidden rounded-sm border border-slate-200 bg-white shadow-sm print:block print:w-full print:max-w-full print:border-none print:shadow-none">
           <div className="border-b border-slate-200 bg-slate-50/50 p-5 print:hidden">
-            <h2 className="mb-4 text-xs font-bold uppercase tracking-[0.1em] text-slate-500">
-              ตัวเลือกการค้นหาและกรองรายงาน
-            </h2>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-              <div className="relative md:col-span-2">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  onKeyDown={(event) => event.key === "Enter" && loadData(1)}
-                  placeholder="ค้นหารหัสพนักงาน / ชื่อ / แผนก / สาขา"
-                  className="h-10 w-full rounded-sm border border-slate-300 bg-white pl-9 pr-3 text-sm outline-none transition-all focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37]"
-                />
-              </div>
-              <div className="relative">
-                <CalendarDays size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(event) => setDateFrom(event.target.value)}
-                  className="h-10 w-full rounded-sm border border-slate-300 bg-white pl-9 pr-3 text-sm outline-none transition-all focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37]"
-                />
-              </div>
-              <div className="relative">
-                <CalendarDays size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={(event) => setDateTo(event.target.value)}
-                  className="h-10 w-full rounded-sm border border-slate-300 bg-white pl-9 pr-3 text-sm outline-none transition-all focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37]"
-                />
-              </div>
-            </div>
-            <div className="mt-4 flex items-center justify-start gap-2">
-              <button
-                onClick={() => loadData(1)}
-                className="h-9 rounded-sm border border-[#102c57] bg-[#102c57] px-5 text-xs font-bold uppercase tracking-wider text-white transition-colors hover:bg-[#0c1c3d]"
-              >
-                ค้นหาข้อมูล
-              </button>
-              <button
-                onClick={() => {
-                  setSearch("");
-                  const today = new Date().toISOString().slice(0, 10);
-                  setDateFrom(today);
-                  setDateTo(today);
-                  setTimeout(() => loadData(1), 0);
-                }}
-                className="h-9 rounded-sm border border-slate-300 px-5 text-xs font-bold uppercase tracking-wider text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-800"
-              >
-                ล้างค่าตัวกรอง
-              </button>
-              <button
-                onClick={handleExportExcel}
-                disabled={exporting || loading}
-                className="ml-auto flex h-9 items-center gap-1.5 rounded-sm border border-[#d4af37] bg-white px-5 text-xs font-bold uppercase tracking-wider text-[#102c57] transition-all hover:bg-[#d4af37]/10 disabled:opacity-50"
-              >
-                <Download size={14} />
-                {exporting ? "กำลังส่งออก..." : "ส่งออก Excel"}
-              </button>
-              <button
-                onClick={() => window.print()}
-                className="ml-2 flex h-9 items-center gap-1.5 rounded-sm border border-[#102c57] bg-[#102c57] px-5 text-xs font-bold uppercase tracking-wider text-white transition-all hover:bg-[#102c57]/90"
-              >
-                <Printer size={14} />
-                พิมพ์รายงาน
-              </button>
-            </div>
+            <ReportFilterBar
+              dateMode="range"
+              dateFrom={dateFrom}
+              dateTo={dateTo}
+              onDateFromChange={setDateFrom}
+              onDateToChange={setDateTo}
+              searchQuery={search}
+              onSearchQueryChange={setSearch}
+              searchPlaceholder="ค้นหารหัสพนักงาน / ชื่อ / แผนก / สาขา"
+              searchLabel="ค้นหาพนักงาน / แผนก"
+              isLoading={loading}
+              onSearch={() => loadData(1)}
+              searchButtonLabel="ค้นหาข้อมูล"
+              onReset={() => {
+                setSearch("");
+                const today = new Date().toISOString().slice(0, 10);
+                setDateFrom(today);
+                setDateTo(today);
+                setTimeout(() => loadData(1), 0);
+              }}
+              onPrint={() => window.print()}
+              printButtonLabel="พิมพ์รายงาน"
+              onExportExcel={handleExportExcel}
+              excelButtonLabel={exporting ? "กำลังส่งออก..." : "ส่งออก Excel"}
+              isExporting={exporting}
+              className="mb-0 border-0 bg-transparent p-0 shadow-none"
+            />
           </div>
 
           {errorMessage && (
@@ -614,34 +575,19 @@ export default function AttendanceScanReportPageClient() {
           )}
 
           <div className="overflow-x-auto print:hidden">
-            <div className="mb-3 hidden items-center justify-between border-b-2 border-[#102c57] pb-2 text-slate-800 print:flex">
-              <div className="flex items-center gap-3">
-                <Image
-                  src="/brand/LOGO-KPF1.png"
-                  alt="KPF Logo"
-                  width={120}
-                  height={36}
-                  className="h-9 w-auto object-contain"
-                  priority
-                />
-                <div>
-                  <h1 className="text-xs font-bold text-[#102c57]">บริษัท เค.พี.ฟู้ดส์ จำกัด</h1>
-                  <h2 className="text-[11px] font-bold text-slate-700">
-                    รายงานการบันทึกเวลาปฏิบัติงาน (แยกเซสชัน)
-                  </h2>
-                  <p className="mt-0.5 text-[9px] text-slate-500">
-                    ประจำวันที่ {formatDisplayDate(dateFrom)} ถึง {formatDisplayDate(dateTo)}
-                  </p>
-                </div>
-              </div>
-              <div className="text-right text-[8px] text-slate-400">
-                <p>วันที่พิมพ์: {printDateLabel}</p>
-                <p>เวลาที่พิมพ์: {printTimeLabel}</p>
-              </div>
+            <div className="mb-4">
+              <ReportHeader
+                title="รายงานการบันทึกเวลาปฏิบัติงาน (แยกเซสชัน)"
+                subtitle="ATTENDANCE SCAN SESSIONS REPORT"
+                printedAt={`${printDateLabel} ${printTimeLabel}`}
+                meta={[
+                  { label: "ประจำวันที่", value: `${formatDisplayDate(dateFrom)} ถึง ${formatDisplayDate(dateTo)}` },
+                ]}
+              />
             </div>
 
             <table className="w-full border-collapse text-sm">
-              <thead className="border-b-2 border-[#d4af37] bg-[#102c57] text-[11px] font-semibold uppercase tracking-wider text-white">
+              <thead className="border-b-2 border-[#d4af37] bg-[var(--surface-navy,#102c57)] text-[11px] font-semibold uppercase tracking-wider text-white">
                 <tr>
                   <th className="border-r border-[#1e3e6b]/40 px-4 py-3.5 text-left font-bold">รหัส</th>
                   <th className="border-r border-[#1e3e6b]/40 px-4 py-3.5 text-left font-bold">ชื่อ</th>
@@ -678,7 +624,7 @@ export default function AttendanceScanReportPageClient() {
                         <td colSpan={TABLE_COLUMN_COUNT} className="px-4 py-4">
                           <div className="flex items-center gap-4">
                             <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[#102c57] to-[#d4af37]" />
-                            <span className="rounded-sm border border-[#d4af37]/50 bg-[#102c57] px-4 py-1 text-xs font-bold uppercase tracking-[0.22em] text-[#d4af37]">
+                            <span className="rounded-sm border border-[#d4af37]/50 bg-[var(--surface-navy,#102c57)] px-4 py-1 text-xs font-bold uppercase tracking-[0.22em] text-[#d4af37]">
                               {item.label}
                             </span>
                             <div className="h-px flex-1 bg-gradient-to-r from-[#d4af37] via-[#102c57] to-transparent" />
@@ -767,34 +713,20 @@ export default function AttendanceScanReportPageClient() {
               <div key={`print-page-${pageIndex}`}>
                 {pageIndex > 0 && <div className="print-page-break" aria-hidden="true" />}
                 <section className="print-report-page">
-                <div className="print-report-header mb-2 flex items-center justify-between border-b-2 border-[#102c57] pb-2 text-slate-800">
-                  <div className="flex items-center gap-3">
-                    <Image
-                      src="/brand/LOGO-KPF1.png"
-                      alt="KPF Logo"
-                      width={120}
-                      height={36}
-                      className="h-9 w-auto object-contain"
-                      priority={pageIndex === 0}
-                    />
-                    <div>
-                      <h1 className="text-xs font-bold text-[#102c57]">บริษัท เค.พี.ฟู้ดส์ จำกัด</h1>
-                      <h2 className="text-[11px] font-bold text-slate-700">
-                        รายงานการบันทึกเวลาปฏิบัติงาน (แยกเซสชัน)
-                      </h2>
-                      <p className="mt-0.5 text-[9px] text-slate-500">
-                        ประจำวันที่ {formatDisplayDate(dateFrom)} ถึง {formatDisplayDate(dateTo)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right text-[8px] text-slate-400">
-                    <p>วันที่พิมพ์: {printDateLabel}</p>
-                    <p>เวลาที่พิมพ์: {printTimeLabel}</p>
-                  </div>
-                </div>
+                <ReportHeader
+                  title="รายงานการบันทึกเวลาปฏิบัติงาน (แยกเซสชัน)"
+                  subtitle="ATTENDANCE SCAN SESSIONS REPORT"
+                  printedAt={`${printDateLabel} ${printTimeLabel}`}
+                  page={pageIndex + 1}
+                  totalPages={printPages.length}
+                  meta={[
+                    { label: "ประจำวันที่", value: `${formatDisplayDate(dateFrom)} ถึง ${formatDisplayDate(dateTo)}` },
+                  ]}
+                  className="mb-2"
+                />
 
                 <table className="print-report-table">
-                  <thead className="border-b-2 border-[#d4af37] bg-[#102c57] text-[11px] font-semibold uppercase tracking-wider text-white">
+                  <thead className="border-b-2 border-[#d4af37] bg-[var(--surface-navy,#102c57)] text-[11px] font-semibold uppercase tracking-wider text-white">
                     <tr>
                       <th className="border-r border-[#1e3e6b]/40 px-4 py-3.5 text-left font-bold">รหัส</th>
                       <th className="border-r border-[#1e3e6b]/40 px-4 py-3.5 text-left font-bold">ชื่อ</th>

@@ -255,7 +255,7 @@ export default function MaterialCalculationModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl overflow-hidden flex flex-col max-h-[92vh]">
-        <div className="px-6 py-5 bg-[#102C57] text-white flex justify-between items-center shrink-0">
+        <div className="px-6 py-5 bg-[var(--surface-navy,#102C57)] text-white flex justify-between items-center shrink-0">
           <div>
             <h2 className="text-xl font-bold">สรุปรายการวัตถุดิบที่ต้องใช้</h2>
             <p className="text-xs text-white/70 mt-1">ก่อนบันทึก คุณสามารถปรับจำนวนใช้/จำนวนเบิกเฉพาะรอบนี้ได้</p>
@@ -328,7 +328,7 @@ export default function MaterialCalculationModal({
             <>
               <div className="hidden lg:block bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <table className="w-full text-sm text-left border-collapse">
-                  <thead className="bg-[#102C57] text-white font-semibold uppercase text-xs sticky top-0 z-10 shadow-sm">
+                  <thead className="bg-[var(--surface-navy,#102C57)] text-white font-semibold uppercase text-xs sticky top-0 z-10 shadow-sm">
                     <tr>
                       <th className="px-4 py-3 border-b border-[#0f1c36] w-[120px]">รหัสวัตถุดิบ</th>
                       <th className="px-4 py-3 border-b border-[#0f1c36]">ชื่อวัตถุดิบ</th>
@@ -589,7 +589,7 @@ export default function MaterialCalculationModal({
               type="button"
               onClick={handleApply}
               disabled={hasMissingReason || hasInvalidCustomValues || selectedIds.size === 0}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#102C57] text-white text-sm font-bold shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[var(--surface-navy,#102C57)] text-white text-sm font-bold shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <Save size={16} />
               {applyActionLabel}

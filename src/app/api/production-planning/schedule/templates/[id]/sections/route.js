@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
 import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { attachDateLayouts } from "@/lib/scheduleDateLayout";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,7 @@ export async function GET(request, { params }) {
       .order("display_order", { referencedTable: "production_schedule_column_defs" });
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ ok: true, data: data ?? [] });
+    return NextResponse.json({ ok: true, data: await attachDateLayouts(db, data ?? []) });
   } catch (error) {
     return jsonError(error);
   }

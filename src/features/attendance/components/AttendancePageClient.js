@@ -47,7 +47,7 @@ function AttendancePageContent() {
             <button
               onClick={handleSearch}
               disabled={loading}
-              className="rounded-xl bg-[#102C57] px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1E40AF] disabled:opacity-50"
+              className="rounded-xl bg-[var(--surface-navy,#102C57)] px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1E40AF] disabled:opacity-50"
             >
               ค้นหา
             </button>
@@ -82,7 +82,7 @@ function AttendancePageContent() {
           <div className="overflow-visible rounded-2xl border border-[#e6ded5]">
             <div className="table-scroll">
               <table className="w-full border-collapse text-left text-sm table-bordered">
-                <thead className="bg-[#102C57] text-sm uppercase tracking-wider text-white text-center">
+                <thead className="bg-[var(--surface-navy,#102C57)] text-sm uppercase tracking-wider text-white text-center">
                 <tr>
                   <th className="px-6 py-4 font-semibold border-b border-[#0f172a]">วันที่</th>
                   <th className="px-6 py-4 font-semibold border-b border-[#0f172a]">รหัสเครื่องสแกน</th>

@@ -20,6 +20,7 @@ import {
   fetchProductionPrisonMovementSummaryReport,
 } from "@/features/production-line/services/productionPrisonClient";
 import { useUserProfile } from "@/lib/useUserProfile";
+import { ReportHeader } from "@/components/print";
 
 const LIMIT_OPTIONS = [20, 50, 100];
 
@@ -35,6 +36,7 @@ const REPORT_CONFIG = Object.freeze({
     excelFilePrefix: "prison-lot-balance-report",
     emptyMessage: "ยังไม่พบ Lot คงค้างเรือนจำตามเงื่อนไขที่เลือก",
     showDate: false,
+    showOpening: true,
   },
   summary: {
     eyebrow: "รายงานเรือนจำ",
@@ -47,6 +49,7 @@ const REPORT_CONFIG = Object.freeze({
     excelFilePrefix: "prison-weigh-issue-summary-report",
     emptyMessage: "ยังไม่พบข้อมูลสรุปชั่ง-เบิกเรือนจำตามเงื่อนไขที่เลือก",
     showDate: true,
+    showOpening: false,
   },
 });
 
@@ -92,6 +95,8 @@ function normalizeRows(rows) {
     lotNo: String(row?.lotNo || "").trim() || "-",
     productCode: String(row?.productCode || "").trim().toUpperCase() || "-",
     productName: String(row?.productName || "").trim() || "-",
+    openingQuantity: Number(row?.openingQuantity || 0),
+    openingWeightKg: Number(row?.openingWeightKg || 0),
     inboundQuantity: Number(row?.inboundQuantity || 0),
     inboundWeightKg: Number(row?.inboundWeightKg || 0),
     issueQuantity: Number(row?.issueQuantity || 0),
@@ -104,6 +109,8 @@ function normalizeRows(rows) {
 function normalizeSummary(summary) {
   return {
     totalCount: Number(summary?.totalCount || 0),
+    openingQuantity: Number(summary?.openingQuantity || 0),
+    openingWeightKg: Number(summary?.openingWeightKg || 0),
     inboundQuantity: Number(summary?.inboundQuantity || 0),
     inboundWeightKg: Number(summary?.inboundWeightKg || 0),
     issueQuantity: Number(summary?.issueQuantity || 0),
@@ -194,13 +201,23 @@ async function exportWorkbook({ rows, filters, scope, selectedProducts, config }
 
   columns.push(
     { header: "LOT", key: "lotNo", width: 18 },
-    { header: "สินค้า", key: "productDisplay", width: 46 },
-    { header: "จำนวนรับเข้า", key: "inboundQuantity", width: 16 },
-    { header: "น้ำหนักรับเข้า (Kg)", key: "inboundWeightKg", width: 18 },
-    { header: "จำนวนเบิก", key: "issueQuantity", width: 16 },
-    { header: "น้ำหนักเบิก (Kg)", key: "issueWeightKg", width: 18 },
-    { header: "จำนวนคงเหลือ", key: "balanceQuantity", width: 16 },
-    { header: "น้ำหนักคงเหลือ (Kg)", key: "balanceWeightKg", width: 18 }
+    { header: "สินค้า", key: "productDisplay", width: 46 }
+  );
+
+  if (config.showOpening) {
+    columns.push(
+      { header: "จำนวนยกมา", key: "openingQuantity", width: 16 },
+      { header: "น้ำหนักยกมา (Kg)", key: "openingWeightKg", width: 18 }
+    );
+  }
+
+  columns.push(
+    { header: config.showOpening ? "จำนวนรับเข้าในช่วง" : "จำนวนรับเข้า", key: "inboundQuantity", width: 18 },
+    { header: config.showOpening ? "น้ำหนักรับเข้าในช่วง (Kg)" : "น้ำหนักรับเข้า (Kg)", key: "inboundWeightKg", width: 21 },
+    { header: config.showOpening ? "จำนวนเบิกออกในช่วง" : "จำนวนเบิก", key: "issueQuantity", width: 18 },
+    { header: config.showOpening ? "น้ำหนักเบิกออกในช่วง (Kg)" : "น้ำหนักเบิก (Kg)", key: "issueWeightKg", width: 21 },
+    { header: config.showOpening ? "จำนวนคงเหลือปลายงวด" : "จำนวนคงเหลือ", key: "balanceQuantity", width: 19 },
+    { header: config.showOpening ? "น้ำหนักคงเหลือปลายงวด (Kg)" : "น้ำหนักคงเหลือ (Kg)", key: "balanceWeightKg", width: 22 }
   );
 
   worksheet.columns = columns;
@@ -248,6 +265,10 @@ async function exportWorkbook({ rows, filters, scope, selectedProducts, config }
     }
     payload.lotNo = row.lotNo;
     payload.productDisplay = `${row.productCode} - ${row.productName}`;
+    if (config.showOpening) {
+      payload.openingQuantity = row.openingQuantity;
+      payload.openingWeightKg = row.openingWeightKg;
+    }
     payload.inboundQuantity = row.inboundQuantity;
     payload.inboundWeightKg = row.inboundWeightKg;
     payload.issueQuantity = row.issueQuantity;
@@ -260,6 +281,12 @@ async function exportWorkbook({ rows, filters, scope, selectedProducts, config }
 
   const summaryRow = worksheet.addRow({
     lotNo: "รวม",
+    openingQuantity: config.showOpening
+      ? rows.reduce((sum, row) => sum + row.openingQuantity, 0)
+      : undefined,
+    openingWeightKg: config.showOpening
+      ? rows.reduce((sum, row) => sum + row.openingWeightKg, 0)
+      : undefined,
     inboundQuantity: rows.reduce((sum, row) => sum + row.inboundQuantity, 0),
     inboundWeightKg: rows.reduce((sum, row) => sum + row.inboundWeightKg, 0),
     issueQuantity: rows.reduce((sum, row) => sum + row.issueQuantity, 0),
@@ -332,6 +359,8 @@ export default function ProductionPrisonBalanceReportPageClient({
     () =>
       rows.reduce(
         (accumulator, row) => ({
+          openingQuantity: accumulator.openingQuantity + row.openingQuantity,
+          openingWeightKg: accumulator.openingWeightKg + row.openingWeightKg,
           inboundQuantity: accumulator.inboundQuantity + row.inboundQuantity,
           inboundWeightKg: accumulator.inboundWeightKg + row.inboundWeightKg,
           issueQuantity: accumulator.issueQuantity + row.issueQuantity,
@@ -340,6 +369,8 @@ export default function ProductionPrisonBalanceReportPageClient({
           balanceWeightKg: accumulator.balanceWeightKg + row.balanceWeightKg,
         }),
         {
+          openingQuantity: 0,
+          openingWeightKg: 0,
           inboundQuantity: 0,
           inboundWeightKg: 0,
           issueQuantity: 0,
@@ -500,7 +531,7 @@ export default function ProductionPrisonBalanceReportPageClient({
                 <button
                   type="button"
                   onClick={() => loadRows({ ...filters, page: 1 })}
-                  className="inline-flex h-12 items-center gap-2 bg-[#102C57] px-4 text-sm font-bold text-white transition hover:bg-[#173b72]"
+                  className="inline-flex h-12 items-center gap-2 bg-[var(--surface-navy,#102C57)] px-4 text-sm font-bold text-white transition hover:bg-[var(--surface-navy,#173b72)]"
                 >
                   {isPending ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
                   ค้นหา
@@ -613,93 +644,74 @@ export default function ProductionPrisonBalanceReportPageClient({
             : "border-2 border-[#d4af37] shadow-[0_20px_40px_rgba(0,0,0,0.12)]"
         }`}>
           {useReportPaper ? (
-            <div className="bg-white px-6 py-3 border-b border-[#94a3b8]">
-              <div className="flex justify-between items-end mb-3">
-                <div className="flex items-center gap-3">
-                  <Image
-                    src="/brand/LOGO-KPF1.png"
-                    alt="KPF"
-                    width={40}
-                    height={40}
-                    className="h-10 w-auto object-contain"
-                  />
-                  <div className="flex flex-col">
-                    <h1 className="text-[14px] font-black text-[#102C57] leading-none uppercase">บริษัท เคพีฟู้ดส์ จำกัด</h1>
-                    <p className="text-[9px] font-bold text-[#64748b] tracking-wider">K.P. foods Co.,Ltd.</p>
-                  </div>
-                </div>
-
-                <div className="text-center pb-1">
-                  <h2 className="text-[18px] font-black text-[#102C57] leading-none uppercase">{config.printTitle}</h2>
-                  <p className="text-[9px] font-bold text-[#d4af37] uppercase tracking-[0.2em] mt-1">{config.reportSubtitle}</p>
-                </div>
-
-                <div className="text-[10px] text-[#102C57] leading-tight text-right">
-                  <p suppressHydrationWarning><span className="font-black text-[#64748b] uppercase text-[8px]">วันที่พิมพ์:</span> {printedAtLabel}</p>
-                  <p><span className="font-black text-[#64748b] uppercase text-[8px]">ผู้ออกรายงาน:</span> {profile.username || "System"}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 border-t border-[#94a3b8] pt-2">
-                <div className="flex gap-2 items-center">
-                  <span className="text-[11px] font-black text-[#64748b] uppercase whitespace-nowrap">แผนก:</span>
-                  <span className="text-[11px] font-bold text-[#102C57]">{scope.departmentName || "-"}</span>
-                </div>
-                <div className="flex gap-2 items-center justify-center">
-                  <span className="text-[11px] font-black text-[#64748b] uppercase whitespace-nowrap">ช่วงวันที่:</span>
-                  <span className="text-[11px] font-bold text-[#102C57]">{reportPeriodLabel}</span>
-                </div>
-                <div className="flex gap-2 items-center justify-end">
-                  <span className="text-[11px] font-black text-[#64748b] uppercase whitespace-nowrap">สินค้า:</span>
-                  <span className="text-[11px] font-bold text-[#102C57] whitespace-nowrap">
-                    {selectedProducts.length ? `เลือกแล้ว ${selectedProducts.length} รายการ` : "สินค้าทั้งหมด"}
-                  </span>
-                </div>
-              </div>
+            <div className="bg-white px-6 py-2 border-b border-[#94a3b8]">
+              <ReportHeader
+                title={config.printTitle}
+                subtitle={config.reportSubtitle}
+                meta={[
+                  { label: "แผนก", value: scope.departmentName || "-" },
+                  { label: "ช่วงวันที่", value: reportPeriodLabel },
+                  { label: "สินค้า", value: selectedProducts.length ? `เลือกแล้ว ${selectedProducts.length} รายการ` : "สินค้าทั้งหมด" },
+                ]}
+                printedAt={printedAtLabel}
+                printedBy={profile.username || "System"}
+                variant="block"
+              />
             </div>
           ) : (
-            <div className="border-b border-[#d4af37]/30 bg-[#102C57] px-4 py-4 text-white sm:px-6 print:bg-white print:text-black">
+            <div className="border-b border-[#d4af37]/30 bg-[var(--surface-navy,#102C57)] px-4 py-4 text-white sm:px-6 print:bg-white print:text-black">
               <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#d4af37] print:text-black">ผลลัพธ์รายงาน</p>
               <h2 className="mt-1 text-2xl font-black tracking-[0.08em]">{config.title}</h2>
             </div>
           )}
 
           <div className="overflow-x-auto border border-[#c4c6cf] bg-white">
-            <table className={`w-full min-w-[1080px] border-collapse text-left text-[13px] font-medium text-[#191c1d] ${
+            <table className={`w-full ${config.showOpening ? "min-w-[1280px]" : "min-w-[1080px]"} border-collapse text-left text-[13px] font-medium text-[#191c1d] ${
               useReportPaper ? "prison-movement-summary-report-table" : ""
             }`}>
               <colgroup>
                 {config.showDate ? <col className="w-[7%]" /> : null}
-                <col className={config.showDate ? "w-[42%]" : "w-[38%]"} />
+                <col className={config.showDate ? "w-[42%]" : config.showOpening ? "w-[30%]" : "w-[38%]"} />
                 <col className={config.showDate ? "w-[12%]" : "w-[14%]"} />
-                {Array.from({ length: 6 }).map((_, index) => (
-                  <col key={index} className={config.showDate ? "w-[6.5%]" : "w-[8%]"} />
+                {Array.from({ length: config.showOpening ? 8 : 6 }).map((_, index) => (
+                  <col key={index} className={config.showDate ? "w-[6.5%]" : config.showOpening ? "w-[7%]" : "w-[8%]"} />
                 ))}
               </colgroup>
-              <thead className="sticky top-0 z-10 bg-[#f1f3f5] text-[#102C57]">
+              <thead className="sticky top-0 z-10 bg-[#f8f9fa] text-[#1a1c1e] border-b-2 border-[#1a1c1e]">
                 <tr>
                   {config.showDate ? (
-                    <th rowSpan={2} className="border border-[#e1e3e4] bg-[#e9ecef] p-2 text-center align-middle font-black">
+                    <th rowSpan={2} className="border border-[#e1e3e4] bg-[#f8f9fa] p-2 text-center align-middle font-black">
                       วันที่
                     </th>
                   ) : null}
-                  <th rowSpan={2} className="border border-[#e1e3e4] bg-[#e9ecef] p-2 align-middle font-black">
+                  <th rowSpan={2} className="border border-[#e1e3e4] bg-[#f8f9fa] p-2 align-middle font-black">
                     สินค้า
                   </th>
-                  <th rowSpan={2} className="border border-[#e1e3e4] bg-[#e9ecef] p-2 text-center align-middle font-black">
+                  <th rowSpan={2} className="border border-[#e1e3e4] bg-[#f8f9fa] p-2 text-center align-middle font-black">
                     LOT
                   </th>
+                  {config.showOpening ? (
+                    <th colSpan={2} className="border border-[#e1e3e4] p-2 text-center font-black">
+                      ยอดยกมา
+                    </th>
+                  ) : null}
                   <th colSpan={2} className="border border-[#e1e3e4] p-2 text-center font-black">
-                    รับเข้า
+                    {config.showOpening ? "รับเข้าในช่วง" : "รับเข้า"}
                   </th>
                   <th colSpan={2} className="border border-[#e1e3e4] p-2 text-center font-black">
-                    เบิกออก
+                    {config.showOpening ? "เบิกออกในช่วง" : "เบิกออก"}
                   </th>
                   <th colSpan={2} className="border border-[#e1e3e4] p-2 text-center font-black">
-                    คงเหลือ
+                    {config.showOpening ? "คงเหลือปลายงวด" : "คงเหลือ"}
                   </th>
                 </tr>
                 <tr className="bg-[#f8f9fa]">
+                  {config.showOpening ? (
+                    <>
+                      <th className="border border-[#e1e3e4] p-1 text-center text-[10px] font-black tracking-[0.08em] text-black">จำนวน</th>
+                      <th className="border border-[#e1e3e4] p-1 text-center text-[10px] font-black tracking-[0.08em] text-black">น้ำหนัก</th>
+                    </>
+                  ) : null}
                   <th className="border border-[#e1e3e4] p-1 text-center text-[10px] font-black tracking-[0.08em] text-black">จำนวน</th>
                   <th className="border border-[#e1e3e4] p-1 text-center text-[10px] font-black tracking-[0.08em] text-black">น้ำหนัก</th>
                   <th className="border border-[#e1e3e4] p-1 text-center text-[10px] font-black tracking-[0.08em] text-black">จำนวน</th>
@@ -722,6 +734,12 @@ export default function ProductionPrisonBalanceReportPageClient({
                     <td className="whitespace-nowrap border border-[#e1e3e4] p-2 text-center font-bold text-[#102C57]">
                       {row.lotNo}
                     </td>
+                    {config.showOpening ? (
+                      <>
+                        <td className="whitespace-nowrap border border-[#e1e3e4] bg-amber-50/40 p-2 text-right font-bold text-black">{formatQuantity(row.openingQuantity)}</td>
+                        <td className="whitespace-nowrap border border-[#e1e3e4] bg-amber-50/40 p-2 text-right font-bold text-black">{formatWeight(row.openingWeightKg)}</td>
+                      </>
+                    ) : null}
                     <td className="whitespace-nowrap border border-[#e1e3e4] p-2 text-right font-bold text-black">{formatQuantity(row.inboundQuantity)}</td>
                     <td className="whitespace-nowrap border border-[#e1e3e4] p-2 text-right font-bold text-black">{formatWeight(row.inboundWeightKg)}</td>
                     <td className="whitespace-nowrap border border-[#e1e3e4] p-2 text-right text-black">{formatQuantity(row.issueQuantity)}</td>
@@ -731,7 +749,7 @@ export default function ProductionPrisonBalanceReportPageClient({
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan={config.showDate ? 9 : 8} className="border border-[#e1e3e4] px-4 py-16 text-center text-sm font-semibold text-slate-500">
+                    <td colSpan={(config.showDate ? 3 : 2) + (config.showOpening ? 8 : 6)} className="border border-[#e1e3e4] px-4 py-16 text-center text-sm font-semibold text-slate-500">
                       <div className="flex flex-col items-center gap-3">
                         <FileSearch size={32} className="text-slate-300" />
                         <span>{config.emptyMessage}</span>
@@ -746,6 +764,12 @@ export default function ProductionPrisonBalanceReportPageClient({
                     <td colSpan={config.showDate ? 3 : 2} className="border border-[#e1e3e4] p-2 text-right text-[11px] uppercase tracking-[0.12em]">
                       รวมยอดหน้านี้ (SUBTOTAL)
                     </td>
+                    {config.showOpening ? (
+                      <>
+                        <td className="border border-[#e1e3e4] p-2 text-right">{formatQuantity(pageSubtotal.openingQuantity)}</td>
+                        <td className="border border-[#e1e3e4] p-2 text-right">{formatWeight(pageSubtotal.openingWeightKg)}</td>
+                      </>
+                    ) : null}
                     <td className="border border-[#e1e3e4] p-2 text-right">{formatQuantity(pageSubtotal.inboundQuantity)}</td>
                     <td className="border border-[#e1e3e4] p-2 text-right">{formatWeight(pageSubtotal.inboundWeightKg)}</td>
                     <td className="border border-[#e1e3e4] p-2 text-right">{formatQuantity(pageSubtotal.issueQuantity)}</td>
@@ -753,10 +777,16 @@ export default function ProductionPrisonBalanceReportPageClient({
                     <td className="border border-[#e1e3e4] p-2 text-right">{formatQuantity(pageSubtotal.balanceQuantity)}</td>
                     <td className="border border-[#e1e3e4] p-2 text-right">{formatWeight(pageSubtotal.balanceWeightKg)}</td>
                   </tr>
-                  <tr className="border-t-2 border-[#102C57] bg-[#102C57] text-[13px] font-black text-white">
+                  <tr className="border-t-2 border-[#102C57] bg-[var(--surface-navy,#102C57)] text-[13px] font-black text-white">
                     <td colSpan={config.showDate ? 3 : 2} className="border border-[#102C57] p-3 text-right text-xs uppercase tracking-[0.18em]">
                       รวมยอดสุทธิทั้งหมด (GRAND TOTAL)
                     </td>
+                    {config.showOpening ? (
+                      <>
+                        <td className="border border-[#2a4670] p-3 text-right">{formatQuantity(summary.openingQuantity)}</td>
+                        <td className="border border-[#2a4670] p-3 text-right">{formatWeight(summary.openingWeightKg)}</td>
+                      </>
+                    ) : null}
                     <td className="border border-[#2a4670] p-3 text-right">{formatQuantity(summary.inboundQuantity)}</td>
                     <td className="border border-[#2a4670] p-3 text-right">{formatWeight(summary.inboundWeightKg)}</td>
                     <td className="border border-[#2a4670] p-3 text-right">{formatQuantity(summary.issueQuantity)}</td>
@@ -786,7 +816,7 @@ export default function ProductionPrisonBalanceReportPageClient({
                 type="button"
                 onClick={() => loadRows({ ...filters, page: pagination.page + 1 })}
                 disabled={pagination.totalPages === 0 || pagination.page >= pagination.totalPages || isPending}
-                className="inline-flex h-11 items-center gap-2 bg-[#102C57] px-4 text-sm font-bold text-white transition hover:bg-[#173b72] disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-11 items-center gap-2 bg-[var(--surface-navy,#102C57)] px-4 text-sm font-bold text-white transition hover:bg-[var(--surface-navy,#173b72)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 ถัดไป
               </button>

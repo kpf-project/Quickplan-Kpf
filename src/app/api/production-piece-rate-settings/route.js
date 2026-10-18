@@ -1,16 +1,7 @@
 import { ApiError, getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
 import { fetchGatewayJson } from "@/lib/gatewayClient";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { normalizeParam } from "@/lib/validation";
-
-const VIEW_PERMISSION_KEYS = [
-  "production-line-settings-view",
-  "production-line-settings-manage",
-];
-
-const MANAGE_PERMISSION_KEYS = [
-  "production-line-settings-manage",
-];
 
 const PROFILE_TABLE = "production_piece_rate_profiles";
 const WEIGHT_TABLE = "production_piece_rate_profile_weights";
@@ -441,7 +432,7 @@ async function buildPieceRateSettingsPayload(supabaseAdmin, options = {}) {
 }
 
 async function listPieceRateSettings(request) {
-  await requirePermissionKeys(request, VIEW_PERMISSION_KEYS);
+  await requireTaskPermission(request, "production-settings-piece-rate-view");
   const supabaseAdmin = getSupabaseAdmin();
   const { searchParams } = new URL(request.url);
   return buildPieceRateSettingsPayload(supabaseAdmin, {
@@ -450,7 +441,7 @@ async function listPieceRateSettings(request) {
 }
 
 async function savePieceRateSettings(request) {
-  const { userId } = await requirePermissionKeys(request, MANAGE_PERMISSION_KEYS);
+  const { userId } = await requireTaskPermission(request, "production-settings-piece-rate-rate-edit");
   const body = await readJson(request);
   const profiles = normalizeProfiles(body.profiles);
   const mappings = normalizeMappings(body.mappings);

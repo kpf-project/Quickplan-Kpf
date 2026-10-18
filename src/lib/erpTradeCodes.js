@@ -293,7 +293,7 @@ export async function fetchTradeCodesWithGatewayFallback(params = {}) {
     );
     const result = await Promise.race([gatewayPromise, timeoutPromise]);
 
-    if (result?.ok && Array.isArray(result.data?.data) && result.data.data.length > 0) {
+    if (result?.ok && Array.isArray(result.data?.data)) {
       const rawRows = result.data.data;
       const rows = rawRows.map((row) => {
         const goodsCode = String(row.GOODS_CODE || row.goods_code || row.SKU_CODE || "").trim();
@@ -337,10 +337,26 @@ export async function fetchTradeCodesWithGatewayFallback(params = {}) {
         cursor: result.data.cursor || { next: null, hasMore: false },
       };
     }
-  } catch {
-    // Gateway down / 502 / timeout -> fall back to direct ERP MSSQL
+  } catch (gwErr) {
+    // Gateway down / 502 / timeout -> fall back to direct ERP MSSQL if reachable
+    console.warn("[erpTradeCodes] Gateway request failed, attempting direct ERP fallback:", gwErr.message);
   }
 
-  // 2. Direct ERP MSSQL fallback
-  return queryErpTradeCodes(params);
+  // 2. Direct ERP MSSQL fallback (Graceful error handling if ERP server is unreachable)
+  try {
+    return await queryErpTradeCodes(params);
+  } catch (sqlErr) {
+    console.warn("[erpTradeCodes] Direct ERP MSSQL also unreachable:", sqlErr.message);
+    return {
+      data: [],
+      pagination: {
+        page: Number(params.page || 1),
+        pageSize: Number(params.pageSize || 50),
+        totalRecords: 0,
+        totalPages: 0,
+      },
+      cursor: { next: null, hasMore: false },
+      error: "ERP database connection currently unavailable",
+    };
+  }
 }

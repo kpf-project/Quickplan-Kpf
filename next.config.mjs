@@ -35,6 +35,7 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   compress: true,
+  serverExternalPackages: ["puppeteer"],
 
   // Compiler options
   compiler: {

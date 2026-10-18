@@ -1,0 +1,61 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { scheduleColumnsWithFormula, normalizeFormulaLayout, formulaCellCode, formulaCellPatch } from "../src/lib/scheduleFormulaLayout.js";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { loadBindings, transform } from "next/dist/build/swc/index.js";
+import * as formulaLayout from "../src/lib/scheduleFormulaLayout.js";
+import * as dateLayout from "../src/lib/scheduleDateLayout.js";
+import * as columnColors from "../src/lib/scheduleColumnColors.js";
+
+test("formula layout follows product, retains configuration, and never changes row data", () => {
+  const columns = [{ id: "sku", key: "product", col_type: "sku_picker", display_order: 2 }, { id: "qty", key: "quantity", col_type: "number", display_order: 3 }];
+  const result = scheduleColumnsWithFormula(columns);
+  assert.deepEqual(result.map(col => col.id), ["sku", "formula:sku", "qty"]);
+  assert.equal(columns.length, 2);
+  assert.equal(scheduleColumnsWithFormula(result).length, 3);
+  const config = normalizeFormulaLayout({ "formula:sku": { width: 90, label: "สูตรผลิต", display_order: 4, highlight_color: "#abc" } });
+  const changed = scheduleColumnsWithFormula(columns, config);
+  assert.equal(changed[2].width, 90);
+  assert.equal(changed[2].highlight_color, "#AABBCC");
+  assert.throws(() => normalizeFormulaLayout({ "formula:sku": { width: 2 } }));
+  assert.throws(() => normalizeFormulaLayout({ "formula:sku": { highlight_color: "url(x)" } }));
+  assert.throws(() => normalizeFormulaLayout({ other: {} }));
+  assert.equal(formulaCellCode({ formula_code: "F2" }), "F2");
+  assert.equal(formulaCellCode({}), "");
+  const patch = formulaCellPatch({ formula_code: "F3", formula_name: "สาม", bom_version_id: "bound-bom" });
+  assert.equal(patch.bomVersionId, "bound-bom");
+  assert.equal(patch.formulaCode, patch.formula_code);
+  assert.equal(patch.formulaName, patch.formula_name);
+});
+
+test("formula settings API enforces permission and section ownership before saving", async () => {
+  await loadBindings();
+  const filename = "src/app/api/production-planning/schedule/section-defs/[id]/route.js";
+  const { code } = await transform(readFileSync(filename, "utf8"), { filename, jsc: { parser: { syntax: "ecmascript" } }, module: { type: "commonjs" } });
+  const writes = [], require = createRequire(import.meta.url);
+  let denied = false;
+  const db = { from(table) {
+    if (table === "system_settings") return { upsert: async value => { writes.push(...value); return {}; } };
+    return { select: () => ({ eq: () => table === "production_schedule_section_defs" ? { maybeSingle: async () => ({ data: { id: "section-a" } }) } : Promise.resolve({ data: [{ id: "sku-a", col_type: "sku_picker" }] }) }) };
+  } };
+  const mod = { exports: {} };
+  new Function("require", "module", "exports", code)(name => name.includes("permissionGuard") ? { requirePermissionKeys: async () => { if (denied) throw new Error("denied"); } } : name.includes("adminApi") ? { getSupabaseAdmin: () => db, readJson: request => request.json(), jsonError: () => Response.json({ error: "denied" }, { status: 403 }) } : name.includes("scheduleColumnColors") ? columnColors : name.includes("scheduleFormulaLayout") ? formulaLayout : name.includes("scheduleDateLayout") ? dateLayout : require(name), mod, mod.exports);
+  const save = layout => mod.exports.PUT({ json: async () => ({ formulaLayout: layout }) }, { params: Promise.resolve({ id: "section-a" }) });
+  assert.equal((await save({ "formula:other-section": { width: 90 } })).status, 400);
+  assert.equal(writes.length, 0);
+  assert.equal((await save({ "formula:sku-a": { width: 90 } })).status, 200);
+  assert.equal(writes[0].setting_key, formulaLayout.formulaLayoutKey("section-a"));
+  assert.equal(writes[0].setting_value["formula:sku-a"].width, 90);
+  const saveColors = value => mod.exports.PUT({ json: async () => value }, { params: Promise.resolve({ id: "section-a" }) });
+  assert.equal((await saveColors({ columnColors: { other: { headerColor: "#abc" } } })).status, 400);
+  assert.equal((await saveColors({ formulaLayout: { "formula:sku-a": { width: 90 } }, columnColors: { "sku-a": { bodyColor: "url(x)" } } })).status, 400);
+  assert.equal(writes.length, 1);
+  assert.equal((await saveColors({ columnColors: { "sku-a": { headerColor: "#abc", bodyColor: null }, "formula:sku-a": { headerColor: "#def" } }, dateLayout: { width: 160, bodyColor: "#fff" } })).status, 200);
+  assert.equal(writes.length, 3);
+  assert.equal(writes[2].setting_key, columnColors.columnColorsKey("section-a"));
+  assert.equal(writes[2].setting_value["sku-a"].headerColor, "#AABBCC");
+  denied = true;
+  assert.equal((await save({ "formula:sku-a": { width: 90 } })).status, 403);
+  assert.equal(writes.length, 3);
+});

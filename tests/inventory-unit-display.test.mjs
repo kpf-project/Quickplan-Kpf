@@ -138,7 +138,7 @@ test("raw-material LOT UI keeps unit reference and adds costing without ERP sour
   assert.match(componentSource, />รหัสหน่วยอ้างอิง</);
   assert.match(componentSource, />ต้นทุน\/หน่วยหลัก</);
   assert.match(componentSource, />มูลค่าคงเหลือ</);
-  assert.match(componentSource, /RAW_MATERIAL_COST_CODES = \["01", "02", "05", "08", "10"\]/);
+  assert.match(componentSource, /RAW_MATERIAL_COST_CODES = \["01", "02", "03", "05", "08", "10"\]/);
   assert.doesNotMatch(componentSource, /<th[^>]*>ที่มา ERP<\/th>/);
 
   const serviceSource = fs.readFileSync(
@@ -180,7 +180,16 @@ test("LOT costing uses ERP net purchase value and weighted base quantity without
   assert.match(routeSource, /A\.NET_PURCHASE_AMOUNT < 0 THEN 'review'/);
   assert.match(routeSource, /NULLIF\(LTRIM\(RTRIM\(A\.BASE_UNIT_NAME\)\), ''\) IS NULL/);
   assert.match(routeSource, /GROUP BY SKU_CODE, SKU_NAME, ICCAT_CODE, ICCAT_NAME, LOT_NO, BASE_UNIT_NAME/);
+  assert.match(routeSource, /SKUMASTER\.SKU_CODE = @skuCode/);
+  assert.match(routeSource, /TRANSTKD\.TRD_LOT_NO[\s\S]*= @lotNo/);
   assert.doesNotMatch(routeSource, /VAT_AMOUNT \/ NULLIF\(A\.RECEIVED_BASE_QTY/);
+
+  const costingSource = fs.readFileSync(
+    path.join(rootDir, "src", "lib", "productionCostingService.js"),
+    "utf8"
+  );
+  assert.match(costingSource, /new URLSearchParams\(\{ search: lotNo, skuCode, lotNo, pageSize: "200", costSchema: "1" \}\)/);
+  assert.doesNotMatch(costingSource, /new URLSearchParams\(\{ search: materialSkuCode, pageSize: "200"/);
 });
 
 test("LOT costing table separates product, LOT, and unit cost columns", () => {
@@ -197,7 +206,7 @@ test("LOT costing table separates product, LOT, and unit cost columns", () => {
   assert.match(componentSource, /row\.SKU_CODE.*row\.LOT_NO/s);
 });
 
-test("raw-material receipt ledger preserves each INV and LOT and prices the VAT-inclusive net amount", () => {
+test("raw-material receipt ledger preserves each INV and LOT and prices the net amount excluding VAT", () => {
   const gatewaySource = fs.readFileSync(
     path.join(rootDir, "kpf-api-gateway", "server.js"),
     "utf8"
@@ -209,10 +218,9 @@ test("raw-material receipt ledger preserves each INV and LOT and prices the VAT-
   assert.ok(routeStart >= 0 && routeEnd > routeStart);
   assert.match(routeSource, /DT_PROPERTIES IN \(301, 303\)/);
   assert.match(routeSource, /DOCINFO\.DI_REF LIKE 'INV%'/);
-  assert.match(routeSource, /CAST\(TRANSTKD\.TRD_B_AMT AS DECIMAL\(28, 8\)\) AS NET_AMOUNT_INCL_VAT/);
-  assert.match(routeSource, /NET_AMOUNT_INCL_VAT <> SELL_AMOUNT \+ VAT_AMOUNT/);
-  assert.match(routeSource, /NET_AMOUNT_INCL_VAT <= 0 THEN 'review'/);
-  assert.match(routeSource, /NET_AMOUNT_INCL_VAT \/ NET_BASE_QTY/);
+  assert.match(routeSource, /CAST\(TRANSTKD\.TRD_B_SELL AS DECIMAL\(28, 8\)\) AS NET_AMOUNT_EXCL_VAT/);
+  assert.match(routeSource, /NET_AMOUNT_EXCL_VAT <= 0 THEN 'review'/);
+  assert.match(routeSource, /NET_AMOUNT_EXCL_VAT \/ NET_BASE_QTY/);
   assert.match(routeSource, /ORDER BY SKU_CODE ASC, LOT_NO ASC, DI_DATE ASC, DI_REF ASC, DI_KEY ASC, TRD_SEQ ASC, TRD_KEY ASC/);
   assert.match(routeSource, /SKU_CODE > @cursorSkuCode/);
   assert.match(routeSource, /COUNT\(DISTINCT DI_KEY\) AS TOTAL_INVOICES/);
@@ -230,7 +238,9 @@ test("raw-material receipt ledger preserves each INV and LOT and prices the VAT-
   assert.match(componentSource, />เลขที่ INV</);
   assert.match(componentSource, />รหัสสินค้า</);
   assert.match(componentSource, />ชื่อสินค้า</);
-  assert.match(componentSource, />ราคา\/หน่วย<br \/>รวม VAT</);
+  assert.match(componentSource, />ราคา\/หน่วย<br \/>ไม่รวม VAT</);
+  assert.match(componentSource, /row\.UNIT_PRICE_EXCL_VAT/);
+  assert.match(componentSource, /row\.NET_AMOUNT_EXCL_VAT/);
   assert.match(componentSource, /key=\{rowKey\(row\)\}/);
   assert.doesNotMatch(componentSource, /<th[^>]*>ผู้ขาย<\/th>/);
   assert.match(componentSource, /<aside className="fixed bottom-0 right-0 top-\[49px\]/);

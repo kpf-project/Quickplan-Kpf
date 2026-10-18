@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import { Check, Package, RotateCcw, Scale, ScanBarcode, Settings, UserRound } from "lucide-react";
+import { CalendarDays, Check, Package, RotateCcw, Scale, ScanBarcode, Settings, UserRound } from "lucide-react";
 import { fetchPieceRateReport } from "@/features/attendance/services/pieceRateWorkClient";
 import {
   fetchPieceRatePrintAgentHealth,
@@ -19,6 +19,7 @@ import PieceRateWorkflowTabs from "@/features/attendance/components/PieceRateWor
 import styles from "./PieceRateDesktopWorkstation.module.css";
 import PieceRateDeviceSettingsDialog from "./PieceRateDeviceSettingsDialog";
 import PieceRateEmployeeSummaryModal from "./PieceRateEmployeeSummaryModal";
+import { getBangkokWorkDate } from "@/lib/piece-rate-work-date";
 
 function formatNumber(value, digits = 2) {
   const parsed = Number(value);
@@ -87,7 +88,7 @@ function mapOutboxEntryToRow(entry) {
     productCode: syncedData.productCode || payload.productCode || "-",
     productGoodsCode: syncedData.productGoodsCode || payload.productGoodsCode || payload.productCode || "-",
     productName: syncedData.productName || payload.productName || "-",
-    normalizedKgAmount: syncedData.normalizedKgAmount ?? payload.inputValue ?? 0,
+    normalizedKgAmount: syncedData.normalizedKgAmount ?? payload.actualWeightKg ?? payload.inputValue ?? 0,
     inputValue: syncedData.inputValue ?? payload.inputValue ?? 0,
     countValue: syncedData.countValue ?? payload.countValue ?? 1,
     syncStatus: getOutboxDisplayStatus(entry),
@@ -135,6 +136,15 @@ function mergeAllRows(serverRows, outboxEntries) {
     .sort((left, right) => Date.parse(right.loggedAt || 0) - Date.parse(left.loggedAt || 0));
 }
 
+function isEntryForWorkDate(entry, workDate) {
+  const timestamp = entry?.syncedData?.loggedAt || entry?.payload?.loggedAt || entry?.createdAt;
+  try {
+    return getBangkokWorkDate(timestamp) === workDate;
+  } catch {
+    return false;
+  }
+}
+
 function EmployeeAvatar({ employeeCode }) {
   const [src, setSrc] = useState(`/api/employees/photos/${encodeURIComponent(employeeCode)}`);
   const [failed, setFailed] = useState(false);
@@ -166,12 +176,18 @@ export default function PieceRateDesktopWorkstation({
   onOpenEmployeePicker,
   inputValue = "",
   setInputValue,
+  pailWeightKg = "",
+  setPailWeightKg,
+  onPailCountChange,
   isSubmitting = false,
   submitError = "",
   refreshKey = 0,
   onReprint,
   workflowMode = "weigh-in",
   onWorkflowModeChange,
+  workDate,
+  maxWorkDate,
+  onWorkDateChange,
 }) {
   const [now, setNow] = useState(new Date());
   const [rows, setRows] = useState([]);
@@ -208,14 +224,25 @@ export default function PieceRateDesktopWorkstation({
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      fetchPieceRateReport({ viewMode: "detail", page: 1, pageSize: 20, hideCancelled: true, hideReplaced: true })
+      fetchPieceRateReport({
+        viewMode: "detail",
+        page: 1,
+        pageSize: 20,
+        dateFrom: workDate,
+        dateTo: workDate,
+        hideCancelled: true,
+        hideReplaced: true,
+      })
         .catch(() => null),
       getRecentPieceRateOutboxEntries(50).catch(() => []),
     ])
       .then(async ([result, outboxEntries]) => {
         if (cancelled) return;
         const reportRows = result?.ok ? (result.data?.data?.data || []) : [];
-        const mergedRows = mergeRecentRows(reportRows, outboxEntries);
+        const mergedRows = mergeRecentRows(
+          reportRows,
+          outboxEntries.filter((entry) => isEntryForWorkDate(entry, workDate))
+        );
         const productBarcodes = Array.from(new Set(
           mergedRows.map((row) => row.productBarcode).filter((value) => value && value !== "-")
         ));
@@ -233,7 +260,7 @@ export default function PieceRateDesktopWorkstation({
       })
       .catch(() => null);
     return () => { cancelled = true; };
-  }, [outboxRefreshKey, refreshKey]);
+  }, [outboxRefreshKey, refreshKey, workDate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -245,17 +272,11 @@ export default function PieceRateDesktopWorkstation({
       });
     }
 
-    const d = new Date();
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    const todayStr = `${year}-${month}-${day}`;
-
     Promise.all([
       fetchPieceRateReport({
         viewMode: "detail",
-        dateFrom: todayStr,
-        dateTo: todayStr,
+        dateFrom: workDate,
+        dateTo: workDate,
         // The daily employee summary must include every document for the day.
         // `printAll` uses the report service's chunked fetch path (1,000 rows per
         // query) instead of the paginated detail path, which is capped at 50.
@@ -270,13 +291,7 @@ export default function PieceRateDesktopWorkstation({
         const reportRows = result?.ok ? (result.data?.data?.data || []) : [];
 
         // Filter outbox entries to only include today's entries
-        const todayOutbox = outboxEntries.filter((entry) => {
-          const createdAt = entry.createdAt ? new Date(entry.createdAt) : new Date();
-          const entryYear = createdAt.getFullYear();
-          const entryMonth = String(createdAt.getMonth() + 1).padStart(2, "0");
-          const entryDay = String(createdAt.getDate()).padStart(2, "0");
-          return `${entryYear}-${entryMonth}-${entryDay}` === todayStr;
-        });
+        const todayOutbox = outboxEntries.filter((entry) => isEntryForWorkDate(entry, workDate));
 
         const mergedRows = mergeAllRows(reportRows, todayOutbox);
         const productBarcodes = Array.from(new Set(
@@ -303,7 +318,7 @@ export default function PieceRateDesktopWorkstation({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [outboxRefreshKey, refreshKey]);
+  }, [outboxRefreshKey, refreshKey, workDate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -344,10 +359,10 @@ export default function PieceRateDesktopWorkstation({
   const hasProduct = Boolean(product);
   const hasEmployee = Boolean(employee?.employeeCode);
   const isWeightReady = hasEmployee && (productLookup?.pieceRate?.inputMode === "pail"
-    ? (Boolean(inputValue) && Number(inputValue) > 0)
+    ? (Number(inputValue) > 0 && Number(pailWeightKg) > 0)
     : Boolean(scale?.canSave));
   const canSubmit = productLookup?.pieceRate?.inputMode === "pail"
-    ? (Boolean(inputValue) && Number(inputValue) > 0)
+    ? (Number(inputValue) > 0 && Number(pailWeightKg) > 0)
     : Boolean(scale?.canSave);
   const handleReprint = async (row) => {
     if (onReprint) {
@@ -393,7 +408,21 @@ export default function PieceRateDesktopWorkstation({
               <span>ชั่งและบันทึก</span>
             </div>
           </div>
-          <div className={styles.topbarTools}><div className={styles.clock}>{now.toLocaleTimeString("th-TH", { hour12: false })} &nbsp; | &nbsp; {now.toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "numeric" })}</div><button type="button" className={styles.settingsButton} onClick={() => setSettingsOpen(true)} aria-label="ตั้งค่าเครื่องชั่งและเครื่องพิมพ์"><Settings /></button></div>
+          <div className={styles.topbarTools}>
+            <label className={`${styles.workDate} ${workDate !== maxWorkDate ? styles.historicalDate : ""}`}>
+              <CalendarDays />
+              <span>{workDate !== maxWorkDate ? "วันที่ย้อนหลัง" : "วันที่ทำงาน"}</span>
+              <input
+                type="date"
+                value={workDate}
+                max={maxWorkDate}
+                onChange={(event) => onWorkDateChange?.(event.target.value)}
+                aria-label="วันที่ทำงาน"
+              />
+            </label>
+            <div className={styles.clock}>{now.toLocaleTimeString("th-TH", { hour12: false })}</div>
+            <button type="button" className={styles.settingsButton} onClick={() => setSettingsOpen(true)} aria-label="ตั้งค่าเครื่องชั่งและเครื่องพิมพ์"><Settings /></button>
+          </div>
         </div>
         <div className={styles.dashboard}>
           <div className={styles.productColumn}>
@@ -429,7 +458,7 @@ export default function PieceRateDesktopWorkstation({
                   type="number"
                   placeholder="0"
                   value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
+                  onChange={(event) => onPailCountChange?.(event.target.value)}
                   style={{
                     width: "192px",
                     height: "80px",
@@ -447,9 +476,34 @@ export default function PieceRateDesktopWorkstation({
                 <span style={{ fontSize: "14px", fontWeight: 900, color: "#cbd5e1" }}>
                   หน่วย: ปี๊บ
                 </span>
+                <label style={{ fontSize: "13px", fontWeight: 900, color: "#cbd5e1", textAlign: "center" }}>
+                  น้ำหนักจริงรวม (กก.)
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0.001"
+                    step="0.001"
+                    value={pailWeightKg}
+                    onChange={(event) => setPailWeightKg?.(event.target.value)}
+                    style={{
+                      display: "block",
+                      width: "192px",
+                      height: "52px",
+                      marginTop: "6px",
+                      textAlign: "center",
+                      fontSize: "28px",
+                      fontWeight: 900,
+                      color: "#ffffff",
+                      backgroundColor: "rgba(15, 23, 42, 0.6)",
+                      border: "2px solid #10b981",
+                      borderRadius: "12px",
+                      outline: "none",
+                    }}
+                  />
+                </label>
                 {inputValue && Number(inputValue) > 0 ? (
-                  <span style={{ fontSize: "12px", fontWeight: 700, color: "#10b981", marginTop: "4px" }}>
-                    คำนวณน้ำหนัก: {formatNumber(Number(inputValue) * Number(productLookup?.pieceRate?.kg_per_pail || productLookup?.pieceRate?.weightKg || 0), 3)} kg
+                  <span style={{ fontSize: "12px", fontWeight: 700, color: "#94a3b8" }}>
+                    ค่าเริ่มต้นจากมาตรฐาน: {formatNumber(Number(inputValue) * Number(productLookup?.pieceRate?.kgPerPail || productLookup?.pieceRate?.weightKg || 0), 3)} kg
                   </span>
                 ) : null}
               </div>
@@ -494,7 +548,7 @@ export default function PieceRateDesktopWorkstation({
       <section className={styles.tableWrap}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #d5dee9", padding: "8px 12px", background: "#f8fafc" }}>
           <h2 style={{ fontSize: "16px", fontWeight: 800, margin: 0, color: "#1e293b" }}>
-            {activeTab === "latest" ? "บันทึกล่าสุด 20 รายการ" : "สรุปตามกลุ่มพนักงาน (วันนี้)"}
+            {activeTab === "latest" ? `บันทึกล่าสุด 20 รายการ · ${workDate}` : `สรุปตามกลุ่มพนักงาน · ${workDate}`}
           </h2>
           <div style={{ display: "flex", gap: "6px" }}>
             <button

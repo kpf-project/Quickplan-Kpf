@@ -23,7 +23,10 @@ function parseTimestamp(value) {
 
 function readCapturedAt(record) {
   return (
-    record?.metadata?.scaleAudit?.capturedAt
+    record?.metadata?.scaleAudit?.physicalCapturedAt
+    || record?.metadata_snapshot?.scaleAudit?.physicalCapturedAt
+    || record?.scaleAudit?.physicalCapturedAt
+    || record?.metadata?.scaleAudit?.capturedAt
     || record?.metadata_snapshot?.scaleAudit?.capturedAt
     || record?.scaleAudit?.capturedAt
     || record?.capturedAt
@@ -32,6 +35,16 @@ function readCapturedAt(record) {
     || record?.createdAt
     || null
   );
+}
+
+function readWorkDate(record) {
+  return String(
+    record?.workDate
+    || record?.work_date
+    || record?.metadata?.workDate
+    || record?.metadata_snapshot?.workDate
+    || ""
+  ).trim();
 }
 
 function normalizeRecord(record) {
@@ -50,6 +63,7 @@ function normalizeRecord(record) {
   const source = normalizeText(record.source);
   const inputValue = parseWeight(record.inputValue ?? record.input_value);
   const capturedAtMs = parseTimestamp(readCapturedAt(record));
+  const workDate = readWorkDate(record);
 
   if (!employeeCode || !productBarcode || inputValue === null || capturedAtMs === null) {
     return null;
@@ -62,6 +76,7 @@ function normalizeRecord(record) {
     source,
     inputValue,
     capturedAtMs,
+    workDate,
   };
 }
 
@@ -87,6 +102,9 @@ export function isPieceRateBusinessDuplicate(candidate, existing, options = {}) 
     return false;
   }
   if (left.source && right.source && left.source !== right.source) {
+    return false;
+  }
+  if (left.workDate && right.workDate && left.workDate !== right.workDate) {
     return false;
   }
   if (Math.abs(left.inputValue - right.inputValue) > weightToleranceKg) {

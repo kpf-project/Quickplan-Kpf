@@ -1,5 +1,5 @@
 import { getSupabaseAdmin, jsonError } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { normalizeParam } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
@@ -24,10 +24,7 @@ function pickActiveVersion(versions = []) {
 
 export async function GET(request) {
   try {
-    await requirePermissionKeys(request, [
-      "production-line-settings-view",
-      "production-line-settings-manage",
-    ]);
+    await requireTaskPermission(request, "production-settings-routing-components-completeness-view");
 
     const { searchParams } = new URL(request.url);
     const departmentId = normalizeParam(searchParams.get("departmentId"));

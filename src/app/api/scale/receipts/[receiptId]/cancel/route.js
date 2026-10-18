@@ -1,33 +1,53 @@
 import { cancelScaleReceipt } from "@/lib/scale/receipts";
 import { getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { logAuditEvent } from "@/lib/auditLog";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const SCALE_RECEIPT_MANAGE_PERMISSION_KEYS = [
-  "production-line-attendance-manage",
-];
 
 export async function POST(request, { params }) {
+  let actorId = null;
+  let receiptId = null;
+
   try {
-    const permission = await requirePermissionKeys(
-      request,
-      SCALE_RECEIPT_MANAGE_PERMISSION_KEYS
-    );
+    const permission = await requireTaskPermission(request, "production-scale-receipt-cancel");
+    actorId = permission.userId;
     const body = await readJson(request);
     const routeParams = await params;
+    receiptId = routeParams?.receiptId || null;
 
     const receipt = await cancelScaleReceipt(getSupabaseAdmin(), {
-      receiptId: routeParams?.receiptId,
-      actorUserId: permission.userId,
+      receiptId,
+      actorUserId: actorId,
       voidReason: body?.voidReason,
+    });
+
+    await logAuditEvent({
+      actorId,
+      action: "production.weight_scale.cancel.success",
+      targetTable: "production_weight_receipts",
+      targetId: receipt.id,
+      metadata: {
+        barcode: receipt.barcode,
+        alreadyCancelled: receipt.alreadyCancelled,
+      },
     });
 
     return Response.json({
       data: receipt,
     });
   } catch (error) {
+    await logAuditEvent({
+      actorId,
+      action: "production.weight_scale.cancel.failure",
+      targetTable: "production_weight_receipts",
+      targetId: receiptId,
+      metadata: {
+        error: error?.message || String(error),
+      },
+    });
     return jsonError(error);
   }
 }

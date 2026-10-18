@@ -32,6 +32,7 @@ export function normalizeWorkCenterInput(input = {}) {
   const description = normalizeText(input.description);
   const sortOrder = normalizeSortOrder(input.sortOrder ?? input.sort_order);
   const isActive = normalizeBoolean(input.isActive ?? input.is_active, true);
+  const requiresPlanning = normalizeBoolean(input.requiresPlanning ?? input.requires_planning, false);
   const consolidateRequisitionPreviewByDate = normalizeBoolean(
     input.consolidateRequisitionPreviewByDate ?? input.consolidate_requisition_preview_by_date,
     false
@@ -50,6 +51,7 @@ export function normalizeWorkCenterInput(input = {}) {
     description,
     sortOrder,
     isActive,
+    requiresPlanning,
     consolidateRequisitionPreviewByDate,
     errors,
   };
@@ -80,6 +82,7 @@ export function mapWorkCenterRow(row = {}) {
     description: row.description || "",
     sort_order: Number(row.sort_order ?? 0),
     is_active: Boolean(row.is_active),
+    requires_planning: Boolean(row.requires_planning),
     consolidate_requisition_preview_by_date: Boolean(row.consolidate_requisition_preview_by_date),
     created_at: row.created_at,
     updated_at: row.updated_at,

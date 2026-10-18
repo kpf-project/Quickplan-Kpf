@@ -142,3 +142,30 @@ test("piece-rate duplicate guard ignores a different machine or employee", () =>
   assert.equal(isPieceRateBusinessDuplicate(candidate, differentMachine), false);
   assert.equal(isPieceRateBusinessDuplicate(candidate, differentEmployee), false);
 });
+
+test("piece-rate duplicate guard separates different selected work dates", () => {
+  const candidate = {
+    employeeCode: "KPF-001",
+    productBarcode: "WKB-0066",
+    machineCode: "SC01",
+    source: "piece_rate_scan",
+    inputValue: 12.5,
+    metadata: {
+      workDate: "2026-09-28",
+      scaleAudit: { capturedAt: "2026-09-29T03:00:00.000Z" },
+    },
+  };
+  const existing = {
+    employee_code: "KPF-001",
+    product_barcode_snapshot: "WKB-0066",
+    machine_code: "SC01",
+    source: "piece_rate_scan",
+    input_value: 12.5,
+    metadata_snapshot: {
+      workDate: "2026-09-29",
+      scaleAudit: { capturedAt: "2026-09-29T03:00:01.000Z" },
+    },
+  };
+
+  assert.equal(isPieceRateBusinessDuplicate(candidate, existing), false);
+});

@@ -1,0 +1,31 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { transform, loadBindings } from "next/dist/build/swc/index.js";
+import * as weight from "../src/features/production-planning/services/wipPlanDisplayWeight.js";
+
+test("shared WIP weekly table keeps duplicate dates, formulas and shifts independent, with complete weight totals", async () => {
+  await loadBindings();
+  const file = "src/features/production-planning/components/WipWeeklyTable.js";
+  const { code } = await transform(readFileSync(file, "utf8"), { filename: file, jsc: { parser: { syntax: "ecmascript", jsx: true }, transform: { react: { runtime: "automatic" } } }, module: { type: "commonjs" } });
+  const require = createRequire(import.meta.url), mod = { exports: {} };
+  new Function("require", "module", "exports", code)(name => name.endsWith(".css") ? { __esModule: true, default: {} } : name.includes("wipPlanDisplayWeight") ? weight : require(name), mod, mod.exports);
+  const line = { skuCode: "WIP1", skuName: "ครีม", unit: "batch", plannedQty: 2, kgPerBatch: 30, workDate: "2026-10-19", formulaCode: "DEFAULT", shiftCode: "1" };
+  const rows = mod.exports.buildWipWeeklyRows([line, { ...line, workDate: "2026-10-20", plannedQty: 3 }, { ...line }, { ...line, shiftCode: "2" }, { ...line, formulaCode: "F2" }]);
+  assert.equal(rows.length, 4);
+  assert.equal(rows[0].totalQty, 5);
+  assert.equal(rows[0].totalKg, 150);
+  assert.equal(rows[0].linesByDate["2026-10-19"], line);
+  const props = { rows, dates: ["2026-10-19", "2026-10-20"], formatDate: value => value };
+  const readOnly = renderToStaticMarkup(React.createElement(mod.exports.default, props));
+  assert.match(readOnly, /150 kg/);
+  assert.doesNotMatch(readOnly, /<input|แบรนด์|เครื่อง|ไซส์|ผลิตแล้ว/);
+  const editable = renderToStaticMarkup(React.createElement(mod.exports.default, { ...props, canEdit: item => item.workDate === "2026-10-20", onChange() {}, onDelete() {} }));
+  assert.equal((editable.match(/<input/g) || []).length, 1);
+  const missing = mod.exports.buildWipWeeklyRows([{ ...line, kgPerBatch: null }, { ...line, workDate: "2026-10-20" }]);
+  assert.equal(missing[0].weightIncomplete, true);
+  assert.match(renderToStaticMarkup(React.createElement(mod.exports.default, { ...props, rows: missing })), /น้ำหนักไม่ครบ/);
+});

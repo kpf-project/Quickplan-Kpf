@@ -1,8 +1,8 @@
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { createAppError, fail, ok } from "@/lib/result";
 
 export async function listHrDepartments(request) {
-  await requirePermissionKeys(request, ["admin-consolidated", "admin-employees"]);
+  await requireTaskPermission(request, "hr-departments-view");
   const gatewayUrl = process.env.KPF_GATEWAY_URL;
   const apiKey = process.env.KPF_API_KEY;
 

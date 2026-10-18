@@ -118,12 +118,6 @@ const aliasPermissions = {
     "plan.view_all",
     "plan.approve_exception",
   ],
-  "/production-line/planning/subplan-report": [
-    "production-line-planning-view",
-    "production-line-planning-manage",
-    "plan.view_all",
-    "plan.approve_exception",
-  ],
   "/production-line/planning/expired": [
     "production-line-planning-view",
     "production-line-planning-manage",

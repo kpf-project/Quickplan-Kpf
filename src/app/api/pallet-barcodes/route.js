@@ -1,16 +1,9 @@
 import { ApiError, getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
 import { fetchGatewayJson } from "@/lib/gatewayClient";
 import { fetchTradeCodesWithGatewayFallback } from "@/lib/erpTradeCodes";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { normalizeParam, parsePaginationParams } from "@/lib/validation";
 
-const VIEW_PERMISSION_KEYS = [
-  "production-line-settings-view",
-  "production-line-settings-manage",
-];
-const MANAGE_PERMISSION_KEYS = [
-  "production-line-settings-manage",
-];
 const ALLOWED_ICCAT_CODES = ["03", "04", "04-1", "04-2"];
 
 const PRODUCT_BARCODE_REGEX = /^[A-Z0-9\-._:/]{2,80}$/;
@@ -174,7 +167,7 @@ async function ensureProductsExist(supabaseAdmin, skuCodes) {
 }
 
 async function listPalletBarcodeSettings(request) {
-  await requirePermissionKeys(request, VIEW_PERMISSION_KEYS);
+  await requireTaskPermission(request, "production-settings-pallet-barcodes-view");
   const supabaseAdmin = getSupabaseAdmin();
   const { searchParams } = new URL(request.url);
   const { page, pageSize: rawPageSize } = parsePaginationParams(searchParams, {
@@ -193,9 +186,56 @@ async function listPalletBarcodeSettings(request) {
     cursor,
   });
   const tradeCodeRows = Array.isArray(tradeCodePayload?.data) ? tradeCodePayload.data : [];
+  
+  // Also query products_cache for internal WIP/products (like WKB-0041 แป้งหมัก) so they can be configured for pallet barcodes
+  let cacheProducts = [];
+  try {
+    let cacheQuery = supabaseAdmin
+      .from("products_cache")
+      .select("sku_code, sku_name, iccat_code, iccat_name, icdept_code, icdept_name, uom_name, brand_code, brand_name")
+      .in("iccat_code", iccatCode ? [iccatCode] : ALLOWED_ICCAT_CODES);
+
+    if (search) {
+      cacheQuery = cacheQuery.or(`sku_code.ilike.%${search}%,sku_name.ilike.%${search}%`);
+    }
+
+    const { data: cacheData } = await cacheQuery.limit(50);
+    if (Array.isArray(cacheData)) {
+      cacheProducts = cacheData;
+    }
+  } catch (err) {
+    console.warn("Failed to query products_cache fallback in pallet-barcodes:", err?.message || err);
+  }
+
+  // Combine Trade Codes from ERP with internal products_cache items
+  const combinedRows = [...tradeCodeRows];
+  const existingSkuCodes = new Set(
+    tradeCodeRows.map((r) => normalizeSkuCode(r.SKU_CODE || r.sku_code)).filter(Boolean)
+  );
+
+  for (const cp of cacheProducts) {
+    const normSku = normalizeSkuCode(cp.sku_code);
+    if (normSku && !existingSkuCodes.has(normSku)) {
+      combinedRows.push({
+        GOODS_CODE: normSku,
+        SKU_CODE: normSku,
+        SKU_NAME: cp.sku_name || normSku,
+        ICCAT_CODE: cp.iccat_code || "03",
+        ICCAT_NAME: cp.iccat_name || "งานระหว่างทำ",
+        ICDEPT_CODE: cp.icdept_code || "",
+        ICDEPT_THAIDESC: cp.icdept_name || "",
+        UTQ_NAME: cp.uom_name || "ชุด",
+        UTQ_NAME_2: cp.uom_name || "ชุด",
+        BRN_CODE: cp.brand_code || "",
+        BRN_NAME: cp.brand_name || "",
+      });
+      existingSkuCodes.add(normSku);
+    }
+  }
+
   const dedupedTradeCodes = Array.from(
     new Map(
-      tradeCodeRows
+      combinedRows
         .map((row) => [normalizeGoodsCode(row?.GOODS_CODE), row])
         .filter(([goodsCode]) => Boolean(goodsCode))
     ).values()
@@ -791,13 +831,15 @@ async function handleSetProductImage(supabaseAdmin, userId, body) {
 }
 
 async function mutatePalletBarcodeSettings(request) {
-  const { userId } = await requirePermissionKeys(request, MANAGE_PERMISSION_KEYS);
   const body = await readJson(request);
   const action = String(body.action || "").trim();
   if (!action) {
     throw new ApiError(400, "action is required");
   }
 
+  const operation = action.startsWith("clear_") ? "delete"
+    : ["create_qty_barcode", "generate_wip03_rcn13_barcodes"].includes(action) ? "create" : "edit";
+  const { userId } = await requireTaskPermission(request, `production-settings-pallet-barcodes-${operation}`);
   const supabaseAdmin = getSupabaseAdmin();
   if (action === "create_qty_barcode") {
     return handleCreateQtyBarcode(supabaseAdmin, userId, body);

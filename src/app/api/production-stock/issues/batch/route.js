@@ -1,6 +1,6 @@
 import { getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
 import { logAuditEvent } from "@/lib/auditLog";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import {
   createProductionStockIssuesBatch,
   loadProductionStockIssuePageData,
@@ -10,19 +10,13 @@ import { ok, toJsonResponse } from "@/lib/result";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const PRODUCTION_STOCK_MANAGE_PERMISSION_KEYS = [
-  "production-line-attendance-manage",
-];
 
 export async function POST(request) {
   let actorId = null;
   let body = null;
   let operationCompleted = false;
   try {
-    const permission = await requirePermissionKeys(
-      request,
-      PRODUCTION_STOCK_MANAGE_PERMISSION_KEYS
-    );
+    const permission = await requireTaskPermission(request, "production-stock-issue-write");
     actorId = permission.userId;
     body = await readJson(request);
     const supabaseAdmin = getSupabaseAdmin();
@@ -33,6 +27,7 @@ export async function POST(request) {
         issueType: body?.issueType,
         remark: body?.remark,
         issueDate: body?.issueDate,
+        destinationRoomCode: body?.destinationRoomCode,
         actorUserId: permission.userId,
       },
       supabaseAdmin
@@ -48,6 +43,7 @@ export async function POST(request) {
         failed: batch.failed.map(({ barcode, error }) => ({ barcode, error })),
         issueType: body?.issueType || null,
         issueDate: body?.issueDate || null,
+        destinationRoomCode: body?.destinationRoomCode || null,
       },
     });
 
@@ -71,6 +67,7 @@ export async function POST(request) {
           requestedCount: Array.isArray(body?.barcodes) ? body.barcodes.length : 0,
           issueType: body?.issueType || null,
           issueDate: body?.issueDate || null,
+          destinationRoomCode: body?.destinationRoomCode || null,
           error: error?.message || String(error),
           negativeLotBlocked: String(error?.message || "").includes("คงเหลือไม่พอ"),
         },

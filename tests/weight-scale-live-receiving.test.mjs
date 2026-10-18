@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import vm from "node:vm";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const livePagePath = path.join(
@@ -184,19 +185,68 @@ test("serial receiving owns an independent Thai industrial station interface", (
   const source = read(livePagePath);
 
   assert.doesNotMatch(source, /WeightScalePrimaryHeader/);
-  assert.match(source, /KPF WEIGH/);
-  assert.match(source, /ความนิ่งของน้ำหนัก/);
+  assert.match(source, /KPF <span>WEIGH PRO/);
+  assert.match(source, /รอน้ำหนักนิ่ง/);
+  assert.match(source, /น้ำหนักสุทธิ \(NET\)/);
   assert.match(source, /เริ่มรอบใหม่/);
   assert.match(source, /เปลี่ยนสินค้า/);
   assert.match(source, /รายการชั่งล่าสุด/);
-  assert.match(source, /bg-\[#001F3F\]/);
+  assert.match(source, /bg-\[var\(--surface-navy,#001F3F\)\]/);
   assert.match(source, /text-\[#E9C349\]/);
+});
+
+test("live scale uses the selected light workstation layout and displays net as the main weight", () => {
+  const source = read(livePagePath);
+  const css = read(path.join(repoRoot, "src/features/production-line/components/WeightScaleLivePageClient.module.css"));
+  const instrument = source.slice(source.indexOf('data-testid="live-net-weight"'), source.indexOf('className={styles.metrics}'));
+  assert.match(instrument, /currentWeightEvaluation.netWeightKg.toFixed\(3\)/);
+  assert.doesNotMatch(instrument, /grossWeightKg.toFixed/);
+  assert.match(source, /disabled=\{isSavingWeight \|\| !canSave\}/);
+  assert.match(source, /receipt.workstationId === workstationId/);
+  assert.match(source, /product.departmentId === departmentId/);
+  assert.match(source, /stationReceipts.map/);
+  assert.match(css, /grid-template-columns: minmax\(210px/);
+  assert.match(css, /@media \(max-width: 639px\)/);
+  const selection = source.slice(source.indexOf("function selectProductForSetup"), source.indexOf("async function saveProductPickerSetup"));
+  assert.match(selection, /setLiveReading\(null\)/);
+  assert.match(selection, /setIsStable\(false\)/);
+  assert.match(selection, /setIsReadingFresh\(false\)/);
+});
+
+test("station history never mixes other stations, departments, or unassigned legacy receipts", () => {
+  const source = read(livePagePath);
+  const body = source.slice(source.indexOf("function filterStationReceipts("), source.indexOf("\nfunction buildInitialReceiptsState"));
+  const filter = vm.runInNewContext(`${body}; filterStationReceipts`);
+  const rows = [
+    { id: "a", workstationId: "one", productCode: "P1" },
+    { id: "b", workstationId: "two", productCode: "P1" },
+    { id: "c", workstationId: "one", productCode: "P2" },
+    { id: "legacy", workstationId: null, productCode: "P1" },
+  ];
+  const products = [{ code: "P1", departmentId: "D1" }, { code: "P2", departmentId: "D2" }];
+  assert.deepEqual(Array.from(filter(rows, "one", "D1", products), row => row.id), ["a"]);
+  assert.deepEqual(Array.from(filter(rows, "one", null, products), row => row.id), ["a", "c"]);
+  assert.equal(filter(rows, null, "D1", products).length, 0);
+});
+
+test("compact station separates product selection from hardware tabs and reuses pallet product images", () => {
+  const source = read(livePagePath);
+  const header = source.slice(source.indexOf("<WeightScaleLiveSubHeader"), source.indexOf('{activeStationMode === "return"'));
+  assert.doesNotMatch(header, /openProductSetup/);
+  assert.match(header, /ตั้งค่าอุปกรณ์/);
+  assert.match(source, /เปลี่ยนสินค้า \/ LOT/);
+  assert.match(source, /hidden=\{settingsTab !== "scale"\}/);
+  assert.match(source, /hidden=\{settingsTab !== "printer"\}/);
+  assert.match(source, /src=\{selectedProduct.imageUrl\}/);
+  assert.doesNotMatch(source, /scale-wkb0002-illustration/);
+  assert.match(read(path.join(repoRoot, "src/lib/scale/live-products.js")), /iccat_name,image_url/);
 });
 
 test("serial receiving opens settings and product selection in modals without side metrics", () => {
   const source = [
     read(livePagePath),
     read(liveProductModalPath),
+    read(path.join(repoRoot, "src/components/ProductPicker.js")),
   ].join("\n");
 
   assert.ok(
@@ -212,7 +262,7 @@ test("serial receiving opens settings and product selection in modals without si
 
 test("serial receiving product modal matches the inbound picker without minimum weight", () => {
   const pageSource = read(livePagePath);
-  const modalSource = read(liveProductModalPath);
+  const modalSource = read(liveProductModalPath) + read(path.join(repoRoot, "src/components/ProductPicker.js"));
 
   assert.match(pageSource, /WeightScaleLiveProductPickerModal/);
   assert.match(modalSource, /ค้นหาชื่อสินค้า หรือรหัสสินค้า/);

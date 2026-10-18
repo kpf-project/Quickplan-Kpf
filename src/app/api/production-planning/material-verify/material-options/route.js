@@ -5,6 +5,7 @@ import { requirePermissionKeys } from "@/lib/permissionGuard";
 import { RAW_CATEGORY_OPTIONS, WIP_CATEGORY_OPTIONS } from "@/lib/bomMatrix";
 import { normalizeParam } from "@/lib/validation";
 import { normalizeSku } from "@/lib/materialClaims";
+import { loadCompleteMaterialCatalog } from "@/lib/requisitionMaterialPicker";
 
 export const dynamic = "force-dynamic";
 
@@ -86,6 +87,7 @@ function mapTradeCodeOption(row) {
       || "-",
     category: String(row?.ICCAT_CODE || "").trim().toUpperCase() || null,
     categoryName: String(row?.ICCAT_NAME || "").trim() || null,
+    itemType: WIP_CATEGORY_OPTIONS.includes(String(row?.ICCAT_CODE || "").trim().toUpperCase()) ? "WIP" : "RAW",
   };
 }
 
@@ -100,6 +102,7 @@ function mapProductCacheOption(row) {
     unit: String(row?.uom_name || "").trim() || "-",
     category: String(row?.iccat_code || "").trim().toUpperCase() || null,
     categoryName: String(row?.iccat_name || "").trim() || null,
+    itemType: WIP_CATEGORY_OPTIONS.includes(String(row?.iccat_code || "").trim().toUpperCase()) ? "WIP" : "RAW",
   };
 }
 
@@ -142,6 +145,13 @@ export async function GET(request) {
     const page = normalizePositiveInteger(searchParams.get("page"), 1);
     const pageSize = normalizePageSize(searchParams.get("pageSize") || searchParams.get("limit"));
     const cursor = normalizeParam(searchParams.get("cursor")) || "";
+    if (searchParams.get("catalog") === "all") {
+      const options = await loadCompleteMaterialCatalog({
+        loadTrades: async args => { const result = await listTradeCodesForVerify({ ...args, search: "" }); return { ...result, rows: result.rows.map(mapTradeCodeOption).filter(Boolean) }; },
+        loadProducts: async args => { const rows = await listProductCacheOptions({ ...args, search: "" }); return { rows: rows.map(mapProductCacheOption).filter(Boolean), hasMore: rows.length >= args.pageSize }; },
+      });
+      return NextResponse.json({ data: options, meta: { complete: true, count: options.length } });
+    }
 
     const seen = new Set();
     const options = [];

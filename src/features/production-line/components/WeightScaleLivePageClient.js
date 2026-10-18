@@ -1,44 +1,55 @@
 "use client";
-import { assertReceiptCanReprint, isActiveScaleReceipt } from "@/lib/scale-receipt-visibility";
-import { fetchScaleReceiptReport } from "@/features/production-line/services/scaleClient";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
+import styles from "./WeightScaleLivePageClient.module.css";
 import {
+  Activity,
+  CalendarDays,
+  CheckCircle2,
   ArrowLeftRight,
-  CircleHelp,
+  Ban,
   List,
   Loader2,
-  Plus,
   Printer,
   RefreshCw,
   Save,
   Scale,
   Settings,
-  Wifi,
   X,
 } from "lucide-react";
 import {
-  createScaleLot,
-  saveScaleProductConfig,
-  setScaleCurrentLot,
-} from "@/features/production-line/services/scaleClient";
+  saveWeightScaleLiveReceipt,
+  fetchCentralInboundReadiness,
+  resolveCentralInboundPending,
+} from "@/features/production-line/services/weightScaleLiveClient";
 import {
-  fetchLocalPrintAgentHealth,
-  fetchLocalPrinters,
-  printWeightScaleLabelViaAgent,
-  saveLocalPrinterSelection,
-} from "@/features/production-line/services/localPrintAgentClient";
+  fetchCentralPrintAgentHealth as fetchLocalPrintAgentHealth,
+  fetchCentralPrinters as fetchLocalPrinters,
+  saveCentralPrinterSelection as saveLocalPrinterSelection,
+  printCentralReceipt,
+} from "@/features/production-line/services/centralScalePrintClient";
+import { readPendingReceipt, persistPendingReceipt, clearConfirmedReceipt, withCentralReceiptLock, assertCentralReceiptMatches } from "@/lib/scale/pending-receipt";
 import {
   fetchScaleAgentHealth,
   fetchScaleAgentPorts,
   fetchScaleAgentSerialConfig,
   getDefaultScaleAgentUrl,
-  saveScaleAgentSerialConfig,
   subscribeScaleAgentStream,
+  saveScaleAgentSerialConfig,
 } from "@/features/production-line/services/localScaleAgentClient";
 import WeightScaleLiveProductPickerModal from "@/features/production-line/components/WeightScaleLiveProductPickerModal";
-import { buildWeightScaleReceiptPrintLabel } from "@/features/production-line/services/weightScaleReceiptLabel";
-import { saveWeightScaleLiveReceipt } from "@/features/production-line/services/weightScaleLiveClient";
+import { requestDepartmentProductHotkeys } from "@/lib/departmentProductHotkeysClient";
+import { productHotkeyFromEvent } from "@/lib/productHotkeys";
+import WeightScaleLiveSubHeader, { STATION_MODES } from "@/features/production-line/components/WeightScaleLiveSubHeader";
+import WeightScaleLiveVoidModal from "@/features/production-line/components/WeightScaleLiveVoidModal";
+import CentralInboundHistory from "./CentralInboundHistory";
+import WeightScaleLiveVoidSection from "@/features/production-line/components/WeightScaleLiveVoidSection";
+import WeightScaleLiveReturnSection from "@/features/production-line/components/WeightScaleLiveReturnSection";
+import WeightScaleLiveIssueSection from "@/features/production-line/components/WeightScaleLiveIssueSection";
+
 
 const RECENT_RECEIPTS_LIMIT = 20;
 const RAW_LOG_LIMIT = 10;
@@ -47,6 +58,7 @@ const STABLE_WINDOW_MS = 3000;
 const STABLE_MIN_SPAN_MS = 1500;
 const STABLE_TOLERANCE_KG = 0.002;
 const READING_STALE_AFTER_MS = 5000;
+const SCALE_CLEAR_THRESHOLD_KG = 0.05;
 const BAUD_RATE_OPTIONS = [2400, 4800, 9600, 19200];
 const DATA_BITS_OPTIONS = [7, 8];
 const PARITY_OPTIONS = ["none", "even", "odd"];
@@ -68,6 +80,15 @@ const DEFAULT_SERIAL_CONFIG = Object.freeze({
   parity: "none",
   stopBits: 1,
 });
+
+function StationClock() {
+  const [clock, setClock] = useState(null);
+  useEffect(() => {
+    const timer = setInterval(() => setClock(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return <div className={styles.date}><CalendarDays size={20} /><span>{clock ? clock.toLocaleDateString("th-TH") : "—"}<small>{clock ? clock.toLocaleTimeString("th-TH") : "—"}</small></span></div>;
+}
 
 function parseWeightNumber(value, fallback = null) {
   const parsed = Number.parseFloat(String(value ?? "").trim());
@@ -152,12 +173,14 @@ function normalizeProductOptions(products) {
       return {
         code: String(product?.code || "").trim().toUpperCase(),
         name: String(product?.name || "").trim(),
+        imageUrl: String(product?.imageUrl || "").trim(),
         unit: String(product?.unit || "").trim(),
         categoryCode: String(product?.categoryCode || "").trim(),
         categoryName: String(product?.categoryName || "").trim(),
         departmentId: String(product?.departmentId || "").trim(),
         departmentCode: String(product?.departmentCode || "").trim().toUpperCase(),
         departmentName: String(product?.departmentName || "").trim(),
+        subcategoryName: String(product?.subcategoryName || "").trim(),
         accessRole: String(product?.accessRole || "").trim().toLowerCase(),
         canOperate: Boolean(product?.canOperate),
         isOwner: Boolean(product?.isOwner),
@@ -229,7 +252,7 @@ function normalizeReceiptOptions(receipts) {
   }
 
   return receipts
-    .filter(isActiveScaleReceipt)
+    .filter((receipt) => receipt?.status !== "voided")
     .map((receipt) => {
       const id = String(receipt?.id || "").trim();
       if (!id) {
@@ -249,9 +272,19 @@ function normalizeReceiptOptions(receipts) {
         weighedAt: receipt?.weighedAt || null,
         status: String(receipt?.status || "").trim(),
         isTest: Boolean(receipt?.isTest),
+        workstationId: String(receipt?.workstationId || "").trim() || null,
+        departmentId: String(receipt?.departmentId || "").trim() || null,
       };
     })
     .filter(Boolean);
+}
+
+function filterStationReceipts(receipts, workstationId, departmentId) {
+  if (!workstationId) return [];
+  return receipts.filter((receipt) =>
+    receipt.workstationId === workstationId
+    && Boolean(departmentId) && receipt.departmentId === departmentId
+  );
 }
 
 function buildInitialReceiptsState(payload) {
@@ -458,6 +491,7 @@ export default function WeightScaleLivePageClient({
   const [recentSummary, setRecentSummary] = useState(initialReceiptsState.summary);
 
   const [selectedProductCode, setSelectedProductCode] = useState("");
+  const [selectedProductDepartmentId, setSelectedProductDepartmentId] = useState("");
   const [productProfile, setProductProfile] = useState(DEFAULT_PRODUCT_PROFILE);
   const [productError, setProductError] = useState("");
   const [productSearchTerm, setProductSearchTerm] = useState("");
@@ -468,6 +502,8 @@ export default function WeightScaleLivePageClient({
   const [agentConnected, setAgentConnected] = useState(false);
   const [portOpen, setPortOpen] = useState(null);
   const [scaleAgentError, setScaleAgentError] = useState("");
+  const [workstation, setWorkstation] = useState(null);
+  const [awaitingScaleClear, setAwaitingScaleClear] = useState(false);
   const [rawLog, setRawLog] = useState([]);
 
   const [serialConfig, setSerialConfig] = useState(DEFAULT_SERIAL_CONFIG);
@@ -485,11 +521,50 @@ export default function WeightScaleLivePageClient({
   const [isSavingPrinter, setIsSavingPrinter] = useState(false);
   const [reprintingReceiptId, setReprintingReceiptId] = useState("");
   const [printStatusByReceiptId, setPrintStatusByReceiptId] = useState({});
+  const printLockRef = useRef(false);
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState("scale");
   const [isProductSetupOpen, setIsProductSetupOpen] = useState(false);
   const [isSavingWeight, setIsSavingWeight] = useState(false);
+  const [pendingReceipt, setPendingReceipt] = useState(null);
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const [readiness, setReadiness] = useState(null);
+  const [readinessError, setReadinessError] = useState("");
+  const [readinessVersion, setReadinessVersion] = useState(0);
+  const saveLockRef = useRef(false);
+  useEffect(() => {
+    function syncPending() {
+      try { setPendingReceipt(readPendingReceipt(window.localStorage)); }
+      catch (error) { setProductError(error.message); setPendingReceipt({ requestId: "invalid" }); }
+    }
+    syncPending();
+    window.addEventListener("storage", syncPending);
+    return () => window.removeEventListener("storage", syncPending);
+  }, []);
   const [isSavingProductConfig, setIsSavingProductConfig] = useState(false);
+  const [activeStationMode, setActiveStationMode] = useState("inbound");
+  useEffect(() => {
+    function syncMode() {
+      const mode = new URL(window.location.href).searchParams.get("mode");
+      setActiveStationMode(STATION_MODES.some((item) => item.key === mode) ? mode : "inbound");
+    }
+    syncMode();
+    window.addEventListener("popstate", syncMode);
+    return () => window.removeEventListener("popstate", syncMode);
+  }, []);
+
+  function handleModeChange(mode) {
+    if (!STATION_MODES.some((item) => item.key === mode)) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("mode", mode);
+    window.history.pushState(null, "", url);
+    setActiveStationMode(mode);
+  }
+  const [voidTargetReceipt, setVoidTargetReceipt] = useState(null);
+  const [isVoidModalOpen, setIsVoidModalOpen] = useState(false);
+  const [isVoiding, setIsVoiding] = useState(false);
+
   const [status, setStatus] = useState({
     connected: false,
     state: "idle",
@@ -497,17 +572,98 @@ export default function WeightScaleLivePageClient({
     readAt: null,
   });
 
+  async function handleConfirmVoidReceipt() {
+    setProductError("ยังไม่เปิดยกเลิก ระบบข้อมูลอิสระของหน้ากลางยังไม่พร้อม");
+  }
+
   const readingsRef = useRef([]);
   const rawLogIdRef = useRef(0);
   const readingFreshnessTimerRef = useRef(null);
   const receiptRequestIdRef = useRef(null);
+  const awaitingScaleClearRef = useRef(false);
 
   const selectedProduct = useMemo(
-    () => products.find((product) => product.code === selectedProductCode) || null,
-    [products, selectedProductCode]
+    () => products.find((product) => product.code === selectedProductCode && product.departmentId === selectedProductDepartmentId) || null,
+    [products, selectedProductCode, selectedProductDepartmentId]
   );
   const selectedDepartmentId = selectedProduct?.departmentId || null;
+  const [departmentHotkeys, setDepartmentHotkeys] = useState(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    let current = true;
+    setDepartmentHotkeys(null);
+    async function load() {
+      if (!selectedDepartmentId || isProductSetupOpen) return;
+      try {
+        const payload = await requestDepartmentProductHotkeys(selectedDepartmentId, null, controller.signal);
+        if (current) setDepartmentHotkeys({ departmentId: selectedDepartmentId, bindings: payload.bindings });
+      } catch (error) {
+        if (current && error.name !== "AbortError") setProductError(error.message);
+      }
+    }
+    void load();
+    window.addEventListener("focus", load);
+    return () => { current = false; controller.abort(); window.removeEventListener("focus", load); };
+  }, [selectedDepartmentId, isProductSetupOpen]);
+
+  const selectProductForSetup = useCallback((productCode, departmentId) => {
+    if (saveLockRef.current || pendingReceipt) return;
+    setProductError("");
+    readingsRef.current = [];
+    setLiveReading(null);
+    setIsStable(false);
+    setIsReadingFresh(false);
+    setSelectedProductCode(productCode);
+    setSelectedProductDepartmentId(departmentId);
+  }, [pendingReceipt]);
+
+  useEffect(() => {
+    function handleProductHotkey(event) {
+      if (event.defaultPrevented || activeStationMode !== "inbound" || isProductSetupOpen || isSettingsOpen
+        || isVoidModalOpen || isSavingWeight || pendingReceipt || saveLockRef.current || printLockRef.current
+        || document.querySelector('[role="dialog"][aria-modal="true"]')
+        || departmentHotkeys?.departmentId !== selectedDepartmentId) return;
+      const key = productHotkeyFromEvent(event);
+      const product = key && products.find(item => item.departmentId === selectedDepartmentId
+        && item.canOperate && departmentHotkeys.bindings[item.code] === key);
+      if (!product || product.code === selectedProductCode) return;
+      event.preventDefault();
+      selectProductForSetup(product.code, product.departmentId);
+    }
+    window.addEventListener("keydown", handleProductHotkey);
+    return () => window.removeEventListener("keydown", handleProductHotkey);
+  }, [activeStationMode, isProductSetupOpen, isSettingsOpen, isVoidModalOpen, isSavingWeight,
+    pendingReceipt, departmentHotkeys, selectedDepartmentId, selectedProductCode, products, selectProductForSetup]);
   const canOperate = Boolean(selectedProduct?.canOperate);
+  const readinessKey = `${selectedDepartmentId}:${workstation?.id}:${selectedProductCode}`;
+  useEffect(() => {
+    let active = true;
+    setReadiness(null);
+    setReadinessError("");
+    if (!selectedDepartmentId || !workstation?.id || !selectedProductCode) return;
+    fetchCentralInboundReadiness({ departmentId: selectedDepartmentId, pointId: workstation.id, productCode: selectedProductCode })
+      .then(data => { if (active) {
+        setReadiness({ ...data, key: readinessKey });
+        if (!data.productRegistered || !data.deviceRegistered) setReadinessError("สินค้า หรือเครื่องชั่งยังไม่ได้ลงทะเบียนระบบกลาง กรุณาติดต่อผู้ดูแล");
+      } })
+      .catch(error => { if (active) setReadinessError(error.message); });
+    return () => { active = false; };
+  }, [selectedDepartmentId, workstation?.id, selectedProductCode, readinessKey, readinessVersion]);
+
+  const stationReceipts = useMemo(
+    () => filterStationReceipts(recentReceipts, workstation?.id, selectedDepartmentId, products),
+    [recentReceipts, workstation?.id, selectedDepartmentId, products]
+  );
+
+  const departmentOptions = useMemo(() => {
+    const map = new Map();
+    products.forEach((p) => {
+      if (p.departmentId && p.departmentName && !map.has(p.departmentId)) {
+        map.set(p.departmentId, p.departmentName);
+      }
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [products]);
 
   const selectedProductLots = useMemo(
     () => lotOptions.filter((lot) => lot.code === selectedProductCode),
@@ -533,6 +689,7 @@ export default function WeightScaleLivePageClient({
         product.name,
         product.departmentCode,
         product.departmentName,
+        product.subcategoryName,
       ].some((value) => String(value || "").toLowerCase().includes(searchTerm))
     );
   }, [productSearchTerm, products]);
@@ -545,11 +702,17 @@ export default function WeightScaleLivePageClient({
   const canSave = Boolean(
     canOperate
     && selectedProduct
-    && productProfile.lotNo
+    && !pendingReceipt
+    && Boolean(liveReading?.centralCaptureToken)
+    && readiness?.key === readinessKey && readiness.productRegistered && readiness.deviceRegistered
+    && /^\d{1,7}(\.\d{1,3})?$/.test(String(productProfile.tareWeightKg || "0"))
+    && Number(productProfile.tareWeightKg || 0) < currentWeightEvaluation.grossWeightKg
     && agentConnected
     && portOpen !== false
     && isReadingFresh
     && isStable
+    && !awaitingScaleClear
+    && Boolean(liveReading?.cycleId)
     && Number.isFinite(currentWeightEvaluation.grossWeightKg)
     && currentWeightEvaluation.grossWeightKg > 0
   );
@@ -604,6 +767,7 @@ export default function WeightScaleLivePageClient({
       onStatus: (payload) => {
         setPortOpen(Boolean(payload?.portOpen));
         setScaleAgentError(String(payload?.error || "").trim());
+        setWorkstation(payload?.workstation || null);
       },
       onReading: (payload) => {
         const parsedWeight = Number(payload?.weightKg);
@@ -611,10 +775,30 @@ export default function WeightScaleLivePageClient({
         const atMs = Date.parse(payload?.at) || Date.now();
         const at = payload?.at || new Date(atMs).toISOString();
 
+        setWorkstation(payload?.workstation || null);
+        if (
+          awaitingScaleClearRef.current
+          && weightKg !== null
+          && Math.abs(weightKg) <= SCALE_CLEAR_THRESHOLD_KG
+        ) {
+          awaitingScaleClearRef.current = false;
+          setAwaitingScaleClear(false);
+          receiptRequestIdRef.current = null;
+          readingsRef.current = [];
+          setStatus({
+            connected: true,
+            state: "connected",
+            message: "เครื่องชั่งกลับสู่ศูนย์แล้ว พร้อมรับสินค้าชิ้นถัดไป",
+            readAt: at,
+          });
+        }
+
         setLiveReading({
           weightKg,
           unit: payload?.unit || null,
           raw: String(payload?.raw || ""),
+          cycleId: String(payload?.cycleId || "").trim() || null,
+          centralCaptureToken: payload?.centralCaptureToken || null,
           at,
         });
         setIsReadingFresh(true);
@@ -656,7 +840,7 @@ export default function WeightScaleLivePageClient({
 
         setIsStable(computeAppStable(readingsRef.current));
       },
-    });
+    }, { localOnly: true });
 
     return () => {
       if (readingFreshnessTimerRef.current) {
@@ -673,14 +857,15 @@ export default function WeightScaleLivePageClient({
 
     try {
       const [healthResult, portsResult, configResult] = await Promise.all([
-        fetchScaleAgentHealth(),
-        fetchScaleAgentPorts(),
-        fetchScaleAgentSerialConfig(),
+        fetchScaleAgentHealth({ localOnly: true }),
+        fetchScaleAgentPorts({ localOnly: true }),
+        fetchScaleAgentSerialConfig({ localOnly: true }),
       ]);
 
       setSerialPorts(normalizeSerialPorts(portsResult));
       setSerialConfig(normalizeSerialConfig(configResult));
       setPortOpen(Boolean(healthResult?.portOpen));
+      setWorkstation(healthResult?.workstation || null);
       setScaleAgentState("online");
       setScaleAgentError(String(healthResult?.error || "").trim());
     } catch (error) {
@@ -705,8 +890,6 @@ export default function WeightScaleLivePageClient({
       setSelectedPrinterName(
         String(
           printersResult?.selectedPrinterName
-          || healthResult?.printerName
-          || nextPrinters.find((printer) => printer.isDefault)?.name
           || ""
         ).trim()
       );
@@ -748,7 +931,7 @@ export default function WeightScaleLivePageClient({
         dataBits: serialConfig.dataBits,
         parity: serialConfig.parity,
         stopBits: serialConfig.stopBits,
-      });
+      }, { localOnly: true });
       setSerialConfig(normalizeSerialConfig(result?.config || result));
       setSerialMessage("บันทึกค่า serial และเปิดพอร์ตใหม่เรียบร้อยแล้ว");
     } catch (error) {
@@ -778,413 +961,118 @@ export default function WeightScaleLivePageClient({
     }
   }
 
-  async function persistSelectedProductConfig() {
-    const result = await saveScaleProductConfig({
-        departmentId: selectedDepartmentId,
-        skuCode: selectedProductCode,
-        lotFormat: selectedProduct?.lotFormat || null,
-        passWeightKg: productProfile.passWeightKg,
-        tareWeightKg: productProfile.tareWeightKg,
-        amountPerPallet: selectedProduct?.amountPerPallet,
-        status: "พร้อมใช้งาน",
-      });
-
-    const productConfigId = String(
-      result?.config?.id
-      || result?.config?.configId
-      || selectedProduct?.configId
-      || ""
-    ).trim();
-    if (!productConfigId) {
-      throw new Error("ไม่พบรหัสการตั้งค่าผลิตภัณฑ์สำหรับบันทึกผลชั่ง");
-    }
-
-    setProducts((current) =>
-      current.map((product) =>
-        product.code === selectedProductCode
-          ? {
-              ...product,
-              configId: productConfigId,
-              defaultProfile: normalizeProductProfile({
-                ...product.defaultProfile,
-                passWeightKg: productProfile.passWeightKg,
-                tareWeightKg: productProfile.tareWeightKg,
-              }),
-            }
-          : product
-      )
-    );
-
-    return productConfigId;
-  }
-
   function openProductSetup() {
+    if (saveLockRef.current || pendingReceipt) {
+      setProductError("ต้องตรวจผลคำขอรับเข้าที่ค้างก่อนเปลี่ยนสินค้า");
+      return;
+    }
     setProductSearchTerm("");
     setProductError("");
     setIsProductSetupOpen(true);
   }
 
-  function selectProductForSetup(productCode) {
-    setProductError("");
-    setSelectedProductCode(productCode);
-  }
-
   async function saveProductPickerSetup() {
-    if (!canOperate) {
-      setProductError("บัญชีนี้ไม่มีสิทธิ์ตั้งค่าการชั่งของแผนกสินค้านี้");
+    if (!selectedProduct) {
+      setProductError("กรุณาเลือกสินค้า");
       return;
     }
-
-    if (!selectedProduct || !selectedDepartmentId) {
-      setProductError("กรุณาเลือกสินค้าก่อนเริ่มชั่ง");
-      return;
-    }
-
-    const nextLotNo = String(productProfile.lotNo || "").trim();
-    if (!nextLotNo) {
-      setProductError("กรุณาระบุ LOT ปัจจุบันก่อนเริ่มชั่ง");
-      return;
-    }
-
-    setIsSavingProductConfig(true);
     setProductError("");
-
-    try {
-      const productConfigId = await persistSelectedProductConfig();
-      const existingLot = selectedProductLots.find(
-        (lot) => lot.lotNo === nextLotNo
-      );
-      let currentLot;
-
-      if (existingLot?.lotId) {
-        if (!existingLot.isCurrent) {
-          await setScaleCurrentLot({
-            productConfigId,
-            lotId: existingLot.lotId,
-          });
-        }
-        currentLot = {
-          id: existingLot.lotId,
-          lotNo: existingLot.lotNo,
-          status: existingLot.status,
-          openedAt: existingLot.openedAt,
-          closedAt: existingLot.closedAt,
-        };
-      } else {
-        const result = await createScaleLot({
-          productConfigId,
-          lotNo: nextLotNo,
-          setAsCurrent: true,
-        });
-        currentLot = {
-          id: result.lot.id,
-          lotNo: result.lot.lotNo,
-          status: result.lot.status,
-          openedAt: result.lot.openedAt,
-          closedAt: result.lot.closedAt,
-        };
-      }
-
-      setLotOptions((current) =>
-        normalizeLotOptions(
-          current
-            .map((lot) =>
-              lot.code === selectedProductCode
-                ? { ...lot, isCurrent: lot.lotId === currentLot.id }
-                : lot
-            )
-            .concat(
-              existingLot
-                ? []
-                : [{
-                    selectionKey: `${selectedProductCode}::${currentLot.lotNo}`,
-                    code: selectedProductCode,
-                    lotNo: currentLot.lotNo,
-                    productConfigId,
-                    lotId: currentLot.id,
-                    status: currentLot.status,
-                    openedAt: currentLot.openedAt,
-                    closedAt: currentLot.closedAt,
-                    isCurrent: true,
-                  }]
-            )
-        )
-      );
-      setProducts((current) =>
-        current.map((product) =>
-          product.code === selectedProductCode
-            ? {
-                ...product,
-                configId: productConfigId,
-                currentLotId: currentLot.id,
-                currentLot,
-                defaultProfile: normalizeProductProfile({
-                  ...product.defaultProfile,
-                  lotNo: currentLot.lotNo,
-                  tareWeightKg: productProfile.tareWeightKg,
-                }),
-              }
-            : product
-        )
-      );
-      setProductProfile((current) => ({
-        ...current,
-        lotNo: currentLot.lotNo,
-      }));
-      setStatus({
-        connected: agentConnected,
-        state: "connected",
-        message: "ตั้งค่าสินค้า LOT และน้ำหนักภาชนะพร้อมเริ่มชั่งแล้ว",
-        readAt: new Date().toISOString(),
-      });
-      setIsProductSetupOpen(false);
-    } catch (error) {
-      setProductError(error?.message || "ไม่สามารถตั้งค่าสินค้าก่อนเริ่มชั่งได้");
-    } finally {
-      setIsSavingProductConfig(false);
-    }
-  }
-
-  async function resolveActiveLotId(productConfigId) {
-    if (selectedLotOption?.lotId) {
-      return selectedLotOption.lotId;
-    }
-
-    const nextLotNo = String(productProfile.lotNo || "").trim();
-    const result = await createScaleLot({
-      productConfigId,
-      lotNo: nextLotNo,
-      setAsCurrent: true,
-    });
-
-    const nextLot = {
-      selectionKey: `${selectedProductCode}::${result.lot.lotNo}`,
-      code: selectedProductCode,
-      lotNo: result.lot.lotNo,
-      productConfigId,
-      lotId: result.lot.id,
-      status: result.lot.status,
-      openedAt: result.lot.openedAt,
-      closedAt: result.lot.closedAt,
-      isCurrent: true,
-    };
-
-    setLotOptions((current) =>
-      normalizeLotOptions(
-        current
-          .map((lot) =>
-            lot.code === selectedProductCode
-              ? { ...lot, isCurrent: false }
-              : lot
-          )
-          .concat(nextLot)
-      )
-    );
-
-    return result.lot.id;
+    setIsProductSetupOpen(false);
   }
 
   async function handleSaveWeightResult() {
-    if (!canOperate) {
-      setProductError("บัญชีนี้ไม่มีสิทธิ์บันทึกการชั่งรับเข้าของแผนกสินค้านี้");
-      return;
-    }
+    try { await withCentralReceiptLock(navigator.locks, saveCentralWeightResult); }
+    catch (error) { setProductError(error.message); }
+  }
 
-    if (!selectedProduct) {
-      setProductError("กรุณาเลือกผลิตภัณฑ์ก่อนบันทึกผลชั่ง");
-      return;
-    }
-
-    if (!productProfile.lotNo) {
-      setProductError("กรุณาระบุ LOT ก่อนบันทึกผลชั่ง");
-      return;
-    }
-
-    if (!Number.isFinite(currentWeightEvaluation.grossWeightKg)) {
-      setStatus({
-        connected: agentConnected,
-        state: "warning",
-        message: "กรุณาอ่านน้ำหนักก่อนบันทึกผลชั่ง",
-        readAt: new Date().toISOString(),
-      });
-      return;
-    }
-
-    if (!selectedDepartmentId) {
-      setStatus({
-        connected: agentConnected,
-        state: "warning",
-        message: "ไม่พบแผนกสำหรับบันทึกผลชั่ง",
-        readAt: new Date().toISOString(),
-      });
-      return;
-    }
-
+  async function saveCentralWeightResult() {
+    if (!canSave || saveLockRef.current) return;
+    saveLockRef.current = true;
     setIsSavingWeight(true);
-    setProductError("");
-
     try {
-      const productConfigId = await persistSelectedProductConfig();
-      const activeLotId = await resolveActiveLotId(productConfigId);
-
-      const result = await saveWeightScaleLiveReceipt({
-        requestId: receiptRequestIdRef.current || (receiptRequestIdRef.current = crypto.randomUUID()),
-        departmentId: selectedDepartmentId,
-        productConfigId,
-        lotId: activeLotId,
-        grossWeightKg: currentWeightEvaluation.grossWeightKg,
-        tareWeightKg: currentWeightEvaluation.tareWeightKg,
-        netWeightKg: currentWeightEvaluation.netWeightKg,
-        passWeightKg: currentWeightEvaluation.passWeightKg,
-        amountPerPallet: selectedProduct.amountPerPallet,
-        recentLimit: RECENT_RECEIPTS_LIMIT,
-        recentWeightSource: "serial-live",
-        metadata: {
-          productCode: selectedProduct.code,
-          productName: selectedProduct.name,
-          lotNo: productProfile.lotNo || null,
-          unit: selectedProduct.unit || null,
-          departmentCode: selectedProduct.departmentCode || null,
-          departmentName: selectedProduct.departmentName || null,
-          scaleHost: "local-scale-agent",
-          scalePort: serialConfig.path || null,
-          isTest: false,
-          weightSource: "serial-live",
-        },
-      });
-
-      setRecentReceipts(normalizeReceiptOptions(result?.recentReceipts));
-      receiptRequestIdRef.current = null;
-      setRecentSummary({
-        totalCount: Number.isFinite(Number(result?.recentSummary?.totalCount))
-          ? Number(result.recentSummary.totalCount)
-          : 0,
-        actualCount: Number.isFinite(Number(result?.recentSummary?.actualCount))
-          ? Number(result.recentSummary.actualCount)
-          : 0,
-        testCount: Number.isFinite(Number(result?.recentSummary?.testCount))
-          ? Number(result.recentSummary.testCount)
-          : 0,
-        totalNetWeightKg: Number.isFinite(Number(result?.recentSummary?.totalNetWeightKg))
-          ? Number(result.recentSummary.totalNetWeightKg)
-          : 0,
-      });
-
-      const nextPrintLabel = buildWeightScaleReceiptPrintLabel({
-        receipt: result?.receipt,
-        selectedProduct,
-        unitLabel: "กก.",
-      });
-
-      let printErrorMessage = "";
-      if (nextPrintLabel) {
-        try {
-          await printWeightScaleLabelViaAgent(nextPrintLabel);
-          setPrinterAgentState("online");
-          setPrinterAgentMessage("ส่งคำสั่งพิมพ์ฉลากอัตโนมัติเรียบร้อยแล้ว");
-          if (result?.receipt?.id) {
-            setPrintStatusByReceiptId((current) => ({
-              ...current,
-              [result.receipt.id]: "success",
-            }));
-          }
-        } catch (printError) {
-          setPrinterAgentState("offline");
-          printErrorMessage =
-            printError?.message || "ไม่สามารถพิมพ์ฉลากผ่าน local print agent ได้";
-          setPrinterAgentMessage(printErrorMessage);
-          if (result?.receipt?.id) {
-            setPrintStatusByReceiptId((current) => ({
-              ...current,
-              [result.receipt.id]: "failed",
-            }));
-          }
-        }
-      }
-
-      setStatus({
-        connected: true,
-        state: printErrorMessage ? "warning" : "connected",
-        message: printErrorMessage
-          ? `บันทึกผลชั่งสำเร็จ${result?.receipt?.barcode ? ` (${result.receipt.barcode})` : ""} แต่พิมพ์ฉลากอัตโนมัติไม่สำเร็จ: ${printErrorMessage}`
-          : `บันทึกผลชั่งสำเร็จ${result?.receipt?.barcode ? ` (${result.receipt.barcode})` : ""} และส่งงานพิมพ์เรียบร้อย`,
-        readAt:
-          result?.receipt?.weighedAt
-          || liveReading?.at
-          || new Date().toISOString(),
-      });
+      const payload = { requestId: crypto.randomUUID(), departmentId: selectedDepartmentId,
+        pointId: workstation?.id, productCode: selectedProduct.code,
+        tareWeightKg: String(productProfile.tareWeightKg || "0"), captureToken: liveReading.centralCaptureToken };
+      persistPendingReceipt(window.localStorage, payload);
+      setPendingReceipt(payload);
+      const receipt = await saveWeightScaleLiveReceipt(payload);
+      confirmCentralReceipt(receipt, payload.requestId);
+      await handleReprintReceipt({ id: receipt.request_id, departmentId: receipt.department_id,
+        productCode: receipt.product_code });
     } catch (error) {
-      setStatus({
-        connected: agentConnected,
-        state: "error",
-        message: error?.message || "ไม่สามารถบันทึกผลชั่งได้",
-        readAt: new Date().toISOString(),
-      });
-    } finally {
-      setIsSavingWeight(false);
+      setProductError(`${error.message} — หากส่งคำขอแล้ว ให้ตรวจรายการค้างก่อน ห้ามชั่งรับซ้ำ`);
+    } finally { saveLockRef.current = false; setIsSavingWeight(false); }
+  }
+
+  function confirmCentralReceipt(receipt, requestId) {
+    const pending = readPendingReceipt(window.localStorage);
+    assertCentralReceiptMatches(receipt, pending);
+    if (receipt.request_id !== requestId || (workstation?.id && receipt.point_id !== workstation.id)) {
+      throw new Error("คำตอบใบรับเข้าไม่ตรงกับจุดชั่งนี้");
     }
+    clearConfirmedReceipt(window.localStorage, requestId);
+    setPendingReceipt(null);
+    setHistoryVersion(value => value + 1);
+    setRecentReceipts(current => [{ id: receipt.request_id, barcode: receipt.barcode,
+      productCode: receipt.product_code, productName: products.find(p => p.code === receipt.product_code)?.name || receipt.product_code,
+      lotNo: receipt.lot_no, grossWeightKg: Number(receipt.gross_kg), tareWeightKg: Number(receipt.tare_kg),
+      netWeightKg: Number(receipt.net_kg), weighedAt: receipt.created_at,
+      workstationId: receipt.point_id, departmentId: receipt.department_id, status: "active" }, ...current.filter(r => r.id !== receipt.request_id)].slice(0, RECENT_RECEIPTS_LIMIT));
+    awaitingScaleClearRef.current = true;
+    setAwaitingScaleClear(true);
+    setProductError("รับเข้าสต็อกกลางสำเร็จ — ยังไม่ได้พิมพ์ฉลาก กรุณายกสินค้าออกจากเครื่องชั่ง");
+  }
+
+  async function handleRecoverPendingReceipt() {
+    if (!pendingReceipt || saveLockRef.current) return;
+    saveLockRef.current = true;
+    setIsSavingWeight(true);
+    try {
+      await withCentralReceiptLock(navigator.locks, async () => {
+        const pending = readPendingReceipt(window.localStorage);
+        if (!pending || pending.requestId !== pendingReceipt.requestId) throw new Error("คำขอค้างเปลี่ยนแล้ว กรุณาโหลดหน้าใหม่");
+        const result = await resolveCentralInboundPending(pending);
+        if (result.status === "received") {
+          confirmCentralReceipt(result.receipt, pending.requestId);
+        } else if (result.status === "not_received" && result.requestId === pending.requestId) {
+          clearConfirmedReceipt(window.localStorage, pending.requestId);
+          setPendingReceipt(null);
+          awaitingScaleClearRef.current = true;
+          setAwaitingScaleClear(true);
+          setProductError("ยืนยันแล้วว่ายังไม่รับเข้า และปิดคำขอเดิมถาวร กรุณายกสินค้าออกให้เครื่องชั่งกลับศูนย์ แล้วชั่งใหม่");
+        } else throw new Error("ยังยืนยันผลคำขอไม่ได้");
+      });
+    }
+    catch (error) { setProductError(`${error.message} — ยังไม่ยืนยันผล ห้ามรับซ้ำ กรุณาตรวจสอบกับผู้ดูแล`); }
+    finally { saveLockRef.current = false; setIsSavingWeight(false); }
   }
 
   async function handleReprintReceipt(receipt) {
-    if (!receipt?.id || !receipt?.barcode || receipt.barcode === "-") {
-      setStatus({
-        connected: agentConnected,
-        state: "warning",
-        message: "รายการนี้ไม่มีเลขบาร์โค้ดสำหรับพิมพ์ซ้ำ",
-        readAt: new Date().toISOString(),
-      });
-      return;
-    }
-
-    const receiptProduct =
-      products.find((product) => product.code === receipt.productCode) || null;
-    const printLabel = buildWeightScaleReceiptPrintLabel({
-      receipt,
-      selectedProduct: receiptProduct,
-      unitLabel: "กก.",
-    });
-    if (!printLabel) {
-      return;
-    }
-
+    if (!receipt?.id || !workstation?.id || printLockRef.current) return;
+    printLockRef.current = true;
     setReprintingReceiptId(receipt.id);
     try {
-      await assertReceiptCanReprint(receipt, fetchScaleReceiptReport);
-      await printWeightScaleLabelViaAgent(printLabel);
-      setPrinterAgentState("online");
-      setPrinterAgentMessage(`พิมพ์บาร์โค้ด ${receipt.barcode} ซ้ำเรียบร้อยแล้ว`);
-      setPrintStatusByReceiptId((current) => ({
-        ...current,
-        [receipt.id]: "success",
-      }));
-      setStatus({
-        connected: agentConnected,
-        state: "connected",
-        message: `ส่งพิมพ์บาร์โค้ด ${receipt.barcode} ซ้ำเรียบร้อยแล้ว`,
-        readAt: new Date().toISOString(),
-      });
+      await printCentralReceipt({ requestId: receipt.id, pointId: workstation.id,
+        departmentId: receipt.departmentId,
+        productName: products.find(product => product.code === receipt.productCode)?.name });
+      setPrintStatusByReceiptId(current => ({ ...current, [receipt.id]: "printed" }));
+      setProductError("บันทึกรับเข้าแล้ว และส่งงานเข้าคิวเครื่องพิมพ์แล้ว กรุณาตรวจฉลากจริง");
     } catch (error) {
-      setPrinterAgentState("offline");
-      setPrinterAgentMessage(
-        error?.message || "ไม่สามารถพิมพ์ฉลากผ่าน local print agent ได้"
-      );
-      setPrintStatusByReceiptId((current) => ({
-        ...current,
-        [receipt.id]: "failed",
-      }));
-      setStatus({
-        connected: agentConnected,
-        state: "warning",
-        message:
-          error?.message || "ไม่สามารถพิมพ์ฉลากผ่าน local print agent ได้",
-        readAt: new Date().toISOString(),
-      });
-    } finally {
-      setReprintingReceiptId("");
-    }
+      setPrintStatusByReceiptId(current => ({ ...current, [receipt.id]: "failed" }));
+      setProductError(`รับเข้าแล้ว แต่ยังยืนยันการพิมพ์ไม่ได้: ${error.message} — ตรวจฉลากก่อนพิมพ์ซ้ำ ห้ามบันทึกรับใหม่`);
+    } finally { printLockRef.current = false; setReprintingReceiptId(""); }
   }
 
   function handleStartNewCycle() {
+    if (awaitingScaleClearRef.current) {
+      setStatus({
+        connected: agentConnected,
+        state: "warning",
+        message: `กรุณายกสินค้าออกจนเหลือไม่เกิน ${SCALE_CLEAR_THRESHOLD_KG.toFixed(2)} kg ก่อนเริ่มรอบใหม่`,
+        readAt: new Date().toISOString(),
+      });
+      return;
+    }
     readingsRef.current = [];
     setIsStable(false);
     setProductError("");
@@ -1202,228 +1090,129 @@ export default function WeightScaleLivePageClient({
   }
 
   return (
-    <div className="min-h-screen bg-white text-[#0f172a]">
-      <header className="flex min-h-20 items-center justify-between gap-5 border-b border-white/10 bg-[#001F3F] px-4 py-3 sm:px-6">
-        <div className="flex min-w-0 items-center gap-5 lg:gap-8">
-          <div className="flex shrink-0 items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded border border-white/20 text-[#E9C349]">
-              <Scale size={25} strokeWidth={2.3} />
-            </div>
-            <div className="leading-none">
-              <p className="text-sm font-black tracking-[0.12em] text-[#E9C349]">
-                KPF WEIGH
-              </p>
-              <p className="mt-1 text-xl font-black text-white">
-                PRO{" "}
-                <span className="text-[10px] font-medium text-slate-400">รับเข้าผลิตภัณฑ์</span>
-              </p>
-            </div>
-          </div>
-
-          <div className="hidden h-10 w-px bg-white/10 sm:block" />
-
-          <div className="hidden min-w-0 items-center gap-6 md:flex">
-            <div className="min-w-0">
-              <p className="text-[10px] font-black uppercase text-slate-400">สินค้า</p>
-              <p className="max-w-64 truncate text-sm font-black text-white">
-                {selectedProduct?.name || "ยังไม่ได้เลือกสินค้า"}
-              </p>
-            </div>
-            <div className="min-w-0">
-              <p className="text-[10px] font-black uppercase text-slate-400">รหัส / LOT</p>
-              <p className="truncate text-sm font-black text-slate-200">
-                {selectedProduct?.code || "-"}
-                <span className="mx-2 text-slate-600">|</span>
-                {productProfile.lotNo || "-"}
-              </p>
-            </div>
-            <div>
-              <p className="text-[10px] font-black uppercase text-slate-400">ภาชนะ</p>
-              <p className="text-sm font-black text-[#E9C349]">
-                {formatWeightDisplay(productProfile.tareWeightKg)} kg
-              </p>
-            </div>
-          </div>
+    <div className={styles.page}>
+      <WeightScaleLiveSubHeader
+        activeMode={activeStationMode}
+        onModeChange={handleModeChange}
+        agentConnected={agentConnected && portOpen !== false}
+        printerOnline={printerAgentState === "online"}
+        leading={
+        <div className={styles.brand}>
+          <h1>KPF <span>WEIGH PRO</span></h1>
+        <div className={styles.stationIdentity}>
+          <strong>{selectedProduct?.departmentName || "ยังไม่ได้เลือกแผนก"}</strong>
+          <span>{workstation?.name || "ยังไม่ได้ตั้งค่าจุดชั่ง"}</span>
         </div>
-
-        <div className="shrink-0 text-right">
-          <div className="flex items-center justify-end gap-2">
-            <span
-              className={`h-2.5 w-2.5 rounded-full ${
-                agentConnected && portOpen !== false
-                  ? "bg-emerald-500"
-                  : "bg-rose-500"
-              }`}
-            />
-            <span
-              className={`text-[11px] font-black uppercase ${
-                agentConnected && portOpen !== false
-                  ? "text-emerald-400"
-                  : "text-rose-300"
-              }`}
-            >
-              {agentConnected && portOpen !== false
-                ? "ระบบพร้อมทำงาน"
-                : "ยังไม่เชื่อมต่อ"}
-            </span>
-          </div>
-          <p className="mt-1 text-xs font-semibold text-slate-400">
-            {serialConfig.path || "ยังไม่ได้เลือกพอร์ต"}
-          </p>
         </div>
-      </header>
-
-      <section className="relative flex min-h-[310px] flex-col items-center justify-center overflow-hidden bg-[#001F3F] px-4 py-8 text-center">
-        <div className="relative z-10 flex w-full max-w-5xl flex-col items-center">
-          <div className="mb-3 flex w-full max-w-md items-center justify-center gap-3">
-            <p className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">
-              ความนิ่งของน้ำหนัก: {stabilityPercentage}%
-            </p>
-            <div className="h-1 w-40 overflow-hidden rounded-full bg-white/10">
-              <div
-                className={`h-full transition-[width] duration-200 ${
-                  isStable ? "bg-[#E9C349]" : "bg-rose-400"
-                }`}
-                style={{ width: `${stabilityPercentage}%` }}
-              />
-            </div>
-          </div>
-
-          <div className="flex items-baseline justify-center gap-2 sm:gap-4">
-            <span
-              className={`tabular-nums text-[5.5rem] font-black leading-none tracking-[-0.06em] sm:text-[8rem] lg:text-[10rem] ${
-                currentWeightEvaluation.isPass
-                  ? "text-emerald-400"
-                  : currentWeightEvaluation.isPass === false
-                    ? "text-rose-400"
-                    : "text-[#E9C349]"
-              }`}
-              style={{ textShadow: "0 0 36px rgba(233,195,73,0.26)" }}
-            >
-              {Number.isFinite(currentWeightEvaluation.grossWeightKg)
-                ? currentWeightEvaluation.grossWeightKg.toFixed(3)
-                : "0.000"}
-            </span>
-            <span className="text-3xl font-black text-[#E9C349]/50 sm:text-4xl">kg</span>
-          </div>
-
-          <div className="mt-5 grid w-full max-w-xl grid-cols-3 divide-x divide-white/10">
-            <div className="px-3 text-center">
-              <p className="text-[10px] font-black uppercase text-slate-500">ภาชนะ</p>
-              <p className="mt-1 text-lg font-black text-rose-400">
-                {formatWeightDisplay(currentWeightEvaluation.tareWeightKg)}
-              </p>
-            </div>
-            <div className="px-3 text-center">
-              <p className="text-[10px] font-black uppercase text-slate-500">น้ำหนักสุทธิ</p>
-              <p className="mt-1 text-2xl font-black text-white">
-                {formatWeightDisplay(currentWeightEvaluation.netWeightKg)}
-              </p>
-            </div>
-            <div className="px-3 text-center">
-              <p className="text-[10px] font-black uppercase text-slate-500">เกณฑ์ขั้นต่ำ</p>
-              <p className="mt-1 text-lg font-black text-rose-400">
-                {formatWeightDisplay(currentWeightEvaluation.passWeightKg)}
-              </p>
-            </div>
-          </div>
-
-          <p
-            className={`mt-4 text-sm font-black ${
-              currentWeightEvaluation.isPass
-                ? "text-emerald-400"
-                : currentWeightEvaluation.isPass === false
-                  ? "text-rose-400"
-                  : "text-slate-400"
-            }`}
-          >
-            {currentWeightEvaluation.message || "กรุณาวางสินค้าบนเครื่องชั่ง"}
-          </p>
-        </div>
-      </section>
-
-      <div className="flex flex-wrap items-center justify-between gap-3 border-y border-slate-200 bg-slate-50 px-4 py-2 sm:px-6">
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={handleStartNewCycle}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-sm bg-[#E9C349] px-5 text-sm font-black text-[#001F3F] transition hover:brightness-105"
-          >
-            <Plus size={18} />
-            เริ่มรอบใหม่
-          </button>
-          <button
-            type="button"
-            onClick={openProductSetup}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-sm border border-slate-300 bg-white px-5 text-sm font-black text-[#001F3F] transition hover:border-[#E9C349]"
-          >
-            <ArrowLeftRight size={18} />
-            เปลี่ยนสินค้า
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleReconnect()}
-            disabled={isLoadingSerial}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-sm border border-slate-300 bg-white px-5 text-sm font-black text-[#001F3F] transition hover:border-[#E9C349] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isLoadingSerial ? <Loader2 size={18} className="animate-spin" /> : <Wifi size={18} />}
-            เชื่อมต่อ
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleSaveWeightResult()}
-            disabled={isSavingWeight || !canSave}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-sm bg-[#001F3F] px-5 text-sm font-black text-white transition hover:bg-[#0a3158] disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            {isSavingWeight ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-            บันทึกและพิมพ์บาร์โค้ด
-          </button>
-        </div>
-
-        <div className="flex items-center gap-1 text-slate-500">
-          <button
-            type="button"
-            onClick={() => setIsSettingsOpen((current) => !current)}
-            className="flex h-10 w-10 items-center justify-center rounded-sm transition hover:bg-slate-200 hover:text-[#001F3F]"
-            aria-label="ตั้งค่าการเชื่อมต่อ"
-          >
-            <Settings size={22} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setStatus({
-              connected: agentConnected,
-              state: "idle",
-              message: canSave
-                ? "ระบบพร้อมบันทึกเมื่อค่าน้ำหนักนิ่ง"
-                : "กรุณาเลือกสินค้า ระบุ LOT และตรวจสอบการเชื่อมต่อเครื่องชั่ง",
-              readAt: new Date().toISOString(),
-            })}
-            className="flex h-10 w-10 items-center justify-center rounded-sm transition hover:bg-slate-200 hover:text-[#001F3F]"
-            aria-label="คำแนะนำการใช้งาน"
-          >
-            <CircleHelp size={22} />
-          </button>
-        </div>
+        }
+        trailing={<>
+        <StationClock />
+        <button type="button" className={styles.secondary} onClick={() => void handleReconnect()} disabled={activeStationMode !== "inbound" || isSavingWeight || Boolean(pendingReceipt) || Boolean(reprintingReceiptId)}><Settings size={19} />ตั้งค่าอุปกรณ์</button>
+        </>}
+      />
+      <div role="status" className={styles.notice}>
+        รับเข้าผ่าน API กลาง · ต้องยืนยัน SQL และจุดชั่งก่อนใช้งาน · เบิก คืน และยกเลิกยังไม่เปิด
+        {pendingReceipt ? <button type="button" onClick={() => void handleRecoverPendingReceipt()} disabled={isSavingWeight}>ตรวจผลคำขอรับเข้าที่ค้าง</button> : null}
       </div>
+
+      {activeStationMode === "return" ? (
+        <WeightScaleLiveReturnSection
+          key={`${selectedDepartmentId}:${workstation?.id}:return`}
+          workstationId={workstation?.id}
+          products={products}
+          liveWeightKg={currentWeightEvaluation.grossWeightKg || liveReading?.weightKg || 0}
+          isStable={isStable}
+          agentConnected={agentConnected && portOpen !== false}
+          departmentId={selectedDepartmentId}
+          departmentName={selectedProduct?.departmentName}
+          departmentOptions={departmentOptions}
+        />
+      ) : activeStationMode === "issue" || activeStationMode === "cancel_issue" ? (
+        <WeightScaleLiveIssueSection
+          key={`${selectedDepartmentId}:${workstation?.id}:issues`}
+          workstationId={workstation?.id}
+          products={products}
+          initialSubTab={activeStationMode}
+          departmentId={selectedDepartmentId}
+          departmentName={selectedProduct?.departmentName}
+          departmentOptions={departmentOptions}
+        />
+      ) : activeStationMode === "void" ? (
+        <WeightScaleLiveVoidSection
+          key={`${selectedDepartmentId}:${workstation?.id}:void`}
+          workstationId={workstation?.id}
+          products={products}
+          recentReceipts={recentReceipts}
+          departmentId={selectedDepartmentId}
+          departmentName={selectedProduct?.departmentName}
+          departmentOptions={departmentOptions}
+          onVoidSuccess={(voidedId) => {
+            setRecentReceipts((current) =>
+              current.map((r) => (r.id === voidedId ? { ...r, status: "voided" } : r))
+            );
+          }}
+        />
+      ) : (
+        <>
+
+          <section className={styles.weighing} aria-label="ชั่งรับเข้าสด">
+            <div className={styles.product}>
+              {selectedProduct?.imageUrl ? (
+                <div className={styles.productImage}><Image src={selectedProduct.imageUrl} alt={selectedProduct.name} fill unoptimized /></div>
+              ) : null}
+              <div className={styles.productDetails}>
+              <small>สินค้า</small>
+              <h2>{selectedProduct?.code || "ยังไม่ได้เลือกสินค้า"}</h2>
+              <p>{selectedProduct?.name || "เลือกสินค้าและ LOT ก่อนเริ่มชั่ง"}</p>
+              <small>LOT</small>
+              <strong>{productProfile.lotNo || "—"}</strong>
+              <button type="button" className={styles.changeProduct} onClick={openProductSetup}><ArrowLeftRight size={16} />เปลี่ยนสินค้า / LOT</button>
+              </div>
+            </div>
+            <div className={styles.instrument}>
+              <div className={styles.weightHeading}>
+                <span>น้ำหนักสุทธิ (NET)</span>
+                <span className={isStable && isReadingFresh ? styles.stable : styles.waiting}>
+                  {isStable && isReadingFresh ? <CheckCircle2 size={18} /> : <Activity size={18} />}
+                  {isStable && isReadingFresh ? "น้ำหนักนิ่ง" : "รอน้ำหนักนิ่ง"} {stabilityPercentage}%
+                </span>
+              </div>
+              <div className={styles.weight} data-testid="live-net-weight">
+                <strong>{Number.isFinite(currentWeightEvaluation.netWeightKg) ? currentWeightEvaluation.netWeightKg.toFixed(3) : "0.000"}</strong><span>kg</span>
+              </div>
+              <div className={styles.metrics}>
+                <div><small>น้ำหนักรวม (GROSS)</small><strong>{formatWeightDisplay(currentWeightEvaluation.grossWeightKg)} kg</strong></div>
+                <div><small>น้ำหนักภาชนะ (TARE)</small><strong>{formatWeightDisplay(currentWeightEvaluation.tareWeightKg)} kg</strong></div>
+              </div>
+              {currentWeightEvaluation.hasPassWeight ? <p className={currentWeightEvaluation.isPass ? styles.pass : styles.warning}>เกณฑ์ขั้นต่ำ {formatWeightDisplay(currentWeightEvaluation.passWeightKg)} kg · {currentWeightEvaluation.message}</p> : null}
+              {selectedProduct && !liveReading?.centralCaptureToken ? <p className="text-xs text-slate-500">รอหลักฐานน้ำหนักรวมที่นิ่งจาก agent ที่ลงทะเบียน ต้องกลับศูนย์หลังเปิดเครื่องก่อนชั่ง</p> : null}
+            </div>
+            <div className={styles.actions}>
+              <button type="button" className={styles.primary} onClick={() => void handleSaveWeightResult()} disabled={isSavingWeight || !canSave}>
+                {isSavingWeight ? <Loader2 size={23} className="animate-spin" /> : <Save size={23} />}บันทึกรับเข้าและพิมพ์ฉลาก
+              </button>
+              <button type="button" className={styles.secondary} onClick={handleStartNewCycle}><RefreshCw size={18} />เริ่มรอบใหม่</button>
+              {awaitingScaleClear ? <p className={styles.warning} role="status">บันทึกแล้ว — กรุณายกสินค้าออกให้ค่าน้ำหนักกลับใกล้ศูนย์ก่อนชั่งรายการถัดไป</p> : null}
+            </div>
+          </section>
 
       <div className="px-4 py-4 sm:px-6">
         <div className="flex flex-col gap-5">
           {isSettingsOpen ? (
-            <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#001F3F]/70 p-3 sm:p-6">
+            <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[var(--surface-navy,#001F3F)]/70 p-3 sm:p-6">
               <section
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="scale-settings-title"
                 className="max-h-[92dvh] w-full max-w-6xl overflow-y-auto rounded-lg border border-white/20 bg-white shadow-2xl"
               >
-                <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-white/10 bg-[#001F3F] px-5 py-4 text-white sm:px-6">
+                <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-white/10 bg-[var(--surface-navy,#001F3F)] px-5 py-4 text-white sm:px-6">
                   <div>
                     <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#E9C349]">
                       ตั้งค่า
                     </p>
                     <h2 id="scale-settings-title" className="mt-1 text-lg font-black sm:text-xl">
-                      Serial / เครื่องพิมพ์ / ทดสอบการเชื่อมต่อ
+                      ตั้งค่าอุปกรณ์
                     </h2>
                   </div>
                   <button
@@ -1436,8 +1225,12 @@ export default function WeightScaleLivePageClient({
                   </button>
                 </div>
 
-              <div className="grid gap-4 p-4 lg:grid-cols-3">
-                <div className="border border-[#d7dde5] bg-[#fbfcfd] p-4">
+              <div className={styles.settingsTabs} role="tablist" aria-label="ประเภทอุปกรณ์">
+                <button type="button" role="tab" id="scale-settings-tab" aria-selected={settingsTab === "scale"} aria-controls="scale-settings-panel" onClick={() => setSettingsTab("scale")}><Scale size={18} />เครื่องชั่งและการเชื่อมต่อ</button>
+                <button type="button" role="tab" id="printer-settings-tab" aria-selected={settingsTab === "printer"} aria-controls="printer-settings-panel" onClick={() => setSettingsTab("printer")}><Printer size={18} />เครื่องพิมพ์</button>
+              </div>
+              <div className="grid gap-4 p-4 lg:grid-cols-2">
+                <div id="scale-settings-panel" role="tabpanel" aria-labelledby="scale-settings-tab" hidden={settingsTab !== "scale"} className="border border-[#d7dde5] bg-[#fbfcfd] p-4">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-black uppercase tracking-[0.08em] text-[#4f6076]">
                       ตั้งค่า Serial
@@ -1586,7 +1379,7 @@ export default function WeightScaleLivePageClient({
                         type="button"
                         onClick={() => void handleSaveSerialConfig()}
                         disabled={isSavingSerial || isLoadingSerial}
-                        className="inline-flex h-10 items-center justify-center gap-2 border border-[#102C57] bg-[#102C57] px-4 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#0d3a71] disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex h-10 items-center justify-center gap-2 border border-[#102C57] bg-[var(--surface-navy,#102C57)] px-4 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#0d3a71] disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {isSavingSerial ? (
                           <Loader2 size={14} className="animate-spin" />
@@ -1599,7 +1392,7 @@ export default function WeightScaleLivePageClient({
                   </div>
                 </div>
 
-                <div className="border border-[#d7dde5] bg-[#fbfcfd] p-4">
+                <div hidden={settingsTab !== "scale"} className="border border-[#d7dde5] bg-[#fbfcfd] p-4">
                   <p className="text-sm font-black uppercase tracking-[0.08em] text-[#4f6076]">
                     ทดสอบการเชื่อมต่อ
                   </p>
@@ -1636,7 +1429,7 @@ export default function WeightScaleLivePageClient({
                   </div>
                 </div>
 
-                <div className="border border-[#d7dde5] bg-[#fbfcfd] p-4">
+                <div id="printer-settings-panel" role="tabpanel" aria-labelledby="printer-settings-tab" hidden={settingsTab !== "printer"} className="border border-[#d7dde5] bg-[#fbfcfd] p-4 lg:col-span-2">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-black uppercase tracking-[0.08em] text-[#4f6076]">
                       เครื่องพิมพ์
@@ -1696,7 +1489,7 @@ export default function WeightScaleLivePageClient({
                         type="button"
                         onClick={() => void handleSavePrinterSelection()}
                         disabled={isSavingPrinter || isLoadingPrinters || !selectedPrinterName}
-                        className="inline-flex h-10 items-center justify-center gap-2 border border-[#102C57] bg-[#102C57] px-4 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#0d3a71] disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex h-10 items-center justify-center gap-2 border border-[#102C57] bg-[var(--surface-navy,#102C57)] px-4 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#0d3a71] disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {isSavingPrinter ? (
                           <Loader2 size={14} className="animate-spin" />
@@ -1715,6 +1508,8 @@ export default function WeightScaleLivePageClient({
 
           {isProductSetupOpen ? (
             <WeightScaleLiveProductPickerModal
+              stationId={workstation?.id}
+              stationName={workstation?.name}
               canOperate={canOperate}
               filteredProducts={filteredProducts}
               isSaving={isSavingProductConfig}
@@ -1746,117 +1541,28 @@ export default function WeightScaleLivePageClient({
             </div>
           ) : null}
 
-          <main className="min-h-[360px] overflow-hidden border border-slate-200 bg-white">
-            <section className="min-w-0 flex-1 bg-white">
-            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-              <div className="flex items-center gap-2">
-                <List size={20} className="text-[#E9C349]" />
-                <h3 className="text-xs font-black uppercase tracking-[0.18em] text-[#001F3F]">
-                  รายการชั่งล่าสุด
-                </h3>
-              </div>
-              <p className="text-xs font-bold text-[#7d8795]">
-                เฉพาะสถานีชั่งรับเข้าใหม่นี้
-              </p>
-            </div>
+          {productError ? <p role="status" className="border border-amber-200 bg-amber-50 px-4 py-2 text-sm">{productError}</p> : null}
+          {readinessError ? <p role="status" className="border border-rose-200 bg-rose-50 px-4 py-2 text-sm">{readinessError} <button type="button" onClick={() => setReadinessVersion(value => value + 1)}>ตรวจความพร้อมอีกครั้ง</button></p> : null}
 
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1180px] border-collapse">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-white text-[10px] font-black uppercase text-slate-500">
-                    <th className="w-14 px-5 py-4 text-left">#</th>
-                    <th className="px-4 py-4 text-left">บาร์โค้ด</th>
-                    <th className="px-4 py-4 text-left">สินค้า</th>
-                    <th className="px-4 py-4 text-left">LOT</th>
-                    <th className="px-4 py-4 text-right">น้ำหนักรวม</th>
-                    <th className="px-4 py-4 text-right">ภาชนะ</th>
-                    <th className="px-4 py-4 text-right">น้ำหนักสุทธิ</th>
-                    <th className="px-4 py-4 text-right">เวลา</th>
-                    <th className="px-5 py-4 text-center">พิมพ์ฉลาก</th>
-                  </tr>
-                </thead>
-                <tbody className="text-sm font-semibold leading-5 text-slate-700">
-                  {recentReceipts.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={9}
-                        className="px-8 py-16 text-center font-bold text-slate-400"
-                      >
-                        ไม่พบรายการชั่งของวันนี้
-                      </td>
-                    </tr>
-                  ) : (
-                    recentReceipts.map((receipt, index) => {
-                      const printState =
-                        printStatusByReceiptId[receipt.id] || "ready";
-                      const isReprinting = reprintingReceiptId === receipt.id;
-
-                      return (
-                        <tr
-                          key={receipt.id}
-                          className="border-b border-slate-100 transition-colors even:bg-slate-50/50 hover:bg-slate-50"
-                        >
-                          <td className="px-5 py-3 text-slate-400">
-                            {String(index + 1).padStart(3, "0")}
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-3 font-black text-[#001F3F]">
-                            {receipt.barcode}
-                          </td>
-                          <td className="max-w-72 px-4 py-3">
-                            <p className="font-black text-[#001F3F]">{receipt.productCode}</p>
-                            <p className="truncate text-xs font-medium text-slate-500">
-                              {receipt.productName}
-                            </p>
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-3">
-                            {receipt.lotNo}
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-right">
-                            {formatWeightDisplay(receipt.grossWeightKg)} Kg
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-right">
-                            {formatWeightDisplay(receipt.tareWeightKg)} Kg
-                          </td>
-                          <td className="whitespace-nowrap bg-[#E9C349]/10 px-4 py-3 text-right font-black text-[#001F3F]">
-                            {formatWeightDisplay(receipt.netWeightKg)} Kg
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-right text-slate-400">
-                            {formatTimeOnly(receipt.weighedAt)}
-                          </td>
-                          <td className="px-5 py-3 text-center">
-                            <button
-                              type="button"
-                              onClick={() => void handleReprintReceipt(receipt)}
-                              disabled={
-                                isReprinting
-                                || !receipt.barcode
-                                || receipt.barcode === "-"
-                              }
-                              className={`inline-flex h-9 items-center justify-center gap-2 rounded-sm border px-3 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                                printState === "failed"
-                                  ? "border-rose-300 text-rose-700 hover:bg-rose-50"
-                                  : "border-[#001F3F] text-[#001F3F] hover:bg-[#001F3F] hover:text-white"
-                              }`}
-                            >
-                              {isReprinting ? (
-                                <Loader2 size={14} className="animate-spin" />
-                              ) : (
-                                <Printer size={14} />
-                              )}
-                              พิมพ์ซ้ำ
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
-          </main>
+          <CentralInboundHistory key={`${selectedDepartmentId}:${workstation?.id}`} departmentId={selectedDepartmentId}
+            pointId={workstation?.id} products={products} refreshVersion={historyVersion}
+            onPrint={receipt => void handleReprintReceipt(receipt)} printingId={reprintingReceiptId} printStatuses={printStatusByReceiptId} />
         </div>
       </div>
+        </>
+      )}
+
+      {/* Quick Void Confirmation Modal with Stock Guard */}
+      <WeightScaleLiveVoidModal
+        receipt={voidTargetReceipt}
+        isOpen={isVoidModalOpen}
+        onClose={() => {
+          setIsVoidModalOpen(false);
+          setVoidTargetReceipt(null);
+        }}
+        onConfirmVoid={handleConfirmVoidReceipt}
+        isProcessing={isVoiding}
+      />
     </div>
   );
 }

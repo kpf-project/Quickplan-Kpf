@@ -167,15 +167,28 @@ export async function previewScaleReceiptErpExport(filters = {}) {
   return parseJsonResponse(response);
 }
 
-export async function exportScaleReceiptErpExcel(filters = {}) {
+export async function exportScaleReceiptErpExcel(filters = {}, options = {}) {
   const response = await fetch("/api/scale/receipts/erp-export", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
     cache: "no-store",
-    body: JSON.stringify({ filters }),
+    body: JSON.stringify({ filters, ...options }),
   });
+  return parseErpExcelResponse(response);
+}
+
+export async function fetchScaleReceiptErpHistory() {
+  return fetch("/api/scale/receipts/erp-export/history", { cache: "no-store" }).then(parseJsonResponse);
+}
+
+export async function downloadScaleReceiptErpBatch(batchId) {
+  const response = await fetch(`/api/scale/receipts/erp-export?batchId=${encodeURIComponent(batchId)}`, { cache: "no-store" });
+  return parseErpExcelResponse(response);
+}
+
+async function parseErpExcelResponse(response) {
   const payload = await response.blob();
 
   if (!response.ok) {
@@ -296,6 +309,29 @@ export async function cancelScaleReceiptRequest(receiptId, payload = {}) {
     },
     cache: "no-store",
     body: JSON.stringify(payload),
+  });
+
+  return parseJsonResponse(response);
+}
+
+export async function cancelScaleReceiptByBarcodeRequest(barcode, payload = {}) {
+  const normalizedBarcode = String(barcode || "")
+    .replace(/[\s\u200B-\u200D\uFEFF]/g, "")
+    .toUpperCase();
+  if (!normalizedBarcode) {
+    throw new Error("กรุณากรอกหรือสแกนรหัสบาร์โค้ดก่อน");
+  }
+
+  const response = await fetch("/api/scale/receipts/cancel-by-barcode", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    cache: "no-store",
+    body: JSON.stringify({
+      barcode: normalizedBarcode,
+      voidReason: payload?.voidReason,
+    }),
   });
 
   return parseJsonResponse(response);

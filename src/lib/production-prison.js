@@ -6,6 +6,7 @@ import {
   SCALE_CATEGORY_CODE,
   SCALE_DEPARTMENT_CODE,
 } from "@/lib/scale/products";
+import { buildPrisonLotBalanceRows } from "@/lib/production-prison-balance-rows";
 import { fetchAllSupabaseRows } from "@/lib/supabaseRangeFetch";
 
 function normalizeText(value) {
@@ -423,74 +424,12 @@ function buildPrisonMovementSummaryRows(inboundRows, issueRows) {
     });
 }
 
-function buildPrisonLotBalanceRows(inboundRows, issueRows) {
-  const groups = new Map();
-
-  inboundRows.forEach((row) => {
-    const key = [row.lotNo, row.productCode].join("|");
-    if (!groups.has(key)) {
-      groups.set(key, {
-        lotNo: row.lotNo,
-        productCode: row.productCode,
-        productName: row.productName,
-        inboundQuantity: 0,
-        inboundWeightKg: 0,
-        issueQuantity: 0,
-        issueWeightKg: 0,
-        lastInboundDate: row.issueDate,
-      });
-    }
-
-    const group = groups.get(key);
-    group.inboundQuantity += row.quantity || 0;
-    group.inboundWeightKg += row.weightKg || 0;
-    if (!group.lastInboundDate || row.issueDate > group.lastInboundDate) {
-      group.lastInboundDate = row.issueDate;
-    }
-  });
-
-  issueRows.forEach((row) => {
-    const key = [row.lotNo, row.productCode].join("|");
-    if (!groups.has(key)) {
-      groups.set(key, {
-        lotNo: row.lotNo,
-        productCode: row.productCode,
-        productName: row.productName,
-        inboundQuantity: 0,
-        inboundWeightKg: 0,
-        issueQuantity: 0,
-        issueWeightKg: 0,
-        lastInboundDate: row.issueDate,
-      });
-    }
-
-    const group = groups.get(key);
-    group.issueQuantity += row.quantity || 0;
-    group.issueWeightKg += row.weightKg || 0;
-  });
-
-  return Array.from(groups.values())
-    .map((row) => ({
-      ...row,
-      inboundQuantity: Number(row.inboundQuantity.toFixed(3)),
-      inboundWeightKg: Number(row.inboundWeightKg.toFixed(3)),
-      issueQuantity: Number(row.issueQuantity.toFixed(3)),
-      issueWeightKg: Number(row.issueWeightKg.toFixed(3)),
-      balanceQuantity: Number((row.inboundQuantity - row.issueQuantity).toFixed(3)),
-      balanceWeightKg: Number((row.inboundWeightKg - row.issueWeightKg).toFixed(3)),
-    }))
-    .sort((left, right) => {
-      if (left.lotNo !== right.lotNo) {
-        return left.lotNo.localeCompare(right.lotNo);
-      }
-      return left.productCode.localeCompare(right.productCode);
-    });
-}
-
 function buildBalanceSummary(rows) {
   return rows.reduce(
     (summary, row) => ({
       totalCount: summary.totalCount + 1,
+      openingQuantity: Number((summary.openingQuantity + (row.openingQuantity || 0)).toFixed(3)),
+      openingWeightKg: Number((summary.openingWeightKg + (row.openingWeightKg || 0)).toFixed(3)),
       inboundQuantity: Number((summary.inboundQuantity + (row.inboundQuantity || 0)).toFixed(3)),
       inboundWeightKg: Number((summary.inboundWeightKg + (row.inboundWeightKg || 0)).toFixed(3)),
       issueQuantity: Number((summary.issueQuantity + (row.issueQuantity || 0)).toFixed(3)),
@@ -500,6 +439,8 @@ function buildBalanceSummary(rows) {
     }),
     {
       totalCount: 0,
+      openingQuantity: 0,
+      openingWeightKg: 0,
       inboundQuantity: 0,
       inboundWeightKg: 0,
       issueQuantity: 0,
@@ -1118,19 +1059,17 @@ export async function loadProductionPrisonLotBalanceReportData(
   const inboundRows = await loadPrisonInboundRows(supabaseAdmin, {
     departmentId: scope.departmentId,
     categoryCode: scope.categoryCode,
-    dateFrom: normalizedDateFrom,
     dateTo: normalizedDateTo,
     productCodes: normalizedProductCodes,
   });
   const issueRows = await loadPrisonIssueRows(supabaseAdmin, {
     departmentId: scope.departmentId,
     categoryCode: scope.categoryCode,
-    dateFrom: normalizedDateFrom,
     dateTo: normalizedDateTo,
     productCodes: normalizedProductCodes,
   });
 
-  const allRows = buildPrisonLotBalanceRows(inboundRows, issueRows);
+  const allRows = buildPrisonLotBalanceRows(inboundRows, issueRows, normalizedDateFrom);
   const paged = paginateRows(allRows, normalizedPage, normalizedLimit, includeAll);
 
   return {

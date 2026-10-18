@@ -25,6 +25,13 @@ export const PIECE_RATE_WORKFLOW_TABS = Object.freeze([
   { mode: "waste", label: "ชั่งของเสีย", icon: PackageMinus, group: "weigh" },
   { mode: "return", label: "ชั่งคืน", icon: RotateCcw, group: "weigh" },
   { mode: "cancel-weigh", label: "ยกเลิกชั่ง", icon: Ban, group: "weigh" },
+  {
+    href: "/production-line/attendance/packing-output",
+    label: "บันทึกผลผลิตไม่คิดค่าแรง",
+    description: "บันทึกลัง แพ็ค ซอง และยอดยกมา",
+    icon: PackageCheck,
+    group: "weigh",
+  },
   { mode: "issue", label: "เบิก", icon: ArrowDownToLine, group: "issue" },
   { mode: "prison-issue", label: "เบิกเรือนจำ", icon: Boxes, group: "issue" },
   { mode: "cancel-issue", label: "ยกเลิกเบิก", icon: Undo2, group: "issue" },
@@ -206,6 +213,26 @@ export default function PieceRateWorkflowTabs({ activeMode, onChange }) {
                   groupTabs.map((tab, index) => {
                     const Icon = tab.icon;
                     const itemActive = tab.mode === activeMode;
+                    if (tab.href) {
+                      return (
+                        <Link
+                          key={tab.href}
+                          href={tab.href}
+                          role="menuitem"
+                          tabIndex={isOpen ? 0 : -1}
+                          onClick={() => setOpenGroup(null)}
+                        >
+                          <span className={styles.menuIndex}>
+                            {String(index + 1).padStart(2, "0")}
+                          </span>
+                          <Icon aria-hidden="true" />
+                          <span className={styles.menuLabel}>
+                            <strong>{tab.label}</strong>
+                            <small>{tab.description}</small>
+                          </span>
+                        </Link>
+                      );
+                    }
                     return (
                       <button
                         key={tab.mode}

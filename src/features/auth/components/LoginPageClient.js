@@ -98,7 +98,7 @@ export default function LoginPage() {
     <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-[#eef2f7] font-sans">
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_18%,rgba(16,44,87,0.08),transparent_44%),radial-gradient(circle_at_88%_84%,rgba(212,175,55,0.12),transparent_40%),linear-gradient(180deg,#f6f8fc_0%,#eef2f7_100%)]" />
-        <div className="absolute left-[-8%] top-[-18%] h-[280px] w-[280px] rounded-full bg-[#102C57]/10 blur-3xl" />
+        <div className="absolute left-[-8%] top-[-18%] h-[280px] w-[280px] rounded-full bg-[var(--surface-navy,#102C57)]/10 blur-3xl" />
         <div className="absolute bottom-[-18%] right-[-8%] h-[260px] w-[260px] rounded-full bg-[#d4af37]/12 blur-3xl" />
       </div>
 
@@ -122,9 +122,9 @@ export default function LoginPage() {
                 QUICKPLAN
               </h1>
               <div className="flex items-center space-x-2">
-                <div className="h-px w-8 bg-[#102C57]/20" />
+                <div className="h-px w-8 bg-[var(--surface-navy,#102C57)]/20" />
                 <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#102C57]/75">ระบบเข้าสู่ระบบ</p>
-                <div className="h-px w-8 bg-[#102C57]/20" />
+                <div className="h-px w-8 bg-[var(--surface-navy,#102C57)]/20" />
               </div>
             </div>
 
@@ -198,7 +198,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={loading || retryAfterSeconds > 0}
-                className="relative flex w-full items-center justify-center rounded bg-[#102C57] py-3 text-sm font-bold tracking-wide text-white shadow-sm transition-all duration-200 hover:bg-[#0B2343] disabled:cursor-not-allowed disabled:opacity-50"
+                className="relative flex w-full items-center justify-center rounded bg-[var(--surface-navy,#102C57)] py-3 text-sm font-bold tracking-wide text-white shadow-sm transition-all duration-200 hover:bg-[#0B2343] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {loading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />

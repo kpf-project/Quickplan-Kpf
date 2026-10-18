@@ -1,8 +1,12 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
-import { Plus, Trash2, ChevronUp, ChevronDown, Settings2, Eye, EyeOff, Check, X, GripVertical } from "lucide-react";
+import { Plus, Trash2, ChevronUp, ChevronDown, Settings2, Eye, EyeOff, Check, X, GripVertical, Tags } from "lucide-react";
+import ScheduleImportScopeDialog from "./ScheduleImportScopeDialog";
 import GenericScheduleTable from "./GenericScheduleTable";
+import ScheduleTemplateDesigner from "./ScheduleTemplateDesigner";
+import ScheduleColumnColorFields from "./ScheduleColumnColorFields";
+import { applyColumnColors } from "@/lib/scheduleColumnColors";
 import useSWR from "swr";
 import { fetcher } from "@/lib/clientFetch";
 import {
@@ -128,8 +132,14 @@ const TYPE_THAI = {
 
 // ── Column editor row ──────────────────────────────────────────────────────────
 
-function ColumnRow({ col, onUpdate, onDelete, onDragStart, onDragOver, onDrop, isDragOver }) {
+function ColumnRow({ col, onUpdate, onSaveColors, onDelete, onDragStart, onDragOver, onDrop, isDragOver }) {
   const [open, setOpen] = useState(false);
+  const [savingColors, setSavingColors] = useState(false);
+  const [colorError, setColorError] = useState("");
+  async function saveColors(patch) {
+    setSavingColors(true); setColorError("");
+    try { await onSaveColors(patch); } catch (error) { setColorError(error.message || "บันทึกสีไม่สำเร็จ"); } finally { setSavingColors(false); }
+  }
 
   async function save(patch) {
     await updateColumn(col.id, patch);
@@ -175,16 +185,8 @@ function ColumnRow({ col, onUpdate, onDelete, onDragStart, onDragOver, onDrop, i
             </select>
           </label>
 
-          <label className="flex flex-col gap-1">
-            <span className="text-gray-500">สีไฮไลท์</span>
-            <select
-              className="border border-gray-200 rounded px-1.5 py-1 text-xs"
-              value={col.highlight_color ?? ""}
-              onChange={(e) => save({ highlightColor: e.target.value || null })}
-            >
-              {COLORS.map((c) => <option key={c} value={c}>{c || "(ไม่มี)"}</option>)}
-            </select>
-          </label>
+          <fieldset disabled={savingColors} className="contents"><ScheduleColumnColorFields headerColor={col.header_highlight_color} bodyColor={col.highlight_color} onChange={saveColors} /></fieldset>
+          {colorError && <p role="alert" className="text-red-600">{colorError}</p>}
 
           <label className="flex flex-col gap-1">
             <span className="text-gray-500">ความกว้าง (px)</span>
@@ -269,6 +271,7 @@ function suggestKey(label) {
 // ── Section editor ─────────────────────────────────────────────────────────────
 
 function SectionEditor({ section, isFirst, isLast, onUp, onDown, onRefresh, onDelete }) {
+  const [scopeOpen, setScopeOpen] = useState(false);
   const [newColLabel, setNewColLabel]   = useState("");
   const [newColKey, setNewColKey]       = useState("");
   const [newColType, setNewColType]     = useState("text");
@@ -280,8 +283,8 @@ function SectionEditor({ section, isFirst, isLast, onUp, onDown, onRefresh, onDe
   const [dragOverId, setDragOverId]     = useState(null);  // id being hovered
 
   const columns = useMemo(
-    () => section.production_schedule_column_defs ?? [],
-    [section.production_schedule_column_defs]
+    () => applyColumnColors(section.production_schedule_column_defs ?? [], section.column_colors),
+    [section.production_schedule_column_defs, section.column_colors]
   );
   const existingKeys = useMemo(() => new Set(columns.map((c) => c.key)), [columns]);
 
@@ -389,6 +392,7 @@ function SectionEditor({ section, isFirst, isLast, onUp, onDown, onRefresh, onDe
           </select>
         </div>
         <div className="flex items-center gap-1.5">
+          <button type="button" onClick={() => setScopeOpen(true)} className="mr-2 flex items-center gap-1 rounded border border-white/40 px-2 py-1 text-xs hover:bg-white/10"><Tags size={13} />ขอบเขตสินค้า</button>
           <button onClick={() => setShowPreview((p) => !p)} className="opacity-70 hover:opacity-100" title="toggle preview">
             {showPreview ? <EyeOff size={13} /> : <Eye size={13} />}
           </button>
@@ -399,6 +403,7 @@ function SectionEditor({ section, isFirst, isLast, onUp, onDown, onRefresh, onDe
       </div>
 
       {/* Columns list */}
+      {scopeOpen && <ScheduleImportScopeDialog section={section} onClose={() => setScopeOpen(false)} />}
       <div className="p-3 bg-white">
         <p className="text-[11px] text-gray-400 mb-2 font-medium">คอลัมน์ ({columns.length})</p>
         {columns
@@ -409,6 +414,11 @@ function SectionEditor({ section, isFirst, isLast, onUp, onDown, onRefresh, onDe
               key={col.id}
               col={col}
               onUpdate={onRefresh}
+              onSaveColors={async patch => {
+                const result = await updateSection(section.id, { columnColors: { ...section.column_colors, [col.id]: { ...section.column_colors?.[col.id], ...patch } } });
+                if (!result.ok) throw new Error(result.error?.message || "บันทึกสีไม่สำเร็จ");
+                await onRefresh();
+              }}
               onDelete={async () => { await deleteColumn(col.id); onRefresh(); }}
               onDragStart={() => setDragId(col.id)}
               onDragOver={() => setDragOverId(col.id)}
@@ -486,6 +496,10 @@ function SectionEditor({ section, isFirst, isLast, onUp, onDown, onRefresh, onDe
 // ── Main ScheduleConfigClient ──────────────────────────────────────────────────
 
 export default function ScheduleConfigClient() {
+  return <ScheduleTemplateDesigner management={<ScheduleConfigLegacy />} />;
+}
+
+function ScheduleConfigLegacy() {
   const [selectedTemplateId, setSelectedTemplateId] = useState(null);
   const [newTemplateName, setNewTemplateName] = useState("");
   const [newSectionName, setNewSectionName]   = useState("");

@@ -2,6 +2,36 @@ function text(value) {
   return String(value || "").trim();
 }
 
+export function buildPlannedWipPreviewRows(lines = [], rooms = [], departmentId, dates = []) {
+  const roomMap = new Map(rooms.filter((room) => room.requires_planning && room.is_active).map((room) => [text(room.id), room]));
+  const rows = new Map();
+  for (const line of lines) {
+    const room = roomMap.get(text(line.sourceSectionDefId));
+    const date = text(line.workDate);
+    const qty = number(line.plannedQty);
+    const skuCode = upper(line.skuCode);
+    if (!room || text(line.departmentId) !== text(departmentId) || !dates.includes(date) || !skuCode || qty <= 0) continue;
+    const unit = text(line.unit || line.planningUnit);
+    const displayUnit = /^(batch|batches|set|sets)$/i.test(unit) ? "ชุด" : unit || "ไม่ระบุหน่วย";
+    const key = JSON.stringify([text(room.id), skuCode, displayUnit]);
+    if (!rows.has(key)) rows.set(key, { key, skuCode, skuName: text(line.skuName) || skuCode, sectionName: text(room.name), displayUnit, qtyByDate: {}, kgByDate: {}, totalQty: 0, totalKg: 0, weightIncomplete: false });
+    const row = rows.get(key);
+    row.qtyByDate[date] = round(number(row.qtyByDate[date]) + qty);
+    row.totalQty = round(row.totalQty + qty);
+    if (displayUnit === "ชุด") {
+      const ratio = Number(line.kgPerBatch);
+      if (Number.isFinite(ratio) && ratio > 0) {
+        if (row.kgByDate[date] !== null) row.kgByDate[date] = number(row.kgByDate[date]) + qty * ratio;
+        row.totalKg += qty * ratio;
+      } else {
+        row.kgByDate[date] = null;
+        row.weightIncomplete = true;
+      }
+    }
+  }
+  return Array.from(rows.values()).sort((a, b) => a.sectionName.localeCompare(b.sectionName, "th") || a.skuCode.localeCompare(b.skuCode));
+}
+
 function upper(value) {
   return text(value).toUpperCase();
 }
@@ -28,12 +58,115 @@ export function resolveRequisitionPreviewCellQty({ line, column }) {
     : number(line?.qtyByDate?.[column.dateValue]);
 }
 
+export function resolveRequisitionEditableDocumentKey(column, fallbackKey = "") {
+  if (column?.exported === true) return "";
+  const keys = [...new Set((column?.sourceDocumentKeys || []).map(text).filter(Boolean))];
+  if (column?.isDailyRoomConsolidated && keys.length > 1) return "";
+  return keys[0] || text(column?.sourceDocumentKey) || text(fallbackKey);
+}
+
 function isUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text(value));
 }
 
 function lineKey(line) {
   return `${upper(line?.materialGoodsCode || line?.materialSkuCode)}|${upper(line?.unit)}`;
+}
+
+export function mergeRequisitionDraftLines(sourceLines = [], draftLines = [], doc = null) {
+  const sourceByKey = new Map(
+    (Array.isArray(sourceLines) ? sourceLines : []).map((line) => [lineKey(line), line])
+  );
+  const draftByKey = new Map(
+    (Array.isArray(draftLines) ? draftLines : []).map((line) => [lineKey(line), line])
+  );
+
+  const erpSyncedDates = new Set(
+    Object.entries(doc?.exportedByDate || {}).filter(([, exported]) => exported === true).map(([date]) => date)
+  );
+  if (doc?.erpSyncByDate) {
+    Object.entries(doc.erpSyncByDate).forEach(([dateValue, syncInfo]) => {
+      if (syncInfo?.status && syncInfo.status !== "review") {
+        erpSyncedDates.add(dateValue);
+      }
+    });
+  }
+  (Array.isArray(sourceLines) ? sourceLines : []).forEach((line) => {
+    Object.entries(line?.erpLotsByDate || {}).forEach(([dateValue, rows]) => {
+      if (Array.isArray(rows) && rows.length > 0) {
+        erpSyncedDates.add(dateValue);
+      }
+    });
+  });
+
+  const hasDraft = Array.isArray(draftLines);
+  const allKeys = new Set([...sourceByKey.keys(), ...draftByKey.keys()]);
+  const result = [];
+
+  allKeys.forEach((key) => {
+    const source = sourceByKey.get(key);
+    const draft = draftByKey.get(key);
+    const reference = draft || source;
+    const isDeletedInDraft = hasDraft && !draft;
+
+    const allDates = new Set([
+      ...Object.keys(source?.qtyByDate || {}),
+      ...Object.keys(draft?.qtyByDate || {}),
+    ]);
+
+    const qtyByDate = {};
+    allDates.forEach((dateValue) => {
+      if (erpSyncedDates.has(dateValue)) {
+        // ERP is the authoritative truth for synced dates
+        const sourceQty = number(source?.qtyByDate?.[dateValue]);
+        if (sourceQty > 0) {
+          qtyByDate[dateValue] = round(sourceQty);
+        }
+      } else {
+        // Unsynced dates retain draft edits
+        if (isDeletedInDraft) {
+          return;
+        }
+        const draftQty = draft?.qtyByDate?.[dateValue];
+        const val = draftQty !== undefined
+          ? number(draftQty)
+          : (hasDraft ? 0 : number(source?.qtyByDate?.[dateValue]));
+        if (val > 0) {
+          qtyByDate[dateValue] = round(val);
+        }
+      }
+    });
+
+    const totalQty = round(Object.values(qtyByDate).reduce((sum, q) => sum + number(q), 0));
+    const erpLotsByDate = source?.erpLotsByDate || {};
+    const exportedLotsByDate = source?.exportedLotsByDate || draft?.exportedLotsByDate || {};
+    const lotAllocationsByDate = draft?.lotAllocationsByDate || source?.lotAllocationsByDate || {};
+
+    const hasErpLots = Object.values(erpLotsByDate).some((lots) => Array.isArray(lots) && lots.length > 0);
+    const hasExportedLots = Object.values(exportedLotsByDate).some((lots) => Array.isArray(lots) && lots.length > 0);
+
+    if (totalQty <= 0 && !hasErpLots && !hasExportedLots && !(draft?.isManual && !isDeletedInDraft && Object.keys(draft?.qtyByDate || {}).length === 0)) {
+      return;
+    }
+
+    result.push({
+      materialSkuCode: text(reference?.materialSkuCode),
+      materialGoodsCode: text(reference?.materialGoodsCode || reference?.materialSkuCode),
+      materialName: text(reference?.materialName),
+      unit: text(reference?.unit),
+      itemType: text(reference?.itemType || "RAW"),
+      qtyByDate,
+      totalQty,
+      isManual: draft?.isManual === true || (source?.isManual === true && !isDeletedInDraft),
+      lotAllocationsByDate,
+      erpLotsByDate,
+      exportedLotsByDate,
+    });
+  });
+
+  return result.sort((a, b) =>
+    text(a.materialGoodsCode).localeCompare(text(b.materialGoodsCode))
+  );
 }
 
 export function upsertRequisitionSourceLineQty(lines = [], referenceLine, dateValue, nextQty) {
@@ -70,6 +203,7 @@ export function upsertRequisitionSourceLineQty(lines = [], referenceLine, dateVa
     qtyByDate,
     totalQty: round(Object.values(qtyByDate).reduce((sum, qty) => sum + number(qty), 0)),
     isManual: currentLine?.isManual === true || existingIndex < 0,
+    lotAllocationsByDate: { ...(currentLine?.lotAllocationsByDate || {}) },
   };
 
   if (existingIndex < 0) return [...sourceLines, updatedLine];
@@ -119,7 +253,7 @@ function previewProduct(doc, dateValue, columnIndex) {
     ? doc.workNamesByDate[dateValue].map(text).filter(Boolean)
     : [];
   const rawProductCode = upper(doc?.parentSku || doc?.workstreamCode);
-  const productCode = isUuid(rawProductCode) ? "" : rawProductCode;
+  const productCode = isUuid(rawProductCode) || rawProductCode === "CONSOLIDATED" ? "" : rawProductCode;
   const productName = text(doc?.parentSkuName) || names.join(" / ") || productCode || "-";
   const sourceDocumentKey = text(doc?.documentKey);
   return {
@@ -181,10 +315,22 @@ function consolidatePreviewColumnsByDate(previewColumns, lines) {
           qty: round(sourceQuantities[column.key]),
         }))
         .filter((item) => item.qty > 0);
-      line.qtyByPreviewColumn[targetColumn.key] = round(
+      const totalFromBreakdown = round(
         breakdown.reduce((sum, item) => sum + item.qty, 0)
       );
-      line.breakdownByPreviewColumn[targetColumn.key] = breakdown;
+      const lineDateQty = round(number(line?.qtyByDate?.[dateValue]));
+      const finalQty = totalFromBreakdown > 0 ? totalFromBreakdown : lineDateQty;
+      line.qtyByPreviewColumn[targetColumn.key] = finalQty;
+      if (!breakdown.length && finalQty > 0) {
+        line.breakdownByPreviewColumn[targetColumn.key] = [{
+          sourceDocumentKey: targetColumn.sourceDocumentKey || "",
+          productCode: targetColumn.productCode || "",
+          productName: targetColumn.productName || targetColumn.workNames?.join(" / ") || "",
+          qty: finalQty,
+        }];
+      } else {
+        line.breakdownByPreviewColumn[targetColumn.key] = breakdown;
+      }
     });
   });
 
@@ -241,9 +387,20 @@ function mergeDocumentGroup(documents, compatibilityKey, groupIndex) {
           qtyByPreviewColumn: {},
           totalQty: 0,
           isManual: line?.isManual === true,
+          lotAllocationsByDate: {},
+          erpLotsByDate: {},
+          exportedLotsByDate: {},
         });
       }
       const target = mergedLines.get(key);
+      ["lotAllocationsByDate", "erpLotsByDate", "exportedLotsByDate"].forEach((field) => {
+        Object.entries(line?.[field] || {}).forEach(([dateValue, allocations]) => {
+          target[field][dateValue] = [
+            ...(target[field][dateValue] || []),
+            ...(Array.isArray(allocations) ? allocations : []),
+          ];
+        });
+      });
       Object.entries(line?.qtyByDate || {}).forEach(([dateValue, qty]) => {
         target.qtyByDate[dateValue] = round(number(target.qtyByDate[dateValue]) + number(qty));
         const column = previewColumns.find(
@@ -286,9 +443,11 @@ function mergeDocumentGroup(documents, compatibilityKey, groupIndex) {
     workNamesByDate,
     documentNoByDate,
     exportedByDate,
-    lines: Array.from(mergedLines.values()).sort((left, right) =>
-      text(left.materialGoodsCode).localeCompare(text(right.materialGoodsCode))
-    ),
+    lines: Array.from(mergedLines.values())
+      .filter((line) => line.totalQty > 0 || line.isManual === true || Object.values(line.erpLotsByDate || {}).some((lots) => Array.isArray(lots) && lots.length > 0))
+      .sort((left, right) =>
+        text(left.materialGoodsCode).localeCompare(text(right.materialGoodsCode))
+      ),
   };
 }
 

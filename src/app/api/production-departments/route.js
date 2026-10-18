@@ -1,5 +1,5 @@
 import { getSupabaseAdmin, jsonError, readJson } from "@/lib/adminApi";
-import { requirePermissionKeys } from "@/lib/permissionGuard";
+import { requireTaskPermission } from "@/lib/taskPermissionGuard";
 import { normalizeParam } from "@/lib/validation";
 
 function normalizeDepartmentCode(value) {
@@ -90,10 +90,7 @@ async function loadCountsByDepartment(supabaseAdmin, departmentIds = []) {
 
 export async function GET(request) {
   try {
-    await requirePermissionKeys(request, [
-      "production-line-settings-view",
-      "production-line-settings-manage",
-    ]);
+    await requireTaskPermission(request, "production-settings-departments-view");
 
     const { searchParams } = new URL(request.url);
     const search = normalizeParam(searchParams.get("search")) ?? "";
@@ -136,9 +133,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const { userId } = await requirePermissionKeys(request, [
-      "production-line-settings-manage",
-    ]);
+    const { userId } = await requireTaskPermission(request, "production-settings-departments-create");
 
     const body = await readJson(request);
     const code = normalizeDepartmentCode(body.code);

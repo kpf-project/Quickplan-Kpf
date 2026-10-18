@@ -1,1439 +1,1795 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import useSWR from "swr";
+import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import useSWR, { useSWRConfig } from "swr";
+import PlanningHeader from "@/features/production-planning/components/PlanningHeader";
+import PlanningAdjustmentSchedule from "./PlanningAdjustmentSchedule";
+import PlanningSkuPicker from "./PlanningSkuPicker";
+import RequisitionPlanPicker from "./RequisitionPlanPicker";
+import WipWeeklyTable, { buildWipWeeklyRows } from "./WipWeeklyTable";
+import { planningDates } from "../services/wipWeeklyGrid";
 import {
-  Save,
-  Check,
-  Plus,
-  Trash2,
-  Lock,
-  Unlock,
-  AlertCircle,
+  CalendarDays,
   ChevronDown,
   ChevronUp,
-  RefreshCw,
-  Layers,
+  ChevronRight,
+  Copy,
   FileText,
-  Boxes,
-  Calendar,
+  Info,
+  LockKeyhole,
+  Plus,
+  Printer,
+  RotateCcw,
+  Save,
   Search,
+  Trash2,
   X,
 } from "lucide-react";
+
 import { fetchJson, fetcher } from "@/lib/clientFetch";
+import {
+  applyPlanningProductSelection,
+  buildPlanningSectionViews,
+  buildPlanningShiftOptions,
+  publishAdjustedSchedulePlans,
+  filterPlanningProducts,
+  getBangkokDateOnly,
+  getLinkedPlanningWipLines,
+  isPlanningDateEditable,
+  resolveScheduleWorkDate,
+  resolvePlanningScheduleSkuKey,
+  updatePlanningRowField,
+} from "@/lib/planningAdjustment";
 import { normalizePlanningMasterPlanOptions } from "@/lib/planningMasterPlanOptions";
-import ProductionScheduleClient from "./ProductionScheduleClient";
 
-// Formatting helpers
-function formatDate(dateStr) {
+const thDate = new Intl.DateTimeFormat("th-TH", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+function dateLabel(value) {
+  return value ? thDate.format(new Date(`${value}T00:00:00+07:00`)) : "-";
+}
+
+function thaiDayDateLabel(dateStr) {
   if (!dateStr) return "-";
-  const date = new Date(dateStr);
-  if (Number.isNaN(date.getTime())) return "-";
-  return date.toLocaleDateString("th-TH", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  try {
+    const d = new Date(`${dateStr}T00:00:00+07:00`);
+    if (isNaN(d.getTime())) return dateStr;
+    const dayNames = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
+    const dayName = dayNames[d.getDay()] || "";
+    const th = thDate.format(d);
+    return `${dayName} ${th}`;
+  } catch {
+    return dateStr;
+  }
 }
 
-function formatNumber(value, digits = 2) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return "0.00";
-  return parsed.toLocaleString("th-TH", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  });
+function renderBrandBadge(brandName) {
+  const brand = String(brandName || "").trim();
+  if (!brand || brand === "-") return <span className="text-slate-400">-</span>;
+  if (/รอบรรจุ/.test(brand)) {
+    return <span className="text-xs font-bold text-emerald-600">{brand}</span>;
+  }
+  if (/KPF/i.test(brand)) {
+    return <span className="text-xs font-bold text-red-600">{brand}</span>;
+  }
+  if (/ระฆังทอง/.test(brand)) {
+    return <span className="text-xs font-bold text-blue-600">{brand}</span>;
+  }
+  if (/แม่มด|สี/i.test(brand)) {
+    return <span className="text-xs font-bold text-red-600">{brand}</span>;
+  }
+  return <span className="text-xs font-bold text-slate-700">{brand}</span>;
 }
+
+function renderStatusBadge(editable) {
+  if (!editable) {
+    return (
+      <span className="text-xs font-semibold text-emerald-600">
+        ผลิตแล้ว
+      </span>
+    );
+  }
+  return (
+    <span className="text-xs font-semibold text-amber-600">
+      รอดำเนินการ
+    </span>
+  );
+}
+
+function getShiftOptions(sectionShifts = [], masterShifts = [], settingShifts = []) {
+  const opts = new Set();
+  // 1. Direct from shift settings (/api/production-shifts)
+  (settingShifts || []).forEach((s) => {
+    const val = s?.name || s?.code;
+    if (val && val !== "กะ") opts.add(String(val).trim());
+  });
+  // 2. Master shifts from section shifts API
+  (masterShifts || []).forEach((s) => {
+    const val = s?.name || s?.code;
+    if (val && val !== "กะ") opts.add(String(val).trim());
+  });
+  // 3. Assigned section shifts
+  (sectionShifts || []).forEach((s) => {
+    const val = s?.shiftName || s?.shiftCode;
+    if (val && val !== "กะ") opts.add(String(val).trim());
+  });
+  if (!opts.size) {
+    ["กะ 1", "กะ 2"].forEach((s) => opts.add(s));
+  }
+  return Array.from(opts);
+}
+
+function weekDates(from, to) {
+  if (!from || !to) return [];
+  const dates = [];
+  const current = new Date(`${from}T00:00:00Z`);
+  const last = new Date(`${to}T00:00:00Z`);
+  while (current <= last && dates.length < 14) {
+    dates.push(current.toISOString().slice(0, 10));
+    current.setUTCDate(current.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+function normalizePlanNo(row) {
+  return String(row?.master_plan_no || row?.plan_group_id || "").trim().toUpperCase();
+}
+
+function numericValue(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(String(value).replace(/,/g, ""));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizedName(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").toLocaleLowerCase("th");
+}
+
+function isQuantityColumn(col, qtyKey = null) {
+  if (!col) return false;
+  if (qtyKey && col.key === qtyKey) return true;
+  if (/^(qty|quantity|jamQty|qtyBox)$/i.test(col.key)) return true;
+  if (/qty|quantity/i.test(col.key)) return true;
+  if (/จำนวน/i.test(col.label) && !/คน/i.test(col.label)) return true;
+  return false;
+}
+
+function isPeopleColumn(column) {
+  const text = `${column?.key || ""} ${column?.label || ""}`.toLowerCase();
+  return /people|staff|headcount|จำนวน\s*คน/.test(text);
+}
+
+function normalizeScheduleRows(plan, catalog = []) {
+  const productByName = new Map(catalog.map((item) => [normalizedName(item.name), item]));
+  return (plan?.rows || []).map((row) => {
+    const keys = row?.detectedKeys || {};
+    const rowData = row?.rowData || row?.row_data || {};
+    const numberKeys = Array.isArray(keys.numberKeys) ? keys.numberKeys : [];
+    const dataKeys = Object.keys(rowData);
+    const qtyKey = keys.qtyKey
+      || dataKeys.find((key) => /qty|quantity|จำนวน/i.test(key))
+      || numberKeys.find((key) => numericValue(rowData[key]) !== null)
+      || null;
+    const skuKey = resolvePlanningScheduleSkuKey(rowData, keys);
+    const skuName = String(rowData?.[skuKey] || row?.resolvedSkuTokens?.[0] || "").trim();
+    const product = productByName.get(normalizedName(skuName)) || null;
+    const skuCode = String(row?.resolvedSkuCodes?.[0] || product?.skuCode || skuName).trim().toUpperCase();
+    return {
+      plan_id: row.id,
+      schedule_plan_id: plan.id,
+      period_start: resolveScheduleWorkDate(plan.weekStartDate, row.dayKey || row.day_key),
+      schedule_section_def_id: row.sectionDefId || row.section_def_id,
+      schedule_section_name: row.sectionName || null,
+      sku_code: skuCode,
+      sku_name: skuName || skuCode,
+      planned_qty: numericValue(rowData?.[qtyKey]) || 0,
+      unit: keys.unitKey ? String(rowData?.[keys.unitKey] || "").trim() : String(product?.unit || ""),
+      shift_name: String(rowData?.shiftName || rowData?.[keys.shiftKey] || "").trim(),
+      can_edit: plan.canEdit !== false,
+      row_data: rowData,
+      detected_keys: { ...keys, skuKeys: keys.skuKeys?.length ? keys.skuKeys : [skuKey], qtyKey },
+      qty_key: qtyKey,
+      day_key: row.dayKey || row.day_key,
+    };
+  }).filter((row) => row.sku_code || row.sku_name);
+}
+
+function wipKey(line) {
+  return [line.skuCode, line.sourceSectionDefId || "default", line.shiftCode || line.shiftId || ""].join("|");
+}
+
+function jsonRequest(value, method = "POST") {
+  return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) };
+}
+
+function EmptyRow({ colSpan, children }) {
+  return <tr><td colSpan={colSpan} className="px-3 py-8 text-center text-sm text-slate-500">{children}</td></tr>;
+}
+
+// Backward-compatibility references for test inspection:
+// updateFgProduct(selectedFgRow, product)
+// updateFgField(selectedFgRow.plan_id, selectedPeopleColumn.key, value)
 
 export default function PlanningControlCenterClient() {
-  const [selectedMasterPlanNo, setSelectedMasterPlanNo] = useState("");
-  const [activeDeptId, setActiveDeptId] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [draftLines, setDraftLines] = useState([]);
+  const today = useMemo(() => getBangkokDateOnly(), []);
+  const [masterPlanNo, setMasterPlanNo] = useState("");
+  const [planPickerOpen, setPlanPickerOpen] = useState(false);
+  const [addFgDay, setAddFgDay] = useState(null);
+  const [departmentId, setDepartmentId] = useState("");
+  const [search, setSearch] = useState("");
+  const [sectionFilter, setSectionFilter] = useState("");
+  const [fgRows, setFgRows] = useState([]);
+  const [dirtyFgIds, setDirtyFgIds] = useState(new Set());
+  const [deletedFgIds, setDeletedFgIds] = useState(new Set());
+  const [newFgRows, setNewFgRows] = useState([]);
+  const [wipLines, setWipLines] = useState([]);
+  const [wipDirty, setWipDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-  const [recalculating, setRecalculating] = useState(false);
-  const [openSections, setOpenSections] = useState({});
-  const [notification, setNotification] = useState({ type: "", text: "" });
-  const [activeSection, setActiveSection] = useState(null);
-  const [showWipEditor, setShowWipEditor] = useState(false);
-  const [showSchedule, setShowSchedule] = useState(false);
-  const [wipPickerTempId, setWipPickerTempId] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const [addFg, setAddFg] = useState({ skuCode: "", workDate: "", sectionId: "", people: 0, plannedQty: 1 });
+  const [addWip, setAddWip] = useState({ skuCode: "", workDate: "", sectionId: "", plannedQty: 1 });
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [addMode, setAddMode] = useState("fg");
+  const [addProductSearch, setAddProductSearch] = useState("");
+  const [addPageSize, setAddPageSize] = useState(30);
+  const [selectedFgPlanId, setSelectedFgPlanId] = useState("");
+  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [collapsedSectionIds, setCollapsedSectionIds] = useState(new Set());
+  const [expandedRowIds, setExpandedRowIds] = useState(new Set());
 
-  // 1. Fetch master plans from the dedicated dropdown-options endpoint.
-  const { data: plansData, isLoading: plansLoading } = useSWR(
-    "/api/production-planning/master-plan-options",
-    fetcher,
-    { revalidateOnFocus: false }
-  );
-
-  // Normalize the dedicated API response for the dropdown.
-  const masterPlans = useMemo(() => {
-    return normalizePlanningMasterPlanOptions(plansData?.data);
-  }, [plansData]);
-
-  // Set default Master Plan to the latest one on load
-  useEffect(() => {
-    if (masterPlans.length > 0 && !selectedMasterPlanNo) {
-      const latest = masterPlans[0];
-      setSelectedMasterPlanNo(latest.masterPlanNo);
-      setDateFrom(latest.periodStart);
-      setDateTo(latest.periodEnd);
-    }
-  }, [masterPlans, selectedMasterPlanNo]);
-
-  // Handle Master Plan dropdown change
-  const handleMasterPlanChange = (masterPlanNo) => {
-    const found = masterPlans.find((p) => p.masterPlanNo === masterPlanNo);
-    if (found) {
-      setSelectedMasterPlanNo(masterPlanNo);
-      setDateFrom(found.periodStart);
-      setDateTo(found.periodEnd);
-    }
-  };
-
-  // 2. Fetch assigned departments
-  const { data: deptsData, isLoading: deptsLoading } = useSWR(
-    "/api/production-planning/departments?scope=assigned",
-    fetcher,
-    { revalidateOnFocus: false }
-  );
-  const departments = useMemo(() => {
-    const list = deptsData?.data || [];
-    // Exclude central department for operations planning tabs
-    return list.filter(
-      (d) =>
-        !d.is_central_department &&
-        !String(d.code).includes("CENTER") &&
-        !String(d.name).includes("กลาง")
-    );
-  }, [deptsData]);
-
-  // Set default department tab
-  useEffect(() => {
-    if (departments.length > 0 && !activeDeptId) {
-      setActiveDeptId(departments[0].id);
-    }
-    setActiveSection(null);
-  }, [departments, activeDeptId]);
-
-  // 3. Fetch WIP subplan draft lines for selected Master Plan & active Department
-  const draftUrl = useMemo(() => {
-    if (!selectedMasterPlanNo || !activeDeptId) return null;
-    return `/api/production-planning/wip-plan/draft?masterPlanNo=${encodeURIComponent(
-      selectedMasterPlanNo
-    )}&departmentId=${encodeURIComponent(activeDeptId)}`;
-  }, [selectedMasterPlanNo, activeDeptId]);
-
-  const {
-    data: draftPayload,
-    isLoading: draftLoading,
-    mutate: mutateDraft,
-  } = useSWR(draftUrl, fetcher, { revalidateOnFocus: false });
-
-  const draftLinesData = useMemo(() => draftPayload?.data?.lines || [], [draftPayload]);
-  const isLocked = Boolean(draftPayload?.meta?.subplanLocked);
-  const existingSubplan = draftPayload?.meta?.existingSubplan || null;
-
-  // Initialize draft lines local state
-  useEffect(() => {
-    if (draftLinesData) {
-      setDraftLines(
-        draftLinesData.map((line) => ({
-          ...line,
-          tempId: line.id || `line-${Date.now()}-${Math.random()}`,
-        }))
-      );
-      // Open all accordions by default on load
-      const sectionsMap = {};
-      draftLinesData.forEach((line) => {
-        const secName = line.sourceSectionName || "แผนกย่อยหลัก";
-        sectionsMap[secName] = true;
-      });
-      setOpenSections(sectionsMap);
-    }
-  }, [draftLinesData]);
-
-  // 4. Fetch the computed WIP shortages and suggestions (preview)
-  const [previewData, setPreviewData] = useState(null);
-  const loadPreviewData = useCallback(async () => {
-    if (!selectedMasterPlanNo || !activeDeptId) return;
-    try {
-      const res = await fetchJson("/api/production-planning/explosion/preview", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          masterPlanNo: selectedMasterPlanNo,
-          departmentId: activeDeptId,
-          wipDraftLines: [],
-        }),
-      });
-      if (res.ok) {
-        setPreviewData(res.data?.data || null);
-      }
-    } catch (e) {
-      console.warn("Failed to load explosion preview", e);
-    }
-  }, [selectedMasterPlanNo, activeDeptId]);
+  const { data: plansPayload, isLoading: plansLoading, error: plansError, mutate: reloadPlans } = useSWR("/api/production-planning/master-plan-options", fetcher, { revalidateOnFocus: false });
+  const plans = useMemo(() => normalizePlanningMasterPlanOptions(plansPayload?.data), [plansPayload]);
+  const selectedPlan = useMemo(() => plans.find((plan) => plan.masterPlanNo === masterPlanNo) || null, [plans, masterPlanNo]);
+  const dates = useMemo(() => weekDates(selectedPlan?.periodStart, selectedPlan?.periodEnd), [selectedPlan]);
 
   useEffect(() => {
-    loadPreviewData();
-  }, [loadPreviewData]);
+    if (!masterPlanNo && plans.length) setMasterPlanNo(plans[0].masterPlanNo);
+  }, [masterPlanNo, plans]);
 
+  const { data: departmentsPayload } = useSWR("/api/production-planning/departments?scope=assigned", fetcher, { revalidateOnFocus: false });
+  const departments = useMemo(() => (departmentsPayload?.data || []).filter((row) => !row.is_central_department), [departmentsPayload]);
 
-  // 5. Fetch shifts for the selected department
-  const sectionShiftKey = activeDeptId
-    ? `/api/production-section-shifts?departmentId=${encodeURIComponent(activeDeptId)}`
+  useEffect(() => {
+    if (!departmentId && departments.length) setDepartmentId(departments[0].id);
+  }, [departmentId, departments]);
+
+  const statusUrl = selectedPlan ? `/api/production-planning/status?periodStart=${selectedPlan.periodStart}&periodEnd=${selectedPlan.periodEnd}` : null;
+  const { data: statusPayload, isLoading: statusLoading, mutate: mutateStatus } = useSWR(statusUrl, fetcher, { revalidateOnFocus: false });
+  const inboxUrl = selectedPlan
+    ? `schedule-bundle:${masterPlanNo}:${selectedPlan.periodStart}:${selectedPlan.periodEnd}`
     : null;
-  const { data: sectionShiftsData } = useSWR(sectionShiftKey, fetcher, {
-    revalidateOnFocus: false,
-  });
+  const { data: inboxPayload, isLoading: inboxLoading, mutate: mutateInbox } = useSWR(inboxUrl, async () => {
+    const plansResult = await fetchJson(
+      `/api/production-planning/schedule/plans?masterPlanNo=${encodeURIComponent(masterPlanNo)}`
+    );
+    if (!plansResult.ok) throw new Error(plansResult.error?.message || "โหลดแผนหลักไม่สำเร็จ");
+    const matched = (plansResult.data?.data || []).filter((plan) => normalizePlanNo({ master_plan_no: plan.master_plan_no }) === masterPlanNo);
+    return Promise.all(matched.map(async (plan) => {
+      const detailResult = await fetchJson(`/api/production-planning/schedule/plans/${plan.id}`);
+      if (!detailResult.ok) throw new Error(detailResult.error?.message || "โหลดรายการแผนหลักไม่สำเร็จ");
+      return {
+        id: plan.id,
+        deptId: plan.dept_id,
+        templateId: plan.template_id,
+        masterPlanNo: plan.master_plan_no,
+        weekStartDate: plan.week_start_date,
+        periodEnd: plan.period_end,
+        status: plan.status,
+        canEdit: true,
+        rows: detailResult.data?.data?.rows || [],
+      };
+    }));
+  }, { revalidateOnFocus: false });
+  const schedulePlans = useMemo(() => (inboxPayload || []).filter((plan) => (
+    departments.some((department) => String(department.id) === String(plan.deptId))
+  )), [departments, inboxPayload]);
+  const allPlanRows = useMemo(() => (statusPayload?.data || []).filter((row) => normalizePlanNo(row) === masterPlanNo), [masterPlanNo, statusPayload]);
+  const departmentCounts = useMemo(() => {
+    const counts = new Map();
+    schedulePlans.forEach((plan) => {
+      const id = String(plan?.deptId || "");
+      const current = counts.get(id) || { fg: 0, wip: 0 };
+      current.fg += Number(plan?.visibleRows ?? plan?.rows?.length ?? 0) || 0;
+      counts.set(id, current);
+    });
+    allPlanRows.forEach((row) => {
+      const id = String(row?.owner_department_id || "");
+      const current = counts.get(id) || { fg: 0, wip: 0 };
+      if (String(row?.category_name || "").trim().toUpperCase() === "WIP") current.wip += 1;
+      else current.fg += 1;
+      counts.set(id, current);
+    });
+    return counts;
+  }, [allPlanRows, schedulePlans]);
+  const visibleDepartments = useMemo(() => {
+    if (!allPlanRows.length && !schedulePlans.length) return departments;
+    return departments.filter((department) => {
+      const count = departmentCounts.get(String(department.id));
+      return Boolean(count && (count.fg || count.wip));
+    });
+  }, [allPlanRows.length, departmentCounts, departments, schedulePlans.length]);
+  useEffect(() => {
+    if (visibleDepartments.length && !visibleDepartments.some((row) => row.id === departmentId)) {
+      setDepartmentId(visibleDepartments[0].id);
+    }
+  }, [departmentId, visibleDepartments]);
+  const activeSchedulePlan = useMemo(() => schedulePlans.find((plan) => (
+    String(plan?.deptId || "") === String(departmentId)
+  )) || null, [departmentId, schedulePlans]);
 
-  const sectionOptions = useMemo(() => sectionShiftsData?.sections || [], [sectionShiftsData]);
+  const draftUrl = masterPlanNo && departmentId
+    ? `/api/production-planning/wip-plan/draft?masterPlanNo=${encodeURIComponent(masterPlanNo)}&departmentId=${encodeURIComponent(departmentId)}&includeWeight=1`
+    : null;
+  const { data: draftPayload, isLoading: draftLoading, mutate: mutateDraft } = useSWR(draftUrl, fetcher, { revalidateOnFocus: false });
+  useEffect(() => {
+    setWipLines((draftPayload?.data?.lines || []).map((line) => ({ ...line })));
+    setWipDirty(false);
+  }, [draftPayload]);
+
+  const sectionUrl = departmentId ? `/api/production-section-shifts?departmentId=${encodeURIComponent(departmentId)}` : null;
+  const { data: sectionPayload } = useSWR(sectionUrl, fetcher, { revalidateOnFocus: false });
+  const sections = useMemo(() => sectionPayload?.sections || [], [sectionPayload]);
+  const masterShifts = useMemo(() => sectionPayload?.masterShifts || [], [sectionPayload]);
+
+  const { data: productionShiftsPayload } = useSWR("/api/production-shifts", fetcher, { revalidateOnFocus: false });
+  const settingShifts = useMemo(() => {
+    return (productionShiftsPayload?.data || []).filter((s) => s.isActive !== false);
+  }, [productionShiftsPayload]);
+  const { mutate: mutateCache } = useSWRConfig();
+
+  const workCentersUrl = departmentId ? `/api/production-work-centers?departmentId=${encodeURIComponent(departmentId)}` : null;
+  const { data: workCentersPayload } = useSWR(workCentersUrl, fetcher, { revalidateOnFocus: false });
+  const plannableWorkCenters = useMemo(() => {
+    return (workCentersPayload?.data || []).filter((wc) => wc.requires_planning && wc.is_active);
+  }, [workCentersPayload]);
+
+  const templateId = activeSchedulePlan?.templateId || null;
+  const { data: templatePayload } = useSWR(
+    templateId ? `/api/production-planning/schedule/templates/${templateId}` : null,
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+  const activeTemplate = templatePayload?.data || null;
+  const templateSections = useMemo(() => activeTemplate?.sections || [], [activeTemplate]);
+
+  const { data: catalogPayload } = useSWR("/api/production-planning/schedule/sku-catalog", fetcher, { revalidateOnFocus: false });
+  const allFgCatalog = useMemo(() => (catalogPayload?.data || []).filter((item) => item.itemType === "FG"), [catalogPayload]);
+  const fgCatalog = useMemo(() => allFgCatalog.filter((item) => item.hasBom), [allFgCatalog]);
+  const { data: wipPayload } = useSWR("/api/production-planning/wip-products?limit=2000", fetcher, { revalidateOnFocus: false });
+  const wipCatalog = useMemo(() => wipPayload?.data || [], [wipPayload]);
+
+  // ดึงสินค้าที่กำหนดให้แผนกนี้ (ใช้ filter ใน dialog เพิ่มสินค้า)
+  const deptProductsUrl = departmentId ? `/api/production-planning/department-sku-list?departmentId=${encodeURIComponent(departmentId)}` : null;
+  const { data: deptProductsPayload } = useSWR(deptProductsUrl, fetcher, { revalidateOnFocus: false });
+  const deptSkuSet = useMemo(() => {
+    const rows = deptProductsPayload?.data || [];
+    if (!rows.length) return null; // ยังไม่โหลด หรือแผนกไม่ได้กำหนดสินค้า → แสดงทั้งหมด
+    return new Set(rows.map((row) => String(row.sku_code || "").trim().toUpperCase()).filter(Boolean));
+  }, [deptProductsPayload]);
+
+  const addProductsFiltered = useMemo(() => {
+    const base = addMode === "fg" ? allFgCatalog : wipCatalog;
+    const filtered = filterPlanningProducts(base, addProductSearch, { requireBom: addMode === "fg" });
+    // ถ้าไม่ได้กำลังค้นหาและแผนกมีสินค้ากำหนด → แสดงเฉพาะของแผนกก่อน
+    if (deptSkuSet && !addProductSearch.trim()) {
+      const deptItems = filtered.filter((item) => deptSkuSet.has(String(item.skuCode || "").toUpperCase()));
+      if (deptItems.length) return deptItems;
+    }
+    return filtered;
+  }, [addMode, addProductSearch, allFgCatalog, wipCatalog, deptSkuSet]);
+
+  const addProducts = useMemo(
+    () => addProductsFiltered.slice(0, addPageSize),
+    [addProductsFiltered, addPageSize]
+  );
+  const addProductsHasMore = addProducts.length < addProductsFiltered.length;
+  const sourceFgRows = useMemo(() => {
+    const sectionById = new Map(sections.map((section) => [String(section.id), section.name]));
+    const editableIds = statusPayload?.meta?.editableDepartmentIds || [];
+    const canEditDepartment = Boolean(
+      statusPayload?.meta?.isAdmin
+      || statusPayload?.meta?.canManageGlobal
+      || editableIds.includes(departmentId)
+    );
+    return normalizeScheduleRows(activeSchedulePlan, allFgCatalog).map((row) => ({
+      ...row,
+      can_edit: row.can_edit && canEditDepartment,
+      schedule_section_name: row.schedule_section_name || sectionById.get(String(row.schedule_section_def_id)) || "ยังไม่กำหนด Section",
+    }));
+  }, [activeSchedulePlan, allFgCatalog, departmentId, sections, statusPayload]);
 
   useEffect(() => {
-    if (sectionOptions.length > 0 && !activeSection) {
-      setActiveSection(sectionOptions[0]);
+    setFgRows(sourceFgRows.map((row) => ({ ...row })));
+    setDirtyFgIds(new Set());
+    setDeletedFgIds(new Set());
+    setNewFgRows([]);
+  }, [sourceFgRows]);
+
+  const fgSections = useMemo(() => {
+    const list = templateSections.length ? templateSections : sections;
+    return list.map((sec) => {
+      const secId = String(sec.id || "");
+      const count = fgRows.filter((r) => !deletedFgIds.has(r.plan_id) && String(r.schedule_section_def_id) === secId).length;
+      return {
+        id: secId,
+        name: sec.name || "Section",
+        count,
+        production_schedule_column_defs: sec.production_schedule_column_defs || [],
+      };
+    });
+  }, [templateSections, sections, fgRows, deletedFgIds]);
+
+  const [selectedSectionDefId, setSelectedSectionDefId] = useState("");
+
+  useEffect(() => {
+    if (!fgSections.length) {
+      setSelectedSectionDefId("");
+      return;
     }
-  }, [sectionOptions, activeSection]);
-
-  const availableShifts = useMemo(() => {
-    const list = [];
-    const sections = sectionShiftsData?.sections || [];
-    sections.forEach((sec) => {
-      const shifts = sec.shifts || [];
-      shifts.forEach((sh) => {
-        if (!list.some((s) => s.shiftCode === sh.shiftCode)) {
-          list.push(sh);
-        }
-      });
-    });
-    // Fallbacks if no shifts configured
-    if (list.length === 0) {
-      list.push(
-        { shiftId: "S1", shiftCode: "A", shiftName: "กะเช้า" },
-        { shiftId: "S2", shiftCode: "B", shiftName: "กะบ่าย" }
-      );
+    if (!selectedSectionDefId || !fgSections.some((s) => s.id === selectedSectionDefId)) {
+      const firstWithItems = fgSections.find((s) => s.count > 0);
+      setSelectedSectionDefId(firstWithItems ? firstWithItems.id : fgSections[0].id);
     }
-    return list;
-  }, [sectionShiftsData]);
+  }, [fgSections, selectedSectionDefId]);
 
-  const getShiftsForSection = useCallback((sectionId) => {
-    const section = sectionOptions.find((item) => String(item.id) === String(sectionId));
-    return section?.shifts?.length ? section.shifts : availableShifts;
-  }, [sectionOptions, availableShifts]);
+  const currentSection = useMemo(() => {
+    return fgSections.find((s) => s.id === selectedSectionDefId) || fgSections[0] || null;
+  }, [fgSections, selectedSectionDefId]);
 
-  // 6. Fetch all WIP SKUs from SKU catalog
-  const { data: skuCatalogData } = useSWR(
-    "/api/production-planning/schedule/sku-catalog",
-    fetcher,
-    { revalidateOnFocus: false }
-  );
-
-  const wipSkuCatalog = useMemo(() => {
-    const items = skuCatalogData?.data || [];
-    return items.filter(
-      (item) =>
-        String(item?.iccat_code || "").trim() === "03" ||
-        String(item?.sku_code || "").startsWith("WIP")
-    );
-  }, [skuCatalogData]);
-
-  // 7. Fetch all WIP products with limits to get batch size conversion factors
-  const { data: wipProductsData } = useSWR(
-    "/api/production-planning/wip-products?limit=1000",
-    fetcher,
-    { revalidateOnFocus: false }
-  );
-  const wipProducts = useMemo(() => wipProductsData?.data || [], [wipProductsData]);
-
-  const wipCatalogMetaBySku = useMemo(() => {
-    const map = new Map();
-    wipProducts.forEach((row) => {
-      const skuCode = String(row?.skuCode || row?.sku_code || "").trim().toUpperCase();
-      if (!skuCode) return;
-      const unitsPerBatch = Number(row?.unitsPerBatch ?? row?.units_per_batch ?? 0);
-      const batchMode = String(row?.wipQtyInputMode || row?.wip_qty_input_mode || "").trim().toLowerCase() === "batch";
-      map.set(skuCode, {
-        factor: batchMode && unitsPerBatch > 0 ? unitsPerBatch : 1,
-        displayUnit: String(row?.uomName || row?.uom_name || row?.uom || "").trim() || "kg",
-        planningUnit: batchMode ? "ชุด" : (String(row?.uomName || row?.uom_name || row?.uom || "").trim() || "kg"),
-      });
-    });
-    return map;
-  }, [wipProducts]);
-
-  const getWipMeta = useCallback((skuCode) => {
-    const code = String(skuCode || "").trim().toUpperCase();
-    const meta = wipCatalogMetaBySku.get(code);
-    if (meta) return meta;
-    return {
-      factor: 1,
-      displayUnit: "kg",
-      planningUnit: "kg",
-    };
-  }, [wipCatalogMetaBySku]);
-
-  // Group WIP local draft lines by sourceSectionName
-  const groupedWipSections = useMemo(() => {
-    const map = new Map();
-    draftLines.forEach((line) => {
-      const secName = line.sourceSectionName || "แผนกย่อยหลัก";
-      if (!map.has(secName)) map.set(secName, []);
-      map.get(secName).push(line);
-    });
-    return Array.from(map.entries()).map(([name, rows]) => ({ name, rows }));
-  }, [draftLines]);
-
-  // Filter or pre-populate grouped WIP sections based on active section from Weekly Matrix
-  const displayedGroupedWipSections = useMemo(() => {
-    if (!activeSection) return groupedWipSections;
-
-    const activeSecName = String(activeSection.name || "").trim().toLowerCase();
-    const matched = groupedWipSections.filter(
-      (g) => String(g.name || "").trim().toLowerCase() === activeSecName
-    );
-
-    if (matched.length > 0) return matched;
-
-    // If no draft lines exist for this section yet, we can return an empty group for it so the user can add rows!
-    return [{ name: activeSection.name, rows: [] }];
-  }, [groupedWipSections, activeSection]);
-
-  // Toggle Accordion section
-  const toggleSection = (sectionName) => {
-    setOpenSections((prev) => ({
-      ...prev,
-      [sectionName]: !prev[sectionName],
+  useEffect(() => {
+    const firstEditableDate = dates.find((date) => isPlanningDateEditable(date, today)) || "";
+    setAddFg((current) => ({ ...current, workDate: firstEditableDate, sectionId: selectedSectionDefId || sections[0]?.id || "" }));
+    setAddWip((current) => ({
+      ...current,
+      workDate: firstEditableDate,
+      sectionId: plannableWorkCenters[0]?.id || sections[0]?.id || "",
     }));
-  };
+    setSectionFilter("");
+  }, [dates, sections, selectedSectionDefId, plannableWorkCenters, today]);
 
-  // Inline inputs change handlers
-  const handleLineChange = (tempId, field, value) => {
-    setDraftLines((prev) =>
-      prev.map((line) => {
-        if (line.tempId !== tempId) return line;
+  const visibleFgRows = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return [...fgRows, ...newFgRows].filter((row) => {
+      if (deletedFgIds.has(row.plan_id)) return false;
+      if (!term) return true;
+      const rowDataStr = Object.values(row.row_data || {}).filter(Boolean).join(" ");
+      return `${row.sku_code} ${row.sku_name} ${rowDataStr}`.toLowerCase().includes(term);
+    });
+  }, [deletedFgIds, fgRows, newFgRows, search]);
 
-        const updated = { ...line, [field]: value };
-        // Auto fill SKU name and unit if skuCode changed
-        if (field === "skuCode") {
-          const matchSku = wipSkuCatalog.find((sku) => sku.sku_code === value);
-          if (matchSku) {
-            updated.skuName = matchSku.sku_name || "";
-            updated.unit = matchSku.uom_name || matchSku.uom || "kg";
-          }
-        }
-        return updated;
-      })
-    );
-  };
+  const wipMatrix = useMemo(() => {
+    const groups = new Map();
+    wipLines.forEach((line) => {
+      const key = wipKey(line);
+      if (!groups.has(key)) {
+        groups.set(key, {
+          key,
+          skuCode: line.skuCode,
+          skuName: line.skuName,
+          unit: line.unit || line.planningUnit || "ชุด",
+          sourceSectionDefId: line.sourceSectionDefId || "",
+          sourceSectionName: line.sourceSectionName || "ยังไม่กำหนด Section",
+          shiftId: line.shiftId || null,
+          shiftCode: line.shiftCode || null,
+          shiftName: line.shiftName || null,
+          formulaCode: line.formulaCode || null,
+          bomVersionId: line.bomVersionId || null,
+          byDate: {},
+        });
+      }
+      groups.get(key).byDate[line.workDate] = Number(line.plannedQty || 0);
+    });
+    const term = search.trim().toLowerCase();
+    return Array.from(groups.values()).filter((row) => {
+      if (sectionFilter && row.sourceSectionDefId !== sectionFilter) return false;
+      return !term || `${row.skuCode} ${row.skuName}`.toLowerCase().includes(term);
+    });
+  }, [search, sectionFilter, wipLines]);
 
-  const handleSelectWipFromPicker = (selectedWip) => {
-    if (!wipPickerTempId) return;
-    setDraftLines((prev) =>
-      prev.map((line) => {
-        if (line.tempId !== wipPickerTempId) return line;
+  const updateFgQty = (planId, value, key = null) => {
+    const qty = Math.max(0, Number(value || 0));
+    if (String(planId).startsWith("NEW-")) {
+      setNewFgRows((rows) => rows.map((row) => {
+        if (row.plan_id !== planId) return row;
+        const qKey = key || row.qty_key || "qty";
         return {
-          ...line,
-          skuCode: selectedWip.skuCode,
-          skuName: selectedWip.name,
-          unit: selectedWip.unit || line.unit || "kg",
+          ...row,
+          planned_qty: qty,
+          qty_key: qKey,
+          row_data: { ...row.row_data, [qKey]: qty },
         };
-      })
-    );
-    setWipPickerTempId(null);
-  };
-
-  // Add new WIP line
-  const handleAddWipRow = (sectionName) => {
-    const targetSection = sectionOptions.find(
-      (section) => String(section.name || "").trim() === String(sectionName || "").trim()
-    ) || activeSection;
-    const sectionShifts = getShiftsForSection(targetSection?.id);
-    const defaultShift = sectionShifts[0] || {};
-    const matchedSecDefId =
-      targetSection && String(targetSection.name).trim().toLowerCase() === String(sectionName || "").trim().toLowerCase()
-        ? targetSection.id
-        : null;
-
-    const newRow = {
-      tempId: `line-${Date.now()}-${Math.random()}`,
-      workDate: dateFrom || new Date().toISOString().slice(0, 10),
-      skuCode: "",
-      skuName: "",
-      plannedQty: 0,
-      unit: "kg",
-      shiftId: defaultShift.shiftId || null,
-      shiftCode: defaultShift.shiftCode || "A",
-      shiftName: defaultShift.shiftName || "กะเช้า",
-      sourceSectionDefId: matchedSecDefId,
-      sourceSectionName: sectionName,
-      workstreamCode: null,
-      note: "",
-    };
-    setDraftLines((prev) => [...prev, newRow]);
-    setOpenSections((prev) => ({ ...prev, [sectionName]: true }));
-  };
-
-  // Remove WIP line
-  const handleRemoveWipRow = (tempId) => {
-    setDraftLines((prev) => prev.filter((line) => line.tempId !== tempId));
-  };
-
-  // Trigger reactive update (Preview recalculation & sync)
-  const triggerRecalculate = async () => {
-    if (!selectedMasterPlanNo || !activeDeptId) return;
-    setRecalculating(true);
-    setNotification({ type: "", text: "" });
-    try {
-      const linesPayload = draftLines
-        .filter((l) => l.skuCode && Number(l.plannedQty) > 0)
-        .map((l) => ({
-          workDate: l.workDate,
-          skuCode: l.skuCode,
-          plannedQty: Number(l.plannedQty),
-          unit: l.unit,
-          shiftId: l.shiftId,
-          shiftCode: l.shiftCode,
-          shiftName: l.shiftName,
-          sourceSectionDefId: l.sourceSectionDefId,
-          sourceSectionName: l.sourceSectionName,
-          note: l.note || "",
-        }));
-
-      const res = await fetchJson("/api/production-planning/explosion/preview", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          masterPlanNo: selectedMasterPlanNo,
-          departmentId: activeDeptId,
-          wipDraftLines: linesPayload,
-          ignorePersistedDraft: true,
-        }),
-      });
-
-      if (res.ok) {
-        setPreviewData(res.data?.data || null);
-        setNotification({ type: "success", text: "อัปเดตและคำนวณสูตรความต้องการวัตถุดิบเสร็จสิ้น" });
-      } else {
-        setNotification({ type: "error", text: res.error?.message || "คำนวณล้มเหลว" });
-      }
-    } catch (e) {
-      setNotification({ type: "error", text: e.message || "เกิดข้อผิดพลาดในการเชื่อมต่อ" });
-    } finally {
-      setRecalculating(false);
+      }));
+      return;
     }
+    setFgRows((rows) => rows.map((row) => {
+      if (row.plan_id !== planId) return row;
+      const qKey = key || row.qty_key || "qty";
+      return {
+        ...row,
+        planned_qty: qty,
+        qty_key: qKey,
+        row_data: { ...row.row_data, [qKey]: qty },
+      };
+    }));
+    setDirtyFgIds((ids) => new Set(ids).add(planId));
   };
 
-  // Save draft lines
-  const handleSaveWipSubplan = async () => {
-    if (!selectedMasterPlanNo || !activeDeptId) return;
+  const updateFgField = (planId, key, value, options = {}) => {
+    if (!key) return;
+    const update = (row) => row.plan_id === planId
+      ? updatePlanningRowField(row, key, value, options)
+      : row;
+    if (String(planId).startsWith("NEW-")) {
+      setNewFgRows((rows) => rows.map(update));
+      return;
+    }
+    setFgRows((rows) => rows.map(update));
+    setDirtyFgIds((ids) => new Set(ids).add(planId));
+  };
+
+  const updateFgProduct = (row, skuCode) => {
+    const product = fgCatalog.find((item) => item.skuCode === skuCode);
+    if (!product) return;
+    const section = (templateSections.length ? templateSections : sections).find(
+      (item) => String(item.id) === String(row.schedule_section_def_id)
+    );
+    const columns = section?.production_schedule_column_defs || [];
+    const productColumn = columns.find((column) => column.col_type === "sku_picker");
+    const brandColumn = columns.find((column) => column.col_type === "brand_auto");
+    const update = (item) => item.plan_id === row.plan_id
+      ? applyPlanningProductSelection(item, product, {
+        productKey: productColumn?.key || item.detected_keys?.skuKeys?.[0] || "skuName",
+        brandKey: productColumn?.auto_fill_field || brandColumn?.key || null,
+      })
+      : item;
+    if (String(row.plan_id).startsWith("NEW-")) {
+      setNewFgRows((rows) => rows.map(update));
+      return;
+    }
+    setFgRows((rows) => rows.map(update));
+    setDirtyFgIds((ids) => new Set(ids).add(row.plan_id));
+  };
+
+  const removeFg = (row) => {
+    if (String(row.plan_id).startsWith("NEW-")) {
+      setNewFgRows((rows) => rows.filter((item) => item.plan_id !== row.plan_id));
+      return;
+    }
+    setDeletedFgIds((ids) => new Set(ids).add(row.plan_id));
+  };
+
+  const addFgRow = (selection = null, selectedDate = null, chosenFormula = null) => {
+    const targetSectionId = selection?.skuCode ? selectedSectionDefId : addFg.sectionId || selectedSectionDefId;
+    const product = selection?.skuCode ? selection : fgCatalog.find((item) => item.skuCode === addFg.skuCode);
+    const section = sectionDefinitions.find((item) => String(item.id) === String(targetSectionId)) || currentSection;
+    const shift = buildPlanningShiftOptions(section?.shifts || [], settingShifts.length ? settingShifts : masterShifts)[0] || null;
+    const columns = section?.production_schedule_column_defs || [];
+    const productColumn = columns.find((column) => column.col_type === "sku_picker");
+    const brandColumn = columns.find((column) => column.col_type === "brand_auto");
+    const qtyColumn = columns.find((column) => isQuantityColumn(column));
+    const peopleColumn = columns.find((column) => isPeopleColumn(column));
+    const shiftColumn = columns.find((column) => column.col_type === "shift" || /shift|กะ/i.test(column.label || column.key));
+    const skuKey = productColumn?.key || "skuName";
+    const qtyKey = qtyColumn?.key || "qty";
+    const workDate = selectedDate || addFg.workDate;
+    if (!canEditFgDepartment || !product || !targetSectionId || !workDate || !isPlanningDateEditable(workDate, today)) return;
+    const plannedQty = Math.max(0, Number(addFg.plannedQty || 0));
+    const newId = `NEW-${Date.now()}`;
+    const rowData = {
+      [qtyKey]: plannedQty,
+      ...(peopleColumn?.key ? { [peopleColumn.key]: Math.max(0, Number(addFg.people || 0)) } : {}),
+      ...(shift ? { shiftName: shift.name, shiftCode: shift.code, shiftId: shift.id } : {}),
+      ...(shiftColumn && shift ? { [shiftColumn.key]: shift.label } : {}),
+    };
+    const newRow = applyPlanningProductSelection({
+      plan_id: newId,
+      schedule_plan_id: activeSchedulePlan?.id || "",
+      period_start: workDate,
+      schedule_section_def_id: targetSectionId,
+      schedule_section_name: section?.name || currentSection?.name || "ยังไม่กำหนด Section",
+      sku_code: product.skuCode,
+      sku_name: product.name,
+      planned_qty: plannedQty,
+      unit: product.unit || "",
+      shift_id: shift?.id || null,
+      shift_code: shift?.code || null,
+      shift_name: shift?.name || "",
+      can_edit: true,
+      row_data: rowData,
+      detected_keys: { skuKeys: [skuKey], qtyKey },
+      qty_key: qtyKey,
+      day_key: workDate,
+    }, product, {
+      productKey: skuKey,
+      brandKey: productColumn?.auto_fill_field || brandColumn?.key || null,
+    });
+    if (chosenFormula) newRow.row_data = { ...newRow.row_data, formulaCode: chosenFormula.formula_code, formulaName: chosenFormula.formula_name, bomVersionId: chosenFormula.bom_version_id, formula_code: chosenFormula.formula_code, formula_name: chosenFormula.formula_name, bom_version_id: chosenFormula.bom_version_id };
+    setNewFgRows((rows) => [...rows, newRow]);
+    setSelectedFgPlanId(newId);
+    setInspectorOpen(true);
+    setAddDialogOpen(false);
+    setAddFg((current) => ({ ...current, skuCode: "", people: 0, plannedQty: 1 }));
+  };
+
+  const setWipQty = (row, workDate, value) => {
+    if (!isPlanningDateEditable(workDate, today)) return;
+    const qty = Math.max(0, Number(value || 0));
+    setWipLines((lines) => {
+      const same = (line) => wipKey(line) === row.key && line.workDate === workDate;
+      if (!qty) return lines.filter((line) => !same(line));
+      if (lines.some(same)) return lines.map((line) => same(line) ? { ...line, plannedQty: qty } : line);
+      return [...lines, {
+        workDate,
+        skuCode: row.skuCode,
+        skuName: row.skuName,
+        plannedQty: qty,
+        unit: row.unit,
+        departmentId,
+        shiftId: row.shiftId,
+        shiftCode: row.shiftCode,
+        shiftName: row.shiftName,
+        formulaCode: row.formulaCode,
+        bomVersionId: row.bomVersionId,
+        sourceSectionDefId: row.sourceSectionDefId,
+        sourceSectionName: row.sourceSectionName,
+      }];
+    });
+    setWipDirty(true);
+  };
+
+  const addWipRow = () => {
+    const product = wipCatalog.find((item) => item.skuCode === addWip.skuCode);
+    const targetRoomOrSection =
+      plannableWorkCenters.find((item) => item.id === addWip.sectionId)
+      || sections.find((item) => item.id === addWip.sectionId)
+      || plannableWorkCenters[0]
+      || sections[0];
+    const shift = sections.find((item) => item.id === addWip.sectionId)?.shifts?.[0] || null;
+    if (!product || !targetRoomOrSection || !addWip.workDate || !isPlanningDateEditable(addWip.workDate, today)) return;
+    const formula = product.formulaOptions?.[0] || null;
+    setWipLines((lines) => [...lines, {
+      workDate: addWip.workDate,
+      skuCode: product.skuCode,
+      skuName: product.skuName,
+      plannedQty: Math.max(0, Number(addWip.plannedQty || 0)),
+      unit: product.wipQtyInputMode === "batch" ? "batch" : product.uomName,
+      departmentId,
+      shiftId: shift?.shiftId || null,
+      shiftCode: shift?.shiftCode || null,
+      shiftName: shift?.shiftName || null,
+      formulaCode: formula?.formula_code || null,
+      bomVersionId: formula?.bom_version_id || null,
+      sourceSectionDefId: targetRoomOrSection.id,
+      sourceSectionName: targetRoomOrSection.name,
+    }]);
+    setWipDirty(true);
+    setAddDialogOpen(false);
+    setAddWip((current) => ({ ...current, skuCode: "", plannedQty: 1 }));
+  };
+
+  const duplicateFgRow = (row) => {
+    if (!isPlanningDateEditable(row.period_start, today)) return;
+    const newId = `NEW-${Date.now()}`;
+    const cloned = {
+      ...row,
+      plan_id: newId,
+      row_data: { ...(row.row_data || {}) },
+    };
+    setNewFgRows((rows) => [...rows, cloned]);
+    setExpandedRowIds((prev) => new Set(prev).add(newId));
+  };
+
+  const removeWipRow = (row) => {
+    setWipLines((lines) => lines.filter((line) => wipKey(line) !== row.key || !isPlanningDateEditable(line.workDate, today)));
+    setWipDirty(true);
+  };
+
+  const duplicateWipRow = (line) => {
+    if (!isPlanningDateEditable(line.workDate, today)) return;
+    const newWip = {
+      ...line,
+      id: `NEW-WIP-${Date.now()}`,
+      planId: `NEW-WIP-${Date.now()}`,
+    };
+    setWipLines((lines) => [...lines, newWip]);
+    setWipDirty(true);
+  };
+
+  const saveAll = async () => {
+    if (!masterPlanNo || !departmentId || saving) return;
     setSaving(true);
-    setNotification({ type: "", text: "" });
+    setNotice(null);
     try {
-      const lines = draftLines
-        .filter((l) => l.skuCode && Number(l.plannedQty) > 0)
-        .map((l) => ({
-          workDate: l.workDate,
-          skuCode: l.skuCode,
-          plannedQty: Number(l.plannedQty),
-          unit: l.unit,
-          shiftId: l.shiftId,
-          shiftCode: l.shiftCode,
-          shiftName: l.shiftName,
-          sourceSectionDefId: l.sourceSectionDefId,
-          sourceSectionName: l.sourceSectionName,
-          note: l.note || "",
-        }));
-
-      const res = await fetchJson("/api/production-planning/wip-plan/draft", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          masterPlanNo: selectedMasterPlanNo,
-          departmentId: activeDeptId,
-          lines,
-        }),
-      });
-
-      if (res.ok) {
-        setNotification({ type: "success", text: "บันทึกข้อมูลร่างแผนย่อย WIP และระเบิดความต้องการวัตถุดิบเรียบร้อยแล้ว" });
-        await mutateDraft();
-        await loadPreviewData();
-      } else {
-        setNotification({ type: "error", text: res.error?.message || "ไม่สามารถบันทึกได้" });
+      const deleted = Array.from(deletedFgIds);
+      const changedPlanIds = [...fgRows.filter((row) => dirtyFgIds.has(row.plan_id) || deletedFgIds.has(row.plan_id)), ...newFgRows]
+        .map((row) => row.schedule_plan_id);
+      for (const rowId of deleted) {
+        const result = await fetchJson(`/api/production-planning/schedule/rows/${rowId}`, jsonRequest({ editableFromDate: today }, "DELETE"));
+        if (!result.ok) throw new Error(result.error?.message || "ลบแผนหลักไม่สำเร็จ");
       }
-    } catch (e) {
-      setNotification({ type: "error", text: e.message || "เกิดข้อผิดพลาดในการเชื่อมต่อ" });
+      for (const row of fgRows.filter((item) => dirtyFgIds.has(item.plan_id) && !deletedFgIds.has(item.plan_id))) {
+        if (!row.qty_key) throw new Error(`ไม่พบคอลัมน์จำนวนของ ${row.sku_code}`);
+        const result = await fetchJson(`/api/production-planning/schedule/rows/${row.plan_id}`, jsonRequest({
+          rowData: { ...row.row_data, [row.qty_key]: row.planned_qty },
+          editableFromDate: today,
+        }, "PUT"));
+        if (!result.ok) throw new Error(result.error?.message || `แก้ไข ${row.sku_code} ไม่สำเร็จ`);
+      }
+      for (const row of newFgRows) {
+        const result = await fetchJson(`/api/production-planning/schedule/plans/${row.schedule_plan_id}/rows`, jsonRequest({
+          sectionDefId: row.schedule_section_def_id,
+          dayKey: row.day_key,
+          rowData: { ...row.row_data, [row.qty_key]: row.planned_qty },
+          editableFromDate: today,
+        }));
+        if (!result.ok) throw new Error(result.error?.message || "เพิ่มสินค้าในแผนหลักไม่สำเร็จ");
+      }
+      if (wipDirty) {
+        const editableLines = wipLines.filter((line) => isPlanningDateEditable(line.workDate, today) && Number(line.plannedQty) > 0).map((line) => ({
+          workDate: line.workDate,
+          skuCode: line.skuCode,
+          skuName: line.skuName,
+          plannedQty: Number(line.plannedQty),
+          unit: line.unit,
+          shiftId: line.shiftId,
+          shiftCode: line.shiftCode,
+          shiftName: line.shiftName,
+          formulaCode: line.formulaCode,
+          bomVersionId: line.bomVersionId,
+          sourceSectionDefId: line.sourceSectionDefId,
+          sourceSectionName: line.sourceSectionName,
+        }));
+        const draftResult = await fetchJson("/api/production-planning/wip-plan/draft", jsonRequest({ masterPlanNo, departmentId, lines: editableLines, replaceFromDate: today }));
+        if (!draftResult.ok) throw new Error(draftResult.error?.message || "บันทึกแผน WIP ไม่สำเร็จ");
+        const confirmResult = await fetchJson("/api/production-planning/subplan/confirm", jsonRequest({ masterPlanNo, departmentId, allowEmptyConfirm: true }));
+        if (!confirmResult.ok) throw new Error(confirmResult.error?.message || "สร้าง BOM Snapshot ของ WIP ไม่สำเร็จ");
+      }
+      await publishAdjustedSchedulePlans(changedPlanIds, (id) => fetchJson(
+        `/api/production-planning/schedule/plans/${id}`, jsonRequest({ status: "published" }, "PUT")
+      ));
+      await Promise.all([mutateStatus(), mutateDraft(), mutateInbox(), mutateCache(
+        (key) => typeof key === "string" && key.startsWith("/api/production-planning/requisition/")
+          && key.includes(`masterPlanNo=${encodeURIComponent(masterPlanNo)}`),
+        undefined, { revalidate: true }
+      )]);
+      setNotice({ type: "success", text: "บันทึกแผน FG/WIP และอัปเดตข้อมูลสำหรับ Preview เรียบร้อยแล้ว" });
+    } catch (error) {
+      setNotice({ type: "error", text: error.message || "บันทึกไม่สำเร็จ" });
     } finally {
       setSaving(false);
     }
   };
 
-  // Confirm subplan (locks editing)
-  const handleConfirmSubplan = async () => {
-    if (!selectedMasterPlanNo || !activeDeptId) return;
-    if (
-      !window.confirm(
-        "คุณต้องการยืนยันแผนย่อย WIP นี้ใช่หรือไม่? การยืนยันนี้จะทำเอกสารเบิกจ่ายวัตถุดิบและระบบจะล็อกการปรับตัวเลขแผนนี้ถาวร"
-      )
-    ) {
-      return;
-    }
+  const activeDepartment = departments.find((row) => row.id === departmentId) || null;
+  const dirtyCount = dirtyFgIds.size + deletedFgIds.size + newFgRows.length + (wipDirty ? 1 : 0);
+  const loading = plansLoading || statusLoading || inboxLoading || draftLoading;
+  const previewHref = selectedPlan
+    ? `/production-line/planning/requisition-preview?masterPlanNo=${encodeURIComponent(masterPlanNo)}&dateFrom=${selectedPlan.periodStart}&dateTo=${selectedPlan.periodEnd}`
+    : "#";
+  const activeCounts = departmentCounts.get(String(departmentId)) || { fg: sourceFgRows.length, wip: wipLines.length };
+  const wipSectionSummary = useMemo(() => {
+    const groups = new Map();
+    wipLines.forEach((line) => {
+      const id = String(line.sourceSectionDefId || "");
+      const name = line.sourceSectionName || "ยังไม่กำหนด Section";
+      const current = groups.get(id) || { id, name, skus: new Set() };
+      current.skus.add(line.skuCode);
+      groups.set(id, current);
+    });
+    return Array.from(groups.values()).map((group) => ({ ...group, count: group.skus.size }));
+  }, [wipLines]);
+  const sectionDefinitions = useMemo(
+    () => (templateSections.length ? templateSections : sections),
+    [sections, templateSections]
+  );
+  const canEditFgDepartment = Boolean(statusPayload?.meta?.isAdmin || statusPayload?.meta?.canManageGlobal || (statusPayload?.meta?.editableDepartmentIds || []).includes(departmentId));
+  const canAddFg = canEditFgDepartment && Boolean(activeSchedulePlan?.id) && dates.some(date => isPlanningDateEditable(date, today));
+  const applySharedFgPatch = (id, patch) => {
+    const row = [...fgRows, ...newFgRows].find(item => item.plan_id === id);
+    if (!row || row.can_edit === false || !isPlanningDateEditable(row.period_start, today)) return;
+    const section = sectionDefinitions.find(item => String(item.id) === String(row.schedule_section_def_id));
+    const productColumn = (section?.production_schedule_column_defs || []).find(item => item.col_type === "sku_picker" && Object.hasOwn(patch, item.key));
+    const product = productColumn ? fgCatalog.find(item => item.name === patch[productColumn.key]) : null;
+    if (productColumn && !product) return;
+    const update = current => current.plan_id !== id ? current : {
+      ...current,
+      ...(product ? { sku_code: product.skuCode, sku_name: product.name, unit: product.unit || current.unit } : {}),
+      ...(Object.hasOwn(patch, current.qty_key) ? { planned_qty: Math.max(0, Number(patch[current.qty_key] || 0)) } : {}),
+      row_data: { ...current.row_data, ...patch },
+    };
+    if (String(id).startsWith("NEW-")) setNewFgRows(current => current.map(update));
+    else { setFgRows(current => current.map(update)); setDirtyFgIds(current => new Set(current).add(id)); }
+  };
+  const sectionViews = useMemo(() => buildPlanningSectionViews({
+    sections: sectionDefinitions,
+    rows: [...fgRows, ...newFgRows],
+    deletedIds: deletedFgIds,
+    search,
+  }), [deletedFgIds, fgRows, newFgRows, search, sectionDefinitions]);
+  const selectedFgRow = useMemo(
+    () => visibleFgRows.find((row) => row.plan_id === selectedFgPlanId) || null,
+    [selectedFgPlanId, visibleFgRows]
+  );
+  const selectedSectionView = useMemo(
+    () => sectionViews.find((section) => section.id === String(selectedFgRow?.schedule_section_def_id || "")) || null,
+    [sectionViews, selectedFgRow]
+  );
+  const linkedWipLines = useMemo(
+    () => getLinkedPlanningWipLines(selectedFgRow, wipLines),
+    [selectedFgRow, wipLines]
+  );
 
-    setConfirming(true);
-    setNotification({ type: "", text: "" });
-    try {
-      // Step 1: Save current lines first
-      const lines = draftLines
-        .filter((l) => l.skuCode && Number(l.plannedQty) > 0)
-        .map((l) => ({
-          workDate: l.workDate,
-          skuCode: l.skuCode,
-          plannedQty: Number(l.plannedQty),
-          unit: l.unit,
-          shiftId: l.shiftId,
-          shiftCode: l.shiftCode,
-          shiftName: l.shiftName,
-          sourceSectionDefId: l.sourceSectionDefId,
-          sourceSectionName: l.sourceSectionName,
-          note: l.note || "",
-        }));
+  useEffect(() => {
+    if (!inspectorOpen || selectedFgRow || !visibleFgRows.length) return;
+    const firstEditable = visibleFgRows.find((row) => (
+      isPlanningDateEditable(row.period_start, today) && row.can_edit !== false
+    ));
+    setSelectedFgPlanId((firstEditable || visibleFgRows[0]).plan_id);
+  }, [inspectorOpen, selectedFgRow, today, visibleFgRows]);
 
-      await fetchJson("/api/production-planning/wip-plan/draft", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          masterPlanNo: selectedMasterPlanNo,
-          departmentId: activeDeptId,
-          lines,
-        }),
-      });
+  useEffect(() => {
+    const sectionIdsWithRows = new Set(sourceFgRows.map((row) => String(row.schedule_section_def_id || "")));
+    const prisonSectionIds = sectionDefinitions
+      .filter((section) => (
+        /เรือนจำ/.test(String(section?.name || ""))
+        || !sectionIdsWithRows.has(String(section.id))
+      ))
+      .map((section) => String(section.id));
+    setCollapsedSectionIds(new Set(prisonSectionIds));
+  }, [departmentId, sectionDefinitions, sourceFgRows]);
 
-      // Step 2: Call confirm subplan API
-      const res = await fetchJson("/api/production-planning/wip-plan/confirmed-subplans", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          masterPlanNo: selectedMasterPlanNo,
-          departmentId: activeDeptId,
-        }),
-      });
-
-      if (res.ok) {
-        setNotification({ type: "success", text: "ยืนยันแผนผลิตย่อยสำเร็จแล้ว ข้อมูลแผนถูกล็อกเพื่อเตรียมความพร้อมสำหรับขั้นตอนการเบิกวัตถุดิบถัดไป" });
-        await mutateDraft();
-        await loadPreviewData();
-      } else {
-        setNotification({ type: "error", text: res.error?.message || "การยืนยันล้มเหลว" });
-      }
-    } catch (e) {
-      setNotification({ type: "error", text: e.message || "เกิดข้อผิดพลาดในการเชื่อมต่อ" });
-    } finally {
-      setConfirming(false);
-    }
+  const selectFgRow = (row) => {
+    setSelectedFgPlanId(row.plan_id);
+    setInspectorOpen(true);
+    setSelectedSectionDefId(String(row.schedule_section_def_id || ""));
   };
 
-  const activeDeptName = useMemo(() => {
-    return departments.find((d) => d.id === activeDeptId)?.name || "";
-  }, [departments, activeDeptId]);
-
-  const matrixLines = useMemo(() => {
-    const validLines = draftLines.filter((line) => line.skuCode && Number(line.plannedQty) > 0);
-    if (!activeSection) return validLines;
-    return validLines.filter((line) => (
-      String(line.sourceSectionDefId || "") === String(activeSection.id || "")
-      || String(line.sourceSectionName || "").trim() === String(activeSection.name || "").trim()
-    ));
-  }, [draftLines, activeSection]);
-
-  const matrixColumns = useMemo(() => matrixLines.map((line, index) => ({
-    ...line,
-    key: `${line.workDate}|${line.shiftCode || line.shiftId || ""}|${line.skuCode}|${index}`,
-    lookupKey: `${line.workDate}|${line.shiftCode || line.shiftId || ""}|${line.skuCode}`,
-  })), [matrixLines]);
-
-  const materialRows = useMemo(() => {
-    const byLine = previewData?.rawPreviewByLine || [];
-    const rowMap = new Map();
-    matrixColumns.forEach((column) => {
-      const trace = byLine.find((line) => (
-        `${line.workDate}|${line.shiftCode || line.shiftId || ""}|${line.skuCode}` === column.lookupKey
-      ));
-      (trace?.materials || []).forEach((material) => {
-        const key = `${material.materialSkuCode}|${material.materialGoodsCode || ""}`;
-        if (!rowMap.has(key)) {
-          rowMap.set(key, {
-            code: material.materialGoodsCode || material.materialSkuCode,
-            name: material.materialName || material.materialSkuCode,
-            unit: material.unit || "unit",
-            values: {},
-          });
-        }
-        const row = rowMap.get(key);
-        row.values[column.key] = Number(material.requiredQty || 0);
-      });
-    });
-    if (!rowMap.size && Array.isArray(previewData?.rawPreview)) {
-      previewData.rawPreview.forEach((material) => {
-        const key = `${material.materialSkuCode}|${material.materialGoodsCode || ""}`;
-        rowMap.set(key, {
-          code: material.materialGoodsCode || material.materialSkuCode,
-          name: material.materialName || material.materialSkuCode,
-          unit: material.unit || "unit",
-          values: {},
-          aggregate: Number(material.requiredQty || 0),
-        });
-      });
+  const openAddDialog = (mode, row = null) => {
+    setAddMode(mode);
+    setAddProductSearch("");
+    setAddPageSize(30);
+    if (mode === "wip") {
+      const defaultWipSectionId = row
+        ? String(row.schedule_section_def_id || "")
+        : (plannableWorkCenters[0]?.id || sections[0]?.id || "");
+      setAddWip((current) => ({
+        ...current,
+        workDate: row ? row.period_start : (current.workDate || dates.find((d) => isPlanningDateEditable(d, today)) || ""),
+        sectionId: defaultWipSectionId,
+      }));
     }
-    return Array.from(rowMap.values()).sort((a, b) => String(a.name).localeCompare(String(b.name), "th"));
-  }, [previewData, matrixColumns]);
+    setAddDialogOpen(true);
+  };
 
-  const plannedTotal = useMemo(
-    () => matrixLines.reduce((sum, line) => sum + Number(line.plannedQty || 0), 0),
-    [matrixLines]
-  );
+  const toggleSection = (sectionId) => {
+    setCollapsedSectionIds((current) => {
+      const next = new Set(current);
+      if (next.has(sectionId)) next.delete(sectionId);
+      else next.add(sectionId);
+      return next;
+    });
+  };
 
-  const selectedSectionName = activeSection?.name || "ทุก Section";
+  const toggleRowExpand = (rowId) => {
+    setExpandedRowIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(rowId)) next.delete(rowId);
+      else next.add(rowId);
+      return next;
+    });
+  };
 
-  if (false) return (
-    <DepartmentPlanningMatrix
-      activeDeptId={activeDeptId}
-      activeDeptName={activeDeptName}
-      departments={departments}
-      selectedMasterPlanNo={selectedMasterPlanNo}
-      masterPlans={masterPlans}
-      plansLoading={plansLoading}
-      dateFrom={dateFrom}
-      dateTo={dateTo}
-      isLocked={isLocked}
-      existingSubplan={existingSubplan}
-      notification={notification}
-      setNotification={setNotification}
-      handleMasterPlanChange={handleMasterPlanChange}
-      setActiveDeptId={setActiveDeptId}
-      sectionOptions={sectionOptions}
-      activeSection={activeSection}
-      setActiveSection={setActiveSection}
-      selectedSectionName={selectedSectionName}
-      availableShifts={availableShifts}
-      getShiftsForSection={getShiftsForSection}
-      draftLines={draftLines}
-      draftLoading={draftLoading}
-      matrixColumns={matrixColumns}
-      materialRows={materialRows}
-      plannedTotal={plannedTotal}
-      showWipEditor={showWipEditor}
-      setShowWipEditor={setShowWipEditor}
-      showSchedule={showSchedule}
-      setShowSchedule={setShowSchedule}
-      wipSkuCatalog={wipSkuCatalog}
-      getWipMeta={getWipMeta}
-      handleLineChange={handleLineChange}
-      handleAddWipRow={handleAddWipRow}
-      handleRemoveWipRow={handleRemoveWipRow}
-      triggerRecalculate={triggerRecalculate}
-      handleSaveWipSubplan={handleSaveWipSubplan}
-      handleConfirmSubplan={handleConfirmSubplan}
-      saving={saving}
-      confirming={confirming}
-      recalculating={recalculating}
-    />
-  );
-  if (true) {
+  const selectedQuantityColumn = selectedSectionView?.columns.find((column) => (
+    isQuantityColumn(column, selectedFgRow?.qty_key)
+  ));
+  const selectedPeopleColumn = selectedSectionView?.columns.find(isPeopleColumn);
+  const selectedBrandColumn = selectedSectionView?.columns.find((column) => (
+    column?.col_type === "brand_auto" || column?.key === "brand" || column?.key === "jamBrand"
+  ));
+  const selectedProductColumn = selectedSectionView?.columns.find((column) => (
+    column?.col_type === "sku_picker" || /Sku$/.test(column?.key || "") || column?.key === "skuName"
+  ));
+  const selectedTimeColumn = selectedSectionView?.columns.find((column) => (
+    column?.col_type === "shift" || column?.key === "time"
+  ));
+  const resetChanges = () => {
+    setFgRows(sourceFgRows.map((row) => ({ ...row })));
+    setDirtyFgIds(new Set());
+    setDeletedFgIds(new Set());
+    setNewFgRows([]);
+    setWipLines((draftPayload?.data?.lines || []).map((line) => ({ ...line })));
+    setWipDirty(false);
+    setNotice(null);
+  };
+  const addForm = addMode === "fg" ? addFg : addWip;
+  const addSections = addMode === "fg" ? fgSections : (plannableWorkCenters.length ? plannableWorkCenters : sections);
+
+  // ตรวจว่า section ที่เลือกใน dialog มี column "จำนวนคน" หรือไม่
+  // ถ้าไม่มี column def หรือ section ไม่ได้ track คน → ซ่อนช่องนั้น
+  const addFgSelectedSection = useMemo(() => {
+    const sectionId = addFg.sectionId || selectedSectionDefId;
+    return (templateSections.length ? templateSections : sections).find(
+      (item) => String(item.id) === String(sectionId)
+    ) || null;
+  }, [addFg.sectionId, selectedSectionDefId, templateSections, sections]);
+
+  const addFgHasPeopleColumn = useMemo(() => {
+    const cols = addFgSelectedSection?.production_schedule_column_defs || [];
+    // ถ้า section ยังไม่มี column_defs เลย (section ใหม่) → ซ่อน
+    if (!cols.length) return false;
+    return cols.some((col) => isPeopleColumn(col));
+  }, [addFgSelectedSection]);
+
   return (
-    <div className="min-h-screen bg-[#fafafa] text-[#181818] font-sans antialiased">
-      {/* 1. Header & Controls Zone */}
-      <section className="bg-[#102C57] px-6 py-6 text-white border-b-2 border-[#d4af37]">
-        <div className="mx-auto max-w-[1760px]">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#d4af37]">
-                  Planning & Operations
-                </span>
-                <span className="h-[2px] w-8 bg-white/20" />
-              </div>
-              <h1 className="text-2xl font-bold tracking-tight text-white uppercase sm:text-3xl">
-                Integrated Production Control Center
-              </h1>
-              <p className="text-xs text-white/70">
-                ระบบจัดการและควบคุมแผนผลิตกึ่งสำเร็จรูปและรายงานความต้องการวัตถุดิบ
-              </p>
-            </div>
+    <main className="min-h-screen bg-[#f8fafc] text-[#082f61]">
+      <section className="w-full min-h-screen overflow-hidden bg-white">
+        {/* Unified Planning Sub-Header */}
+        <PlanningHeader activeTab="report" />
 
-            {/* Global Controls Grid */}
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Master Plan Selector */}
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[#d4af37]">
-                  SELECT MASTER PLAN / เลือกแผนหลัก
-                </span>
-                <select
-                  value={selectedMasterPlanNo}
-                  onChange={(e) => handleMasterPlanChange(e.target.value)}
-                  className="h-10 bg-black/30 border border-white/20 text-white text-xs px-3 font-bold rounded-[2px] focus:outline-none focus:border-[#d4af37]"
-                >
-                  <option value="" disabled className="bg-[#102C57] text-white">
-                    -- เลือกแผนหลัก --
-                  </option>
-                  {masterPlans.map((p) => (
-                    <option key={p.masterPlanNo} value={p.masterPlanNo} className="bg-[#102C57] text-white">
-                      {p.masterPlanNo} ({formatDate(p.periodStart)} - {formatDate(p.periodEnd)})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Weekly Date Range Viewer */}
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-white/50">
-                  DATE RANGE / ช่วงวันผลิต
-                </span>
-                <div className="h-10 flex items-center bg-black/20 border border-white/10 text-white text-xs px-4 font-bold rounded-[2px]">
-                  <Calendar size={14} className="mr-2 text-[#d4af37]" />
-                  {dateFrom ? `${formatDate(dateFrom)} - ${formatDate(dateTo)}` : "-"}
-                </div>
-              </div>
-
-              {/* Status Indicators */}
-              <div className="flex items-center gap-2 mt-4 sm:mt-0">
-                <div className="flex flex-col gap-1">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-white/50">
-                    PLAN STATUS / สถานะแผนผลิต
-                  </span>
-                  <div
-                    className={`h-10 px-4 flex items-center text-xs font-bold rounded-[2px] border ${
-                      isLocked
-                        ? "bg-[#F13A2C]/10 border-[#F13A2C]/30 text-[#F13A2C]"
-                        : "bg-[#03904A]/10 border-[#03904A]/30 text-[#03904A]"
-                    }`}
-                  >
-                    {isLocked ? (
-                      <>
-                        <Lock size={12} className="mr-1.5" />
-                        LOCKED / ยืนยันแผนแล้ว
-                      </>
-                    ) : (
-                      <>
-                        <Unlock size={12} className="mr-1.5" />
-                        OPEN / แก้ไขได้
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
+        {/* Toolbar & Filters */}
+        <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-5 py-3 text-xs shadow-sm">
+          {/* แผนหลัก FG */}
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-slate-700 whitespace-nowrap">แผนหลัก FG</span>
+            <div className="relative">
+              <button type="button" aria-haspopup="dialog" aria-expanded={planPickerOpen} onClick={() => setPlanPickerOpen(true)} className="h-8 rounded border border-slate-300 bg-white pl-3 pr-8 font-bold text-slate-800">{masterPlanNo || "เลือกแผนหลัก"}</button>
+              <ChevronDown className="pointer-events-none absolute right-2.5 top-2.5 h-3.5 w-3.5 text-slate-500" />
             </div>
           </div>
-        </div>
-      </section>
 
-      <div className="mx-auto max-w-[1760px] p-6 space-y-6">
-        {/* Alerts & Notifications */}
-        {notification.text && (
-          <div
-            className={`border-l-4 p-4 text-xs font-bold rounded-[2px] flex items-center justify-between ${
-              notification.type === "success"
-                ? "bg-[#03904A]/10 border-[#03904A] text-[#03904A]"
-                : "bg-[#F13A2C]/10 border-[#F13A2C] text-[#F13A2C]"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <AlertCircle size={14} />
-              <span>{notification.text}</span>
+          {/* ช่วงวันที่ */}
+          <div className="flex items-center gap-1.5 ml-1">
+            <span className="font-bold text-slate-700 whitespace-nowrap">ช่วงวันที่</span>
+            <div className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 font-semibold text-slate-700 shadow-sm">
+              <span>{dateLabel(selectedPlan?.periodStart)}</span>
+              <CalendarDays className="h-3.5 w-3.5 text-slate-400" />
             </div>
-            <button onClick={() => setNotification({ type: "", text: "" })} className="hover:opacity-75">
-              ปิด
+            <span className="text-slate-400">-</span>
+            <div className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 font-semibold text-slate-700 shadow-sm">
+              <span>{dateLabel(selectedPlan?.periodEnd)}</span>
+              <CalendarDays className="h-3.5 w-3.5 text-slate-400" />
+            </div>
+          </div>
+
+          {/* แผนก Pill Tabs */}
+          <div className="flex items-center gap-1.5 ml-1 overflow-x-auto py-0.5">
+            {visibleDepartments.map((department) => {
+              const isSelected = department.id === departmentId;
+              return (
+                <button
+                  key={department.id}
+                  type="button"
+                  onClick={() => setDepartmentId(department.id)}
+                  className={`px-4 py-1.5 text-xs rounded-lg font-bold transition-all shadow-sm whitespace-nowrap ${
+                    isSelected
+                      ? "bg-[var(--surface-navy,#102C57)] text-white"
+                      : "bg-[#e2e8f0] text-slate-700 hover:bg-slate-300"
+                  }`}
+                >
+                  {department.name}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* ค้นหา */}
+          <div className="relative min-w-[200px] max-w-[280px] flex-1 ml-1">
+            <Search className="absolute left-3 top-2 h-4 w-4 text-slate-400" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="ค้นหาสินค้า / แบรนด์ / เครื่อง"
+              className="h-8 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-xs text-slate-800 placeholder-slate-400 shadow-sm focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+
+          {/* Action Buttons */}
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              disabled={!canAddFg}
+              onClick={() => templateSections.length ? setAddFgDay(dates.find(date => isPlanningDateEditable(date, today))) : openAddDialog("fg")}
+              className="flex h-8 items-center gap-1.5 rounded border border-slate-300 bg-white px-3 font-medium text-slate-700 shadow-sm hover:bg-slate-50 transition-colors"
+            >
+              <Plus className="h-3.5 w-3.5 text-slate-600" />
+              <span>เพิ่มสินค้า FG</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="flex h-8 items-center gap-1.5 rounded border border-slate-300 bg-white px-3 font-medium text-slate-700 shadow-sm hover:bg-slate-50 transition-colors"
+            >
+              <Printer className="h-3.5 w-3.5 text-slate-600" />
+              <span>พิมพ์</span>
+            </button>
+            <Link
+              href={previewHref}
+              className="flex h-8 items-center gap-1.5 rounded border border-slate-300 bg-white px-3 font-medium text-slate-700 shadow-sm hover:bg-slate-50 transition-colors"
+            >
+              <FileText className="h-3.5 w-3.5 text-slate-600" />
+              <span>Preview ใบเบิก</span>
+            </Link>
+            <button
+              type="button"
+              onClick={saveAll}
+              disabled={saving || !dirtyCount}
+              className="flex h-8 items-center gap-1.5 rounded bg-[#f6bd16] hover:bg-[#e5ad0e] px-4 font-bold text-[#102C57] shadow-sm disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+            >
+              <Save className="h-3.5 w-3.5" />
+              <span>{saving ? "กำลังบันทึก..." : "บันทึกทั้งหมด"}</span>
             </button>
           </div>
-        )}
+        </div>
 
-        {isLocked && (
-          <div className="border border-[#d4af37] bg-[#d4af37]/5 p-4 rounded-[2px] flex gap-3 text-xs text-[#8a6d1c]">
-            <Lock size={16} className="shrink-0 mt-0.5" />
-            <div>
-              <p className="font-bold uppercase tracking-wide">แผนผลิตนี้ถูกล็อกเนื่องจากยืนยันแผนผลิตย่อยสำเร็จแล้ว</p>
-              <p className="mt-1">
-                ข้อมูลปริมาณผลิตถูกล็อกเพื่อเตรียมออกใบเบิกจ่ายวัตถุดิบในขั้นตอนถัดไป ห้ามแก้ไขตัวเลขแผนผลิตเพื่อป้องกันความคลาดเคลื่อนของยอดวัตถุดิบ
-              </p>
-            </div>
+        {notice && (
+          <div
+            className={`mx-5 mt-3 border px-4 py-2 text-xs font-semibold rounded ${
+              notice.type === "error"
+                ? "border-red-200 bg-red-50 text-red-700"
+                : "border-emerald-200 bg-emerald-50 text-emerald-700"
+            }`}
+          >
+            {notice.text}
           </div>
         )}
 
-        {/* 2. Department Horizontal Tabs */}
-        <div className="bg-white border border-slate-200 rounded-[2px] p-1 flex overflow-x-auto gap-1">
-          {departments.map((d) => {
-            const isActive = d.id === activeDeptId;
+        {templateSections.length > 0 && <div className="py-4"><PlanningAdjustmentSchedule sections={templateSections} selectedSectionId={selectedSectionDefId} onSectionChange={setSelectedSectionDefId} rows={visibleFgRows} dates={dates} today={today} skuCatalog={fgCatalog} sectionShifts={sections.find(item => String(item.id) === selectedSectionDefId)?.shifts || []} title={selectedPlan?.masterPlanNo || "แผนหลัก FG"} canAdd={canAddFg} onAddRow={date => { if (isPlanningDateEditable(date, today)) setAddFgDay(date); }} onUpdate={applySharedFgPatch} onDelete={id => { const row = visibleFgRows.find(item => item.plan_id === id); if (row && row.can_edit !== false && isPlanningDateEditable(row.period_start, today)) removeFg(row); }} /></div>}
+
+        {/* ตารางเต็มพื้นที่ Full Width แยก Section ตามหัวคอลัมน์จริง พร้อมระยะห่างพอดีๆ สวยงามตาม Mockup plan.png */}
+        <div className="w-full px-4 sm:px-6 py-4 space-y-4">
+          {!templateSections.length && sectionViews.map((section) => {
+            const collapsed = collapsedSectionIds.has(section.id);
             return (
-              <button
-                key={d.id}
-                onClick={() => {
-                  setActiveDeptId(d.id);
-                  setNotification({ type: "", text: "" });
-                }}
-                className={`h-11 px-6 whitespace-nowrap text-xs font-bold uppercase tracking-wider transition-all duration-150 rounded-[2px] flex items-center justify-center gap-2 ${
-                  isActive
-                    ? "bg-[#102C57] text-[#d4af37]"
-                    : "text-slate-950 font-bold hover:bg-slate-100 hover:text-[#102C57]"
-                }`}
-              >
-                <Boxes size={14} />
-                {d.name}
-              </button>
+              <div key={section.id} className="w-full border border-slate-300 bg-white shadow-sm overflow-hidden">
+                {/* แถบหัวข้อ Section สีเหลืองสไตล์ plan.png */}
+                <div
+                  onClick={() => toggleSection(section.id)}
+                  className="flex h-9 w-full items-center gap-2.5 bg-[#ffd447] px-4 text-left text-slate-900 cursor-pointer select-none border-b border-amber-300 transition-colors hover:bg-[#fed136]"
+                >
+                  <ChevronDown className={`h-4 w-4 text-slate-900 transition-transform ${collapsed ? "-rotate-90" : ""}`} />
+                  <strong className="text-sm font-bold text-slate-900 whitespace-nowrap">{section.name}</strong>
+                  <span className="text-xs text-slate-800 ml-3 whitespace-nowrap">
+                    {section.shifts?.[0]?.workStartTime && section.shifts?.[0]?.workEndTime
+                      ? `เวลาทำงาน ${section.shifts[0].workStartTime} – ${section.shifts[0].workEndTime} น.`
+                      : "เวลาทำงาน 07.00 – 19.00 น."}
+                  </span>
+                  {section.name.includes("ป้ายครีม") && (
+                    <span className="text-xs text-slate-800 ml-4 hidden md:inline whitespace-nowrap">
+                      กำหนดเดินงานตามแผนชุดครีมที่กำหนด*
+                    </span>
+                  )}
+                </div>
+
+                {!collapsed && (
+                  <div className="w-full overflow-x-auto">
+                    <table className="w-max min-w-full border-collapse text-xs [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
+                      <thead className="bg-[#f8f9fa] text-[#1a1c1e] font-bold border-b-2 border-[#1a1c1e]">
+                        <tr className="h-9">
+                          <th className="border-r border-slate-200 px-3 text-center w-[115px] min-w-[115px] whitespace-nowrap font-medium">วันที่</th>
+                          {section.columns.map((column) => {
+                            const isProduct = column.col_type === "sku_picker" || column.key === "skuName" || column.key === "productName";
+                            const isQty = isQuantityColumn(column);
+                            const isBrand = column.col_type === "brand_auto" || column.key === "brand" || column.key === "jamBrand";
+                            const isCenter = column.col_type === "number" || column.col_type === "shift" || isQty || /machine|size|shift|เครื่อง|ไซส์|กะ|หน่วย/i.test(column.label || column.key);
+                            return (
+                              <th
+                                key={column.id || column.key}
+                                style={/note|หมายเหตุ/i.test(column.label || column.key) ? { width: 220, maxWidth: 220 } : column.width ? { minWidth: column.width } : undefined}
+                                className={`border-r border-slate-200 px-3 py-1.5 whitespace-nowrap font-medium ${
+                                  isCenter ? "text-center" : "text-left"
+                                } ${
+                                  isProduct
+                                    ? "min-w-[190px]"
+                                    : isBrand
+                                    ? "w-[90px] min-w-[90px]"
+                                    : isQty
+                                    ? "w-[105px] min-w-[105px]"
+                                    : /เครื่อง|machine/i.test(column.label || column.key)
+                                    ? "w-[65px] min-w-[65px]"
+                                    : /ไซส์|size/i.test(column.label || column.key)
+                                    ? "w-[65px] min-w-[65px]"
+                                    : /กะ|shift/i.test(column.label || column.key)
+                                    ? "w-[190px] min-w-[190px]"
+                                    : /note|หมายเหตุ/i.test(column.label || column.key)
+                                    ? "w-[220px] min-w-[220px]"
+                                    : /หน่วย|unit/i.test(column.label || column.key)
+                                    ? "w-[75px] min-w-[75px]"
+                                    : "min-w-[130px]"
+                                }`}
+                              >
+                                {column.label || column.key}
+                              </th>
+                            );
+                          })}
+                          <th className="border-r border-slate-200 px-3 text-center w-[105px] min-w-[105px] whitespace-nowrap font-medium">สถานะ</th>
+                          <th className="px-3 text-center w-[105px] min-w-[105px] whitespace-nowrap font-medium">การดำเนินการ</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {section.rows.map((row) => {
+                          const editable = isPlanningDateEditable(row.period_start, today) && row.can_edit !== false;
+                          const isExpanded = expandedRowIds.has(row.plan_id);
+                          const rowLinkedWips = getLinkedPlanningWipLines(row, wipLines);
+
+                          return (
+                            <React.Fragment key={row.plan_id}>
+                              <tr
+                                onClick={() => selectFgRow(row)}
+                                className={`h-10 transition-colors ${
+                                  isExpanded
+                                    ? "bg-amber-50/40"
+                                    : editable
+                                    ? "bg-white hover:bg-slate-50/80"
+                                    : "bg-slate-50/40 hover:bg-slate-100/60"
+                                }`}
+                              >
+                                {/* วันที่ */}
+                                <td className="border-r border-slate-200 px-3 text-center text-slate-800 whitespace-nowrap w-[115px] min-w-[115px]">
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className="flex items-center gap-1 font-medium">
+                                      {!editable && <LockKeyhole className="h-3 w-3 text-slate-400" />}
+                                      {thaiDayDateLabel(row.period_start)}
+                                    </span>
+                                    {editable && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          toggleRowExpand(row.plan_id);
+                                        }}
+                                        className="p-0.5 rounded text-slate-400 hover:text-slate-800"
+                                        title={isExpanded ? "ย่อแถว" : "ขยายแถวเพื่อดู/แก้ไข WIP"}
+                                      >
+                                        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+
+                                {/* คอลัมน์ตามหัวข้อของ section */}
+                                {section.columns.map((column) => {
+                                  const quantity = isQuantityColumn(column, row.qty_key);
+                                  const product = column.col_type === "sku_picker" || column.key === "skuName" || column.key === "productName";
+                                  const isBrand = column.col_type === "brand_auto" || column.key === "brand" || column.key === "jamBrand";
+                                  const value = row.row_data?.[column.key] ?? (product ? row.sku_name || row.sku_code : "-");
+
+                                  if (product) {
+                                    return (
+                                      <td key={column.id || column.key} className="border-r border-slate-200 px-3 text-slate-900 min-w-[190px]">
+                                        <div className="whitespace-nowrap font-medium" title={row.sku_name || row.sku_code}>
+                                          {row.sku_name || row.sku_code}
+                                        </div>
+                                      </td>
+                                    );
+                                  }
+
+                                  if (isBrand) {
+                                    return (
+                                      <td key={column.id || column.key} className="border-r border-slate-200 px-3 text-left whitespace-nowrap w-[90px] min-w-[90px]">
+                                        {renderBrandBadge(value)}
+                                      </td>
+                                    );
+                                  }
+
+                                  if (quantity) {
+                                    return (
+                                      <td key={column.id || column.key} className="border-r border-slate-200 px-2 text-center whitespace-nowrap w-[105px] min-w-[105px]">
+                                        {editable ? (
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            step="any"
+                                            value={row.planned_qty ?? value ?? 0}
+                                            onClick={(e) => e.stopPropagation()}
+                                            onChange={(e) => updateFgQty(row.plan_id, e.target.value, column.key)}
+                                            className="mx-auto h-7 w-20 rounded border border-slate-300 bg-white px-1 text-center text-xs font-medium text-slate-800 focus:outline-none focus:border-blue-500"
+                                          />
+                                        ) : (
+                                          <div className="mx-auto flex h-7 w-20 items-center justify-center rounded bg-[#f1f5f9] text-xs font-medium text-slate-500">
+                                            {row.planned_qty ?? value ?? 0}
+                                          </div>
+                                        )}
+                                      </td>
+                                    );
+                                  }
+
+                                  if (column.col_type === "number") {
+                                    return (
+                                      <td key={column.id || column.key} className="border-r border-slate-200 px-2 text-center whitespace-nowrap w-[65px] min-w-[65px]">
+                                        {editable ? (
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            step="any"
+                                            value={value === "-" ? 0 : value}
+                                            onClick={(e) => e.stopPropagation()}
+                                            onChange={(e) => updateFgField(row.plan_id, column.key, e.target.value, { numeric: true })}
+                                            className="mx-auto h-7 w-14 rounded border border-slate-300 bg-white px-1 text-center text-xs font-medium text-slate-800 focus:outline-none focus:border-blue-500"
+                                          />
+                                        ) : (
+                                          <span className="text-slate-700">{value}</span>
+                                        )}
+                                      </td>
+                                    );
+                                  }
+
+                                  const isShift = column.col_type === "shift" || /shift|กะ/i.test(column.label || column.key);
+                                  if (isShift) {
+                                    const shiftOpts = buildPlanningShiftOptions(section.shifts, settingShifts.length ? settingShifts : masterShifts);
+                                    const currentVal = String(value === "-" ? "" : value);
+                                    const selectedShift = shiftOpts.find((shift) => shift.label === currentVal || shift.name === currentVal)
+                                      || shiftOpts.find((shift) => shift.id === row.row_data?.shiftId || shift.code === row.row_data?.shiftCode);
+                                    return (
+                                      <td
+                                        key={column.id || column.key}
+                                        className="border-r border-slate-200 px-2 text-center whitespace-nowrap w-[190px] min-w-[190px]"
+                                      >
+                                        {editable ? (
+                                          <select
+                                            value={selectedShift?.id || currentVal}
+                                            onClick={(e) => e.stopPropagation()}
+                                            onChange={(e) => {
+                                              const shift = shiftOpts.find((option) => option.id === e.target.value);
+                                              if (shift) updateFgField(row.plan_id, column.key, shift.id, { shift });
+                                            }}
+                                            className="mx-auto h-7 w-[175px] rounded border border-slate-300 bg-white px-1.5 text-center text-xs font-medium text-slate-800 focus:outline-none focus:border-blue-500 cursor-pointer"
+                                          >
+                                            <option value="" disabled>เลือกกะ</option>
+                                            {currentVal && !selectedShift && (
+                                              <option value={currentVal}>{currentVal}</option>
+                                            )}
+                                            {shiftOpts.map((opt) => (
+                                              <option key={opt.id} value={opt.id}>
+                                                {opt.label}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        ) : (
+                                          <span className="text-slate-700">{currentVal || "-"}</span>
+                                        )}
+                                      </td>
+                                    );
+                                  }
+
+                                  return (
+                                    <td
+                                      key={column.id || column.key}
+                                      className={`border-r border-slate-200 px-2 text-slate-800 ${
+                                        /size|machine|ไซส์|เครื่อง|หน่วย/i.test(column.label || column.key)
+                                          ? "text-center whitespace-nowrap"
+                                          : "min-w-[130px]"
+                                      }`}
+                                    >
+                                      {editable ? (
+                                        <input
+                                          value={value === "-" ? "" : value}
+                                          onClick={(e) => e.stopPropagation()}
+                                          onChange={(e) => updateFgField(row.plan_id, column.key, e.target.value)}
+                                          className={`h-7 rounded border border-slate-300 bg-white px-2 text-xs font-medium text-slate-800 focus:outline-none focus:border-blue-500 ${
+                                            /machine|เครื่อง/i.test(column.label || column.key)
+                                              ? "w-12 text-center"
+                                              : /size|ไซส์/i.test(column.label || column.key)
+                                              ? "w-14 text-center"
+                                              : /unit|หน่วย/i.test(column.label || column.key)
+                                              ? "w-16 text-center"
+                                              : /note|หมายเหตุ/i.test(column.label || column.key)
+                                              ? "w-[200px]"
+                                              : "w-full"
+                                          }`}
+                                        />
+                                      ) : (
+                                        <div className="whitespace-nowrap" title={String(value || "")}>
+                                          {value}
+                                        </div>
+                                      )}
+                                    </td>
+                                  );
+                                })}
+
+                                {/* สถานะ */}
+                                <td className="border-r border-slate-200 px-2 text-center whitespace-nowrap w-[105px] min-w-[105px]">
+                                  {renderStatusBadge(editable)}
+                                </td>
+
+                                {/* การดำเนินการ */}
+                                <td className="px-2 text-center whitespace-nowrap w-[105px] min-w-[105px]">
+                                  {editable ? (
+                                    <div className="flex items-center justify-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          duplicateFgRow(row);
+                                        }}
+                                        title="คัดลอกแถวนี้"
+                                        className="text-slate-500 hover:text-slate-800"
+                                      >
+                                        <Copy className="h-4 w-4" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          removeFg(row);
+                                        }}
+                                        title="ลบแถวนี้"
+                                        className="text-slate-500 hover:text-red-600"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          toggleRowExpand(row.plan_id);
+                                        }}
+                                        title={isExpanded ? "ย่อแผนย่อย WIP" : "ขยายแผนย่อย WIP"}
+                                        className="text-slate-500 hover:text-slate-800"
+                                      >
+                                        {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400">-</span>
+                                  )}
+                                </td>
+                              </tr>
+
+                              {/* แถวย่อย WIP ในสไตล์ plan.png */}
+                              {isExpanded && (
+                                <tr className="border-b border-slate-200">
+                                  {/* ช่องซ้ายใต้ วันที่ ให้เป็นพื้นหลังว่างเปล่า */}
+                                  <td className="border-r border-slate-200 bg-[#f8fafc]" />
+                                  <td colSpan={section.columns.length + 2} className="p-0 bg-white">
+                                    {/* แถบหัวข้อ แผนย่อย WIP ที่เชื่อมโยงจากแผนนี้ */}
+                                    <div className="flex h-8 items-center bg-[#e8f1fa] px-4 border-b border-slate-200">
+                                      <span className="text-xs font-bold text-slate-800 whitespace-nowrap">
+                                        แผนย่อย WIP ({row.sku_name || row.sku_code})
+                                      </span>
+                                    </div>
+
+                                    {/* ตารางย่อย WIP */}
+                                    <table className="w-max min-w-full border-collapse text-xs [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
+                                      <thead className="bg-[#f8f9fa] text-[#1a1c1e] font-bold border-b-2 border-[#1a1c1e]">
+                                        <tr className="h-8">
+                                          <th className="border-r border-slate-200 px-3 text-left font-semibold min-w-[190px] whitespace-nowrap">สินค้า (WIP)</th>
+                                          <th className="border-r border-slate-200 px-3 text-left font-semibold w-[90px] min-w-[90px] whitespace-nowrap">แบรนด์</th>
+                                          <th className="border-r border-slate-200 px-2 text-center font-semibold w-[65px] min-w-[65px] whitespace-nowrap">เครื่อง</th>
+                                          <th className="border-r border-slate-200 px-2 text-center font-semibold w-[65px] min-w-[65px] whitespace-nowrap">ไซส์</th>
+                                          <th className="border-r border-slate-200 px-2 text-center font-semibold w-[110px] min-w-[110px] whitespace-nowrap">กะ</th>
+                                          <th className="border-r border-slate-200 px-3 text-center font-semibold w-[105px] min-w-[105px] whitespace-nowrap">แผนใช้ (จำนวน)</th>
+                                          <th className="border-r border-slate-200 px-2 text-center font-semibold w-[75px] min-w-[75px] whitespace-nowrap">หน่วย</th>
+                                          <th className="border-r border-slate-200 px-3 text-left font-semibold min-w-[130px] whitespace-nowrap">หมายเหตุ</th>
+                                          <th className="border-r border-slate-200 px-3 text-center font-semibold w-[105px] min-w-[105px] whitespace-nowrap">สถานะ</th>
+                                          <th className="px-3 text-center font-semibold w-[105px] min-w-[105px] whitespace-nowrap">การดำเนินการ</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-200">
+                                        {rowLinkedWips.map((wip, wIdx) => {
+                                          const wipEditable = isPlanningDateEditable(wip.workDate, today);
+                                          const matrixRow = { ...wip, key: wipKey(wip) };
+                                          return (
+                                            <tr key={(wip.planId || wip.id || wip.skuCode) + "-" + wIdx} className="h-9 hover:bg-slate-50/60">
+                                              <td className="border-r border-slate-200 px-3 text-slate-800 font-medium min-w-[190px]">
+                                                <div className="whitespace-nowrap" title={wip.skuName || wip.skuCode}>
+                                                  {wip.skuName || wip.skuCode}
+                                                </div>
+                                              </td>
+                                              <td className="border-r border-slate-200 px-3 whitespace-nowrap w-[90px] min-w-[90px]">
+                                                {renderBrandBadge(wip.brand || row.row_data?.[selectedBrandColumn?.key] || "ระฆังทอง")}
+                                              </td>
+                                              <td className="border-r border-slate-200 px-2 text-center text-slate-700 whitespace-nowrap w-[65px] min-w-[65px]">
+                                                {wip.machine || row.row_data?.machine || "1"}
+                                              </td>
+                                              <td className="border-r border-slate-200 px-2 text-center text-slate-700 whitespace-nowrap w-[65px] min-w-[65px]">
+                                                {wip.size || row.row_data?.size || "XL"}
+                                              </td>
+                                              <td className="border-r border-slate-200 px-2 text-center text-slate-700 whitespace-nowrap w-[110px] min-w-[110px]">
+                                                {wipEditable ? (
+                                                   <select
+                                                     value={wip.shiftName || wip.shiftCode || ""}
+                                                     onClick={(e) => e.stopPropagation()}
+                                                     onChange={(e) => {
+                                                       const val = e.target.value;
+                                                       setWipLines((lines) => {
+                                                         const same = (line) => wipKey(line) === matrixRow.key && line.workDate === wip.workDate;
+                                                         return lines.map((line) => same(line) ? { ...line, shiftName: val, shiftCode: val } : line);
+                                                       });
+                                                       setWipDirty(true);
+                                                     }}
+                                                     className="mx-auto h-7 w-[175px] rounded border border-slate-300 bg-white px-1.5 text-center text-xs font-medium text-slate-800 focus:outline-none focus:border-blue-500 cursor-pointer"
+                                                   >
+                                                     <option value="">-</option>
+                                                     {(wip.shiftName || wip.shiftCode) && !getShiftOptions(section.shifts, masterShifts, settingShifts).includes(wip.shiftName || wip.shiftCode) && (
+                                                       <option value={wip.shiftName || wip.shiftCode}>{wip.shiftName || wip.shiftCode}</option>
+                                                     )}
+                                                     {getShiftOptions(section.shifts, masterShifts, settingShifts).map((opt) => (
+                                                       <option key={opt} value={opt}>
+                                                         {opt}
+                                                       </option>
+                                                     ))}
+                                                   </select>
+                                                 ) : (
+                                                   <span className="text-slate-700">{wip.shiftName || wip.shiftCode || "-"}</span>
+                                                 )}
+                                              </td>
+                                              <td className="border-r border-slate-200 px-3 text-center whitespace-nowrap w-[105px] min-w-[105px]">
+                                                {wipEditable ? (
+                                                  <input
+                                                    type="number"
+                                                    min="0"
+                                                    step="any"
+                                                    value={wip.plannedQty || ""}
+                                                    onChange={(e) => setWipQty(matrixRow, wip.workDate, e.target.value)}
+                                                    className="mx-auto h-7 w-20 rounded border border-slate-300 bg-white px-1 text-center text-xs font-medium text-slate-800 focus:outline-none focus:border-blue-500"
+                                                  />
+                                                ) : (
+                                                  <div className="mx-auto flex h-7 w-20 items-center justify-center rounded bg-[#f1f5f9] text-xs font-medium text-slate-500">
+                                                    {wip.plannedQty || 0}
+                                                  </div>
+                                                )}
+                                              </td>
+                                              <td className="border-r border-slate-200 px-2 text-center text-slate-700 whitespace-nowrap w-[75px] min-w-[75px]">
+                                                {wip.unit || "กก"}
+                                              </td>
+                                              <td className="border-r border-slate-200 px-3 text-slate-700 min-w-[130px]">
+                                                <div className="whitespace-nowrap" title={wip.notes || ""}>
+                                                  {wip.notes || "-"}
+                                                </div>
+                                              </td>
+                                              <td className="border-r border-slate-200 px-3 text-center whitespace-nowrap w-[105px] min-w-[105px]">
+                                                {renderStatusBadge(wipEditable)}
+                                              </td>
+                                              <td className="px-3 text-center whitespace-nowrap w-[105px] min-w-[105px]">
+                                                {wipEditable ? (
+                                                  <div className="flex items-center justify-center gap-2">
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => duplicateWipRow(wip)}
+                                                      title="คัดลอกรายการ WIP"
+                                                      className="text-slate-400 hover:text-slate-700"
+                                                    >
+                                                      <Copy className="h-4 w-4" />
+                                                    </button>
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => removeWipRow(matrixRow)}
+                                                      title="ลบรายการ WIP"
+                                                      className="text-slate-400 hover:text-red-600"
+                                                    >
+                                                      <Trash2 className="h-4 w-4" />
+                                                    </button>
+                                                  </div>
+                                                ) : (
+                                                  <span className="text-slate-400">-</span>
+                                                )}
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
+                                        {!rowLinkedWips.length && (
+                                          <tr>
+                                            <td colSpan={10} className="py-3 text-center text-slate-400 text-xs">
+                                              ยังไม่มีแผนย่อย WIP สำหรับรายการนี้
+                                            </td>
+                                          </tr>
+                                        )}
+                                      </tbody>
+                                    </table>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                        {!section.rows.length && (
+                          <EmptyRow colSpan={section.columns.length + 3}>
+                            {plansLoading ? "กำลังโหลดรายการ..." : "ไม่มีรายการใน Section นี้"}
+                          </EmptyRow>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             );
           })}
-        </div>
 
-        {/* 3. Main Dashboard Workspace Layout */}
-        {activeDeptId ? (
-          <div className="space-y-6">
-            {/* 3.1. Weekly Matrix Grid (แผนหลัก FG) at the top */}
-            <div className="bg-white border border-slate-200 rounded-[2px] overflow-hidden shadow-sm">
-              <div className="bg-[#102C57] px-4 py-3 flex items-center justify-between border-b border-slate-200">
-                <div className="flex items-center gap-2">
-                  <FileText className="text-[#d4af37]" size={16} />
-                  <span className="text-xs font-bold uppercase tracking-widest text-[#d4af37]">
-                    1. FG Weekly Production Matrix / ตารางวางแผนผลิตหลักรายกะ
+          {plannableWorkCenters.map((wc) => {
+            const roomWipLines = wipLines.filter(
+              (line) => String(line.sourceSectionDefId || "") === String(wc.id)
+            );
+            const collapsed = collapsedSectionIds.has(wc.id);
+
+            return (
+              <div key={wc.id} className="w-full border border-slate-300 bg-white shadow-sm overflow-hidden">
+                <div
+                  onClick={() => toggleSection(wc.id)}
+                  className="flex h-9 w-full items-center gap-2.5 bg-[#e8eef8] px-4 text-left text-slate-900 cursor-pointer select-none border-b border-blue-200 transition-colors hover:bg-[#dce6f5]"
+                >
+                  <ChevronDown className={`h-4 w-4 text-slate-700 transition-transform ${collapsed ? "-rotate-90" : ""}`} />
+                  <strong className="text-sm font-bold text-[#102C57] whitespace-nowrap">
+                    ห้องผลิต: {wc.name}
+                  </strong>
+                  <span className="text-[11px] font-semibold text-[#102C57] bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
+                    แผนย่อย WIP
                   </span>
+                  <span className="text-xs text-slate-600 ml-2 whitespace-nowrap">
+                    {roomWipLines.length} รายการ
+                  </span>
+                  <div className="ml-auto flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={!canEditFgDepartment || !dates.some(date => isPlanningDateEditable(date, today))}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!canEditFgDepartment) return;
+                        setAddMode("wip");
+                        setAddProductSearch("");
+                        setAddPageSize(30);
+                        const firstEditableDate = dates.find((date) => isPlanningDateEditable(date, today)) || "";
+                        setAddWip({
+                          skuCode: "",
+                          workDate: firstEditableDate,
+                          sectionId: wc.id,
+                          plannedQty: 1,
+                        });
+                        setAddDialogOpen(true);
+                      }}
+                      className="inline-flex h-6 items-center gap-1 rounded bg-white px-2 text-[11px] font-bold text-[#102C57] border border-slate-300 hover:bg-slate-50 shadow-xs"
+                    >
+                      <Plus className="h-3 w-3" />
+                      <span>เพิ่ม WIP</span>
+                    </button>
+                  </div>
                 </div>
-                <span className="text-[10px] text-white/50 font-semibold tracking-wider">
-                  WEEKLY MATRIX CONTROLLER
-                </span>
-              </div>
-              <div className="p-1">
-                {/* Embed the familiar production schedule client */}
-                {selectedMasterPlanNo && (
-                  <ProductionScheduleClient
-                    deptId={activeDeptId}
-                    masterPlanNo={selectedMasterPlanNo}
-                    dateFrom={dateFrom}
-                    dateTo={dateTo}
-                    embedded={true}
-                    readOnly={isLocked}
-                    onSectionChange={(idx, section) => {
-                      setActiveSection(section);
+
+                {!collapsed && (
+                  <WipWeeklyTable rows={buildWipWeeklyRows(roomWipLines)} dates={planningDates(roomWipLines, { start: dates[0], end: dates.at(-1) })} formatDate={dateLabel}
+                    canEdit={line => canEditFgDepartment && isPlanningDateEditable(line.workDate, today)}
+                    onChange={(line, value) => {
+                      if (!canEditFgDepartment || !isPlanningDateEditable(line.workDate, today)) return;
+                      const qty = Number(value);
+                      if (!Number.isFinite(qty) || qty < 0) return;
+                      setWipLines(lines => lines.map(item => item === line ? { ...item, plannedQty: qty } : item));
+                      setWipDirty(true);
+                    }}
+                    onDelete={row => {
+                      if (!canEditFgDepartment || !window.confirm("ลบรายการ WIP เฉพาะวันที่ที่ยังแก้ไขได้หรือไม่?")) return;
+                      const editableLines = new Set(Object.values(row.linesByDate).filter(line => isPlanningDateEditable(line.workDate, today)));
+                      setWipLines(lines => lines.filter(line => !editableLines.has(line)));
+                      setWipDirty(true);
                     }}
                   />
                 )}
               </div>
-            </div>
-
-            {/* 3.2. WIP Subplans Grouped by collapsible sections */}
-            <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white px-4 py-3 border border-slate-200 rounded-[2px]">
-                <div className="flex items-center gap-2">
-                  <Layers className="text-[#102C57]" size={16} />
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-[#102C57]">
-                    2. Work-In-Progress (WIP) Subplans / การปรับปรุงแผนย่อย WIP ({activeDeptName})
-                  </h3>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={triggerRecalculate}
-                    disabled={recalculating || isLocked}
-                    className="h-8 px-4 flex items-center justify-center gap-1.5 text-[10px] font-bold uppercase tracking-wider border border-[#102C57] text-[#102C57] rounded-[2px] transition hover:bg-[#102C57]/5 disabled:opacity-50"
-                    title="ระเบิด BOM ค้นหาความต้องการวัตถุดิบและปรับยอดแนะนำอัตโนมัติ"
-                  >
-                    <RefreshCw size={11} className={recalculating ? "animate-spin" : ""} />
-                    {recalculating ? "กำลังคำนวณ..." : "คำนวณความต้องการสูตร BOM"}
-                  </button>
-                </div>
-              </div>
-
-              {draftLoading ? (
-                <div className="flex items-center justify-center p-12 bg-white border border-slate-200 rounded-[2px] text-xs text-slate-950 font-bold">
-                  <RefreshCw className="animate-spin mr-2" size={14} />
-                  กำลังโหลดข้อมูลแผนย่อย WIP...
-                </div>
-              ) : displayedGroupedWipSections.length === 0 ? (
-                <div className="bg-white border border-slate-200 p-8 rounded-[2px] text-center text-slate-950 font-bold text-xs">
-                  ไม่พบรายการกลุ่มงานของแผนกย่อยในแผนนี้ กดเครื่องมือคำนวณความต้องการสูตร BOM หรือเพิ่มรายการเพื่อปรับแผนผลิตย่อย
-                  {!isLocked && (
-                    <button
-                      onClick={() => handleAddWipRow("แผนกย่อยหลัก")}
-                      className="mt-3 mx-auto h-8 px-4 bg-[#102C57] text-[#d4af37] text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 rounded-[2px] hover:bg-[#102C57]/90"
-                    >
-                      <Plus size={12} /> Add First WIP Row / เพิ่มรายการใหม่
-                    </button>
-                  )}
-                </div>
-              ) : (
-                displayedGroupedWipSections.map(({ name: sectionName, rows: wipRows }) => {
-                  const isOpen = openSections[sectionName] !== false;
-                  return (
-                    <div
-                      key={sectionName}
-                      className="bg-white border border-slate-200 rounded-[2px] overflow-hidden shadow-sm transition-all duration-150"
-                    >
-                      {/* Section Header Accordion Trigger */}
-                      <button
-                        onClick={() => toggleSection(sectionName)}
-                        className="w-full h-11 px-4 bg-slate-50 flex items-center justify-between border-b border-slate-200 hover:bg-slate-100 transition-colors"
-                      >
-                        <span className="text-xs font-bold text-[#102C57] uppercase tracking-wide">
-                          {sectionName} ({wipRows.length} รายการ)
-                        </span>
-                        {isOpen ? (
-                          <ChevronUp size={14} className="text-slate-950 font-bold" />
-                        ) : (
-                          <ChevronDown size={14} className="text-slate-950 font-bold" />
-                        )}
-                      </button>
-
-                      {/* Section Content */}
-                      {isOpen && (
-                        <div className="p-4 overflow-x-auto">
-                          <table className="w-full min-w-[960px] table-fixed border-collapse text-left text-xs">
-                            <thead>
-                              <tr className="border-b border-slate-200 text-slate-950 uppercase tracking-widest font-extrabold bg-slate-50/50">
-                                <th className="py-3 px-3 text-[10px] text-slate-600 font-bold uppercase tracking-wider w-[11%] min-w-[90px]">กะการผลิต (Shift)</th>
-                                <th className="py-3 px-3 text-[10px] text-slate-600 font-bold uppercase tracking-wider w-[14%] min-w-[120px]">รหัสสินค้า WIP</th>
-                                <th className="py-3 px-3 text-[10px] text-slate-600 font-bold uppercase tracking-wider w-[20%] min-w-[185px]">ชื่อชิ้นงาน WIP</th>
-                                <th className="py-3 px-3 text-[10px] text-slate-600 font-bold uppercase tracking-wider text-right w-[13%] min-w-[110px]">จำนวนปรับปรุง (ชุด)</th>
-                                <th className="py-3 px-3 text-[10px] text-slate-600 font-bold uppercase tracking-wider w-[7%] min-w-[60px] text-center">หน่วย</th>
-                                <th className="py-3 px-3 text-[10px] text-slate-600 font-bold uppercase tracking-wider text-right w-[12%] min-w-[110px]">น้ำหนักจริง (kg)</th>
-                                <th className="py-3 px-3 text-[10px] text-slate-600 font-bold uppercase tracking-wider w-[19%] min-w-[170px]">หมายเหตุ</th>
-                                {!isLocked && <th className="py-3 px-3 text-[10px] w-[4%] min-w-[40px] text-right"></th>}
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                              {wipRows.length === 0 ? (
-                                <tr>
-                                  <td colSpan={isLocked ? 7 : 8} className="py-8 px-3 text-center text-slate-950 font-bold">
-                                    ยังไม่มีรายการผลิตย่อยในกลุ่มงาน {sectionName} สำหรับแผนกนี้
-                                    {!isLocked && (
-                                      <button
-                                        onClick={() => handleAddWipRow(sectionName)}
-                                        className="mt-2 mx-auto h-7 px-3 bg-[#102C57] text-[#d4af37] text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 rounded-[2px] hover:bg-[#102C57]/90"
-                                      >
-                                        <Plus size={10} /> เพิ่มรายการ WIP
-                                      </button>
-                                    )}
-                                  </td>
-                                </tr>
-                              ) : (
-                                wipRows.map((row) => {
-                                  const meta = getWipMeta(row.skuCode);
-                                  const actualWeight = Number(row.plannedQty || 0) * meta.factor;
-                                  
-                                  return (
-                                    <tr key={row.tempId} className="hover:bg-slate-50/40 transition-colors duration-150">
-                                      {/* 1. Shift Select */}
-                                      <td className="py-2.5 px-3">
-                                        <select
-                                          disabled={isLocked}
-                                          value={row.shiftCode || "A"}
-                                          onChange={(e) => {
-                                            const code = e.target.value;
-                                            const matched = availableShifts.find((s) => s.shiftCode === code);
-                                            handleLineChange(row.tempId, "shiftCode", code);
-                                            if (matched) {
-                                              handleLineChange(row.tempId, "shiftId", matched.shiftId);
-                                              handleLineChange(row.tempId, "shiftName", matched.shiftName);
-                                            }
-                                          }}
-                                          className="h-8 w-full bg-white border border-slate-200 text-xs px-2 rounded-[2px] focus:outline-none focus:border-[#102C57] focus:ring-1 focus:ring-[#102C57]/20 disabled:bg-slate-50 disabled:text-slate-950 disabled:opacity-100 font-bold text-slate-950 transition-all"
-                                        >
-                                          {availableShifts.map((s) => (
-                                            <option key={s.shiftId} value={s.shiftCode}>
-                                              {s.shiftName} ({s.shiftCode})
-                                            </option>
-                                          ))}
-                                        </select>
-                                      </td>
-
-                                      {/* 2. WIP SKU Selector */}
-                                      <td className="py-2.5 px-3 font-mono font-bold text-slate-950">
-                                        {isLocked || row.id ? (
-                                          <span>{row.skuCode || "-"}</span>
-                                        ) : (
-                                          <button
-                                            type="button"
-                                            onClick={() => setWipPickerTempId(row.tempId)}
-                                            className="h-8 w-full bg-white border border-slate-200 text-xs px-2.5 rounded-[2px] hover:border-[#102C57] focus:outline-none font-semibold text-slate-800 flex items-center justify-between gap-1 shadow-sm transition-all"
-                                          >
-                                            <span className={row.skuCode ? "font-bold text-[#102C57] font-mono" : "text-slate-400 font-sans font-normal"}>
-                                              {row.skuCode || "ค้นหาและเลือกรหัส WIP..."}
-                                            </span>
-                                            <Search size={13} className="text-slate-400 shrink-0" />
-                                          </button>
-                                        )}
-                                      </td>
-
-                                      {/* 3. WIP Name */}
-                                      <td className="py-2.5 px-3 font-bold text-slate-950 truncate">
-                                        {row.skuName || "-"}
-                                      </td>
-
-                                      {/* 5. Adjust quantity (Planned Qty) */}
-                                      <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-950">
-                                        <input
-                                          type="number"
-                                          disabled={isLocked}
-                                          value={row.plannedQty === 0 ? "" : row.plannedQty}
-                                          onChange={(e) =>
-                                            handleLineChange(
-                                              row.tempId,
-                                              "plannedQty",
-                                              e.target.value === "" ? 0 : Number(e.target.value)
-                                            )
-                                          }
-                                          className="h-8 w-full text-right bg-white border border-slate-200 text-xs px-2.5 font-bold font-mono rounded-[2px] focus:outline-none focus:border-[#102C57] focus:ring-1 focus:ring-[#102C57]/20 disabled:bg-slate-50 disabled:text-slate-950 disabled:opacity-100 text-slate-950 transition-all"
-                                          placeholder="0.00"
-                                        />
-                                      </td>
-
-                                      {/* 6. Unit */}
-                                      <td className="py-2.5 px-3 font-bold text-slate-950 text-center">{meta.planningUnit}</td>
-
-                                      {/* 7. Actual Weight (kg) */}
-                                      <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-955">
-                                        {formatNumber(actualWeight, 2)} <span className="text-[10px] text-slate-950 font-bold">{meta.displayUnit}</span>
-                                      </td>
-
-                                      {/* 8. Note */}
-                                      <td className="py-2.5 px-3">
-                                        <input
-                                          type="text"
-                                          disabled={isLocked}
-                                          value={row.note || ""}
-                                          onChange={(e) => handleLineChange(row.tempId, "note", e.target.value)}
-                                          className="h-8 w-full bg-white border border-slate-200 text-xs px-2.5 text-slate-950 font-bold rounded-[2px] focus:outline-none focus:border-[#102C57] disabled:bg-slate-50 disabled:text-slate-950 disabled:opacity-100 placeholder-slate-950 placeholder:font-bold"
-                                          placeholder="หมายเหตุประกอบ..."
-                                        />
-                                      </td>
-
-                                      {/* Actions (Delete) */}
-                                      {!isLocked && (
-                                        <td className="py-2.5 text-right">
-                                          <button
-                                            onClick={() => handleRemoveWipRow(row.tempId)}
-                                            className="p-1.5 text-slate-950 hover:text-[#F13A2C] font-bold transition-colors"
-                                            title="ลบบรรทัด"
-                                          >
-                                            <Trash2 size={13} />
-                                          </button>
-                                        </td>
-                                      )}
-                                    </tr>
-                                  );
-                                })
-                              )}
-                            </tbody>
-                          </table>
-
-                          {/* Add Row Button */}
-                          {!isLocked && (
-                            <button
-                              onClick={() => handleAddWipRow(sectionName)}
-                              className="mt-3 h-8 px-3 border border-dashed border-slate-300 text-[10px] font-extrabold uppercase tracking-wider text-slate-950 hover:border-[#102C57] hover:text-[#102C57] flex items-center gap-1 transition-all rounded-[2px]"
-                            >
-                              <Plus size={11} />
-                              Add WIP Item / เพิ่มตัวเลือกผลิต WIP กึ่งสำเร็จรูป
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            {/* 4. Action Control Center Bar */}
-            {!isLocked && (
-              <div className="bg-slate-900 border border-slate-800 p-4 rounded-[2px] flex flex-col md:flex-row items-center justify-between gap-4 shadow-md">
-                <div className="text-white space-y-0.5">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#d4af37]">
-                    Production Control Panel / แผงบันทึกการทำงานหลัก
-                  </h4>
-                  <p className="text-[10px] text-white/50">
-                    โปรดกดบันทึกเพื่อบันทึกแผนผลิตย่อย WIP และส่งยอดคำนวณวัตถุดิบเข้าสู่หน้าพรีวิวใบเบิกแยกห้องโดยอัตโนมัติ
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    onClick={handleSaveWipSubplan}
-                    disabled={saving}
-                    className="h-10 px-6 bg-white text-slate-900 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 rounded-[2px] transition hover:bg-[#d4af37] hover:text-slate-900 focus:outline-none disabled:opacity-50"
-                  >
-                    <Save size={13} />
-                    {saving ? "Saving..." : "Save WIP Draft / บันทึกแผนผลิตย่อย WIP"}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center py-20 bg-white border border-slate-200 rounded-[2px] text-slate-950 font-bold text-xs">
-            <Boxes size={28} className="text-slate-950 mb-2" />
-            กรุณาเลือกแผนกเพื่อตรวจสอบและแสดงแผงควบคุมการผลิต
-          </div>
-        )}
-      </div>
-    </div>
-  );
-  }
-}
-
-function formatMatrixDate(dateString) {
-  if (!dateString) return "-";
-  const date = new Date(`${dateString}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return dateString;
-  return date.toLocaleDateString("th-TH", { day: "2-digit", month: "2-digit" });
-}
-
-function DepartmentPlanningMatrix({
-  activeDeptId,
-  activeDeptName,
-  departments,
-  selectedMasterPlanNo,
-  masterPlans,
-  plansLoading,
-  dateFrom,
-  dateTo,
-  isLocked,
-  existingSubplan,
-  notification,
-  setNotification,
-  handleMasterPlanChange,
-  setActiveDeptId,
-  sectionOptions,
-  activeSection,
-  setActiveSection,
-  selectedSectionName,
-  availableShifts,
-  getShiftsForSection,
-  draftLines,
-  draftLoading,
-  matrixColumns,
-  materialRows,
-  plannedTotal,
-  showWipEditor,
-  setShowWipEditor,
-  showSchedule,
-  setShowSchedule,
-  wipSkuCatalog,
-  getWipMeta,
-  handleLineChange,
-  handleAddWipRow,
-  handleRemoveWipRow,
-  triggerRecalculate,
-  handleSaveWipSubplan,
-  handleConfirmSubplan,
-  saving,
-  confirming,
-  recalculating,
-}) {
-  const currentSectionShifts = activeSection ? getShiftsForSection(activeSection.id) : availableShifts;
-  const sectionRows = draftLines.filter((line) => {
-    if (!activeSection) return true;
-    return String(line.sourceSectionDefId || "") === String(activeSection.id || "")
-      || String(line.sourceSectionName || "").trim() === String(activeSection.name || "").trim();
-  });
-  const totalMaterials = materialRows.length;
-
-  return (
-    <div className="min-h-screen bg-[#f7f8fa] text-[#132238] font-sans antialiased">
-      <header className="bg-[#102C57] text-white border-b-2 border-[#d4af37]">
-        <div className="flex items-center justify-between px-5 py-3">
-          <h1 className="text-xl font-extrabold tracking-tight">ตารางวัตถุดิบตามแผน WIP</h1>
-          <button
-            type="button"
-            onClick={() => setShowWipEditor(true)}
-            className="h-9 px-4 border border-white/70 text-white text-xs font-bold rounded-[2px] flex items-center gap-2 hover:bg-white/10"
-          >
-            <Layers size={14} /> เลือก WIP
-          </button>
-        </div>
-      </header>
-
-      <main className="p-5 space-y-4">
-        {notification.text && (
-          <div className={`flex items-center justify-between border-l-4 px-4 py-3 text-xs font-bold ${notification.type === "success" ? "border-[#03904A] bg-emerald-50 text-emerald-800" : "border-[#F13A2C] bg-red-50 text-red-800"}`}>
-            <span className="flex items-center gap-2"><AlertCircle size={14} />{notification.text}</span>
-            <button type="button" onClick={() => setNotification({ type: "", text: "" })}>ปิด</button>
-          </div>
-        )}
-
-        <section className="grid grid-cols-1 gap-3 xl:grid-cols-[1.15fr_1.15fr_1.35fr_1.55fr_1fr_auto] items-end">
-          <MatrixSelect label="แผนหลัก" value={selectedMasterPlanNo} onChange={handleMasterPlanChange} disabled={plansLoading}>
-            <option value="">{plansLoading ? "กำลังโหลด..." : "เลือกแผนหลัก"}</option>
-            {masterPlans.map((plan) => <option key={plan.masterPlanNo} value={plan.masterPlanNo}>{plan.masterPlanNo}</option>)}
-          </MatrixSelect>
-          <MatrixSelect label="แผนก" value={activeDeptId} onChange={(value) => setActiveDeptId(value)}>
-            <option value="">เลือกแผนก</option>
-            {departments.map((dept) => <option key={dept.id} value={dept.id}>{dept.name}</option>)}
-          </MatrixSelect>
-          <MatrixSelect label="Section" value={activeSection?.id || ""} onChange={(value) => setActiveSection(sectionOptions.find((section) => String(section.id) === String(value)) || null)}>
-            <option value="">ทุก Section</option>
-            {sectionOptions.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
-          </MatrixSelect>
-          <MatrixSelect label="ช่วงวันที่" value={dateFrom ? `${formatDate(dateFrom)} - ${formatDate(dateTo)}` : "-"} onChange={() => {}} readOnly>
-            <option>{dateFrom ? `${formatDate(dateFrom)} - ${formatDate(dateTo)}` : "-"}</option>
-          </MatrixSelect>
-          <MatrixSelect label="กะ (Shift)" value={activeSection ? "section" : "all"} onChange={() => {}}>
-            <option value={activeSection ? "section" : "all"}>{activeSection ? `ตาม Section (${currentSectionShifts.length})` : `ทั้งหมด (${availableShifts.length})`}</option>
-          </MatrixSelect>
-          <div className="flex gap-2 xl:justify-end">
-            <button type="button" onClick={() => setShowSchedule(true)} className="h-9 whitespace-nowrap border border-[#102C57] px-3 text-xs font-bold text-[#102C57] rounded-[2px] hover:bg-slate-100">แผนหลัก FG</button>
-            <button type="button" onClick={triggerRecalculate} disabled={recalculating || isLocked} className="h-9 whitespace-nowrap border border-[#102C57] px-3 text-xs font-bold text-[#102C57] rounded-[2px] hover:bg-slate-100 disabled:opacity-50">{recalculating ? "กำลังคำนวณ..." : "ตรวจสอบวัตถุดิบ"}</button>
-            <button type="button" onClick={handleSaveWipSubplan} disabled={saving || isLocked} className="h-9 whitespace-nowrap border border-slate-300 bg-white px-3 text-xs font-bold rounded-[2px] disabled:opacity-50">{saving ? "กำลังบันทึก..." : "บันทึกร่าง"}</button>
-            <button type="button" onClick={handleConfirmSubplan} disabled={confirming || isLocked} className="h-9 whitespace-nowrap bg-[#d4af37] px-4 text-xs font-extrabold text-[#102C57] rounded-[2px] disabled:opacity-50">{confirming ? "กำลังยืนยัน..." : "ยืนยันแผน"}</button>
-          </div>
-        </section>
-
-        {isLocked && (
-          <div className="flex items-center gap-2 border border-[#d4af37] bg-[#fff9e6] px-4 py-3 text-xs font-bold text-[#8a6d1c]"><Lock size={14} /> แผนก {activeDeptName} ถูกยืนยันแล้ว ไม่สามารถแก้ไขจำนวน WIP ได้</div>
-        )}
-
-        <section className="border border-slate-300 bg-white">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-300 px-4 py-3">
-            <div className="flex items-center gap-6 text-sm font-bold">
-              <span>WIP ที่วางแผน <strong className="ml-2 text-lg text-[#102C57]">{matrixColumns.length}</strong> รายการ</span>
-              <span className="h-7 w-px bg-slate-300" />
-              <span>รวมปริมาณแผน (ทั้งหมด) <strong className="ml-2 text-lg text-[#102C57]">{formatNumber(plannedTotal, 2)}</strong> หน่วย</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-4 text-[11px] text-slate-600">
-              <Legend color="bg-[#f7cdd2]" label="มีแผน (Planned)" /><Legend color="bg-[#ef6c6c]" label="ขาดแคลน (Shortage)" /><Legend color="bg-[#b9dfc2]" label="เพียงพอ (Sufficient)" /><Legend color="bg-white border border-slate-300" label="ไม่มีความต้องการ (No Demand)" />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between bg-[#d4af37] px-4 py-2 text-xs font-extrabold text-[#102C57]">
-            <span>Section: {selectedSectionName}</span>
-            <span>แผนก: {activeDeptName || "-"}</span>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="min-w-[1120px] w-full border-collapse text-xs">
-              <thead>
-                <tr className="bg-[#102C57] text-white">
-                  <th rowSpan={3} className="sticky left-0 z-20 min-w-[135px] border-r border-white/30 px-3 py-2 text-left">รหัสวัตถุดิบ</th>
-                  <th rowSpan={3} className="sticky left-[135px] z-20 min-w-[220px] border-r border-white/30 px-3 py-2 text-left">รายการวัตถุดิบ</th>
-                  <th rowSpan={3} className="min-w-[70px] border-r border-white/30 px-2 py-2">หน่วย</th>
-                  {matrixColumns.map((column) => <th key={column.key} className="min-w-[104px] border-r border-white/30 px-2 py-2 text-center">{column.skuName || column.skuCode}</th>)}
-                  <th rowSpan={3} className="min-w-[85px] px-2 py-2">รวม</th>
-                </tr>
-                <tr className="bg-[#193d70] text-white">
-                  {matrixColumns.map((column) => <th key={`${column.key}-date`} className="border-r border-white/20 px-2 py-1 text-center">{formatMatrixDate(column.workDate)}</th>)}
-                </tr>
-                <tr className="bg-[#244b7e] text-white">
-                  {matrixColumns.map((column) => <th key={`${column.key}-shift`} className="border-r border-white/20 px-2 py-1 text-center">{column.shiftName || column.shiftCode || "-"}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {draftLoading ? (
-                  <tr><td colSpan={matrixColumns.length + 4} className="py-12 text-center font-bold text-slate-500"><RefreshCw size={15} className="mr-2 inline animate-spin" />กำลังโหลดข้อมูลแผน WIP...</td></tr>
-                ) : materialRows.length === 0 ? (
-                  <tr><td colSpan={matrixColumns.length + 4} className="py-12 text-center font-bold text-slate-500">ยังไม่มีข้อมูลวัตถุดิบสำหรับ Section และ WIP ที่เลือก</td></tr>
-                ) : materialRows.map((row, rowIndex) => {
-                  const total = matrixColumns.reduce((sum, column) => sum + Number(row.values[column.key] || 0), 0) || Number(row.aggregate || 0);
-                  return <tr key={`${row.code}-${rowIndex}`} className="border-b border-slate-200 hover:bg-slate-50">
-                    <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 font-mono font-bold">{row.code}</td>
-                    <td className="sticky left-[135px] z-10 border-r border-slate-200 bg-white px-3 py-2 font-semibold">{row.name}</td>
-                    <td className="border-r border-slate-200 px-2 py-2 text-center">{row.unit}</td>
-                    {matrixColumns.map((column) => <td key={column.key} className={`border-r border-slate-200 px-2 py-2 text-center tabular-nums ${row.values[column.key] ? "bg-[#f7cdd2] font-bold" : "text-slate-400"}`}>{row.values[column.key] ? formatNumber(row.values[column.key], 4) : "-"}</td>)}
-                    <td className="bg-[#e6f0ff] px-2 py-2 text-center font-extrabold tabular-nums">{formatNumber(total, 4)}</td>
-                  </tr>;
-                })}
-                {materialRows.length > 0 && <tr className="bg-[#d4af37] font-extrabold text-[#102C57]">
-                  <td colSpan={3} className="px-3 py-2 text-right">รวม</td>
-                  {matrixColumns.map((column) => <td key={`total-${column.key}`} className="border-r border-[#b6911e] px-2 py-2 text-center">{formatNumber(materialRows.reduce((sum, row) => sum + Number(row.values[column.key] || 0), 0), 4)}</td>)}
-                  <td className="px-2 py-2 text-center">{formatNumber(materialRows.reduce((sum, row) => sum + matrixColumns.reduce((colSum, column) => colSum + Number(row.values[column.key] || 0), 0), 0), 4)}</td>
-                </tr>}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <footer className="flex flex-wrap items-center gap-6 border border-slate-300 bg-white px-4 py-3 text-xs font-bold">
-          <span className="text-[#102C57]">{activeDeptName || "-"} / Section {selectedSectionName}</span>
-          <span className="h-5 w-px bg-slate-300" />
-          <span>วัตถุดิบ {totalMaterials} รายการ</span>
-          <span className="h-5 w-px bg-slate-300" />
-          <span>สถานะ: <span className="text-emerald-700">พร้อมคำนวณ</span></span>
-          {existingSubplan?.subPlanNo && <span className="ml-auto text-slate-500">Subplan: {existingSubplan.subPlanNo}</span>}
-        </footer>
-        <div className="border border-[#d4af37] bg-[#fff9e6] px-4 py-2 text-xs font-semibold text-[#8a6d1c]">ยอดวัตถุดิบคำนวณจาก BOM ของ WIP ตามจำนวนที่วางแผนใน Section และกะที่เลือก</div>
-      </main>
-
-      {showWipEditor && <WipEditorModal
-        activeDeptId={activeDeptId}
-        activeDeptName={activeDeptName}
-        activeSection={activeSection}
-        sectionOptions={sectionOptions}
-        sectionRows={sectionRows}
-        isLocked={isLocked}
-        wipSkuCatalog={wipSkuCatalog}
-        getWipMeta={getWipMeta}
-        getShiftsForSection={getShiftsForSection}
-        handleLineChange={handleLineChange}
-        handleAddWipRow={handleAddWipRow}
-        handleRemoveWipRow={handleRemoveWipRow}
-        onOpenWipPicker={(tempId) => setWipPickerTempId(tempId)}
-        onClose={() => setShowWipEditor(false)}
-      />}
-
-      {wipPickerTempId && (
-        <WipPickerModal
-          activeDeptId={activeDeptId}
-          activeDeptName={activeDeptName}
-          onSelect={handleSelectWipFromPicker}
-          onClose={() => setWipPickerTempId(null)}
-        />
-      )}
-
-      {showSchedule && selectedMasterPlanNo && activeDeptId && <div className="fixed inset-0 z-50 bg-[#102C57]/50 p-4 md:p-8">
-        <div className="mx-auto flex h-full max-w-[1600px] flex-col overflow-hidden border border-slate-300 bg-white">
-          <div className="flex items-center justify-between border-b-2 border-[#d4af37] bg-[#102C57] px-4 py-3 text-white"><strong>แผนหลัก FG ของ {activeDeptName}</strong><button type="button" onClick={() => setShowSchedule(false)} className="text-xs font-bold">ปิด</button></div>
-          <div className="overflow-auto p-3"><ProductionScheduleClient deptId={activeDeptId} masterPlanNo={selectedMasterPlanNo} dateFrom={dateFrom} dateTo={dateTo} embedded readOnly={isLocked} onSectionChange={(idx, section) => { setActiveSection(section); setShowSchedule(false); }} /></div>
-        </div>
-      </div>}
-    </div>
-  );
-}
-
-function MatrixSelect({ label, value, onChange, children, disabled = false, readOnly = false }) {
-  return <label className="block text-xs font-bold text-slate-700"><span className="mb-1 block">{label}</span><select value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled || readOnly} className="h-9 w-full border border-slate-300 bg-white px-3 text-xs font-semibold text-[#132238] outline-none focus:border-[#102C57] disabled:bg-slate-100">{children}</select></label>;
-}
-
-function Legend({ color, label }) {
-  return <span className="inline-flex items-center gap-1.5"><span className={`h-4 w-4 ${color}`} />{label}</span>;
-}
-
-function WipEditorModal({ activeDeptId, activeDeptName, activeSection, sectionOptions, sectionRows, isLocked, wipSkuCatalog, getWipMeta, getShiftsForSection, handleLineChange, handleAddWipRow, handleRemoveWipRow, onOpenWipPicker, onClose }) {
-  return <div className="fixed inset-0 z-50 bg-[#102C57]/50 p-4 md:p-10"><div className="mx-auto flex max-h-full max-w-[1250px] flex-col overflow-hidden border border-slate-300 bg-white shadow-xl"><div className="flex items-center justify-between bg-[#102C57] px-4 py-3 text-white"><div><strong>เลือก WIP เพื่อวางแผน</strong><span className="ml-3 text-xs text-white/70">Section: {activeSection?.name || "ทุก Section"}</span></div><button type="button" onClick={onClose} className="text-xs font-bold hover:text-white/80">ปิด</button></div><div className="overflow-auto p-4"><div className="mb-3 flex flex-wrap gap-2">{sectionOptions.map((section) => <span key={section.id} className={`border px-3 py-1 text-xs font-bold ${String(section.id) === String(activeSection?.id) ? "border-[#102C57] bg-[#102C57] text-white" : "border-slate-300 text-slate-600"}`}>{section.name}</span>)}</div><div className="overflow-x-auto"><table className="min-w-[920px] w-full border-collapse text-xs"><thead><tr className="bg-[#102C57] text-white"><th className="px-3 py-2 text-left">วันที่</th><th className="px-3 py-2 text-left">กะของ Section</th><th className="px-3 py-2 text-left">รหัส WIP</th><th className="px-3 py-2 text-left">ชื่อ WIP</th><th className="px-3 py-2 text-right">จำนวนแผน</th><th className="px-3 py-2 text-center">หน่วย</th><th className="px-3 py-2 text-right">จัดการ</th></tr></thead><tbody>{sectionRows.map((row) => { const shifts = getShiftsForSection(row.sourceSectionDefId || activeSection?.id); const meta = getWipMeta(row.skuCode); return <tr key={row.tempId} className="border-b border-slate-200"><td className="px-3 py-2"><input type="date" disabled={isLocked} value={row.workDate || ""} onChange={(event) => handleLineChange(row.tempId, "workDate", event.target.value)} className="h-8 border border-slate-300 px-2" /></td><td className="px-3 py-2"><select disabled={isLocked} value={row.shiftCode || ""} onChange={(event) => { const shift = shifts.find((item) => item.shiftCode === event.target.value); handleLineChange(row.tempId, "shiftCode", event.target.value); if (shift) { handleLineChange(row.tempId, "shiftId", shift.shiftId); handleLineChange(row.tempId, "shiftName", shift.shiftName); } }} className="h-8 border border-slate-300 px-2">{shifts.map((shift) => <option key={shift.shiftId} value={shift.shiftCode}>{shift.shiftName} ({shift.shiftCode})</option>)}</select></td><td className="px-3 py-2">{isLocked || Boolean(row.id) ? <span className="font-mono font-bold">{row.skuCode || "-"}</span> : <button type="button" onClick={() => onOpenWipPicker(row.tempId)} className="h-8 w-full min-w-[170px] border border-slate-300 bg-white px-2.5 text-left font-mono text-xs hover:border-[#102C57] flex items-center justify-between gap-1 text-slate-800 rounded-sm shadow-sm transition-all"><span className={row.skuCode ? "font-bold text-[#102C57]" : "text-slate-400 font-sans font-normal"}>{row.skuCode || "ค้นหาและเลือกรหัส WIP..."}</span><Search size={13} className="text-slate-400 shrink-0" /></button>}</td><td className="px-3 py-2 font-semibold">{row.skuName || "-"}</td><td className="px-3 py-2"><input type="number" min="0" disabled={isLocked} value={row.plannedQty || ""} onChange={(event) => handleLineChange(row.tempId, "plannedQty", event.target.value === "" ? 0 : Number(event.target.value))} className="h-8 w-full border border-slate-300 px-2 text-right font-mono" /></td><td className="px-3 py-2 text-center">{meta.planningUnit}</td><td className="px-3 py-2 text-right"><button type="button" disabled={isLocked} onClick={() => handleRemoveWipRow(row.tempId)} className="text-red-700 disabled:opacity-30 hover:text-red-900"><Trash2 size={15} /></button></td></tr>; })}</tbody></table></div><button type="button" disabled={isLocked || !activeSection} onClick={() => handleAddWipRow(activeSection?.name)} className="mt-4 flex h-9 items-center gap-2 bg-[#102C57] px-4 text-xs font-bold text-white disabled:opacity-40 rounded"><Plus size={14} /> เพิ่ม WIP ใน Section นี้</button></div></div></div>;
-}
-
-function WipPickerModal({ activeDeptId, activeDeptName, onSelect, onClose }) {
-  const [search, setSearch] = useState("");
-  const { data, error, isLoading } = useSWR(
-    activeDeptId ? `/api/production-planning/wip-options?departmentId=${activeDeptId}` : null,
-    fetcher,
-    { revalidateOnFocus: false }
-  );
-
-  const wipList = useMemo(() => data?.data || [], [data]);
-  const meta = data?.meta;
-
-  const filteredList = useMemo(() => {
-    if (!search.trim()) return wipList;
-    const q = search.trim().toLowerCase();
-    return wipList.filter((item) => {
-      const codeMatch = (item.skuCode || "").toLowerCase().includes(q);
-      const nameMatch = (item.name || "").toLowerCase().includes(q);
-      const fgMatch = (item.fgSkus || []).some((fg) => fg.toLowerCase().includes(q));
-      return codeMatch || nameMatch || fgMatch;
-    });
-  }, [wipList, search]);
-
-  return (
-    <div className="fixed inset-0 z-[60] bg-[#102C57]/60 backdrop-blur-sm p-4 md:p-8 flex items-center justify-center animate-in fade-in duration-150">
-      <div className="flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden border border-slate-300 bg-white shadow-2xl rounded-lg">
-        {/* Header */}
-        <div className="flex items-center justify-between bg-[#102C57] px-5 py-3.5 text-white">
-          <div>
-            <h3 className="font-bold text-base flex items-center gap-2">
-              <Boxes size={18} className="text-[#d4af37]" />
-              เลือก WIP สำหรับ {activeDeptName || "แผนกปัจจุบัน"}
-            </h3>
-            <p className="text-xs text-slate-300 mt-0.5">
-              แสดงเฉพาะ WIP ที่เชื่อมโยงกับ FG ของแผนกผ่าน BOM (ผูกกับ FG {meta?.fgCount || 0} รายการ)
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded p-1 hover:bg-white/10 text-white transition-colors"
-          >
-            <X size={18} />
-          </button>
+            );
+          })}
         </div>
 
-        {/* Search & Stats */}
-        <div className="border-b border-slate-200 bg-slate-50 p-4 flex flex-col sm:flex-row gap-3 items-center justify-between">
-          <div className="relative w-full sm:w-96">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              autoFocus
-              placeholder="ค้นหารหัส WIP, ชื่อ WIP หรือรหัส FG..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-9 w-full rounded border border-slate-300 bg-white pl-9 pr-3 text-xs focus:border-[#102C57] focus:outline-none focus:ring-1 focus:ring-[#102C57]"
-            />
-          </div>
-          <div className="text-xs text-slate-500 font-medium self-end sm:self-center">
-            พบ {filteredList.length} รายการจากทั้งหมด {wipList.length} WIP
-          </div>
-        </div>
-
-        {/* Content list */}
-        <div className="overflow-auto p-4 flex-1">
-          {isLoading ? (
-            <div className="flex flex-col items-center justify-center py-12 text-slate-500 gap-2">
-              <RefreshCw size={24} className="animate-spin text-[#102C57]" />
-              <span className="text-xs font-semibold">กำลังโหลดรายการ WIP ของแผนก...</span>
-            </div>
-          ) : error ? (
-            <div className="py-8 text-center text-xs text-red-600 font-semibold">
-              เกิดข้อผิดพลาดในการโหลดข้อมูล: {error.message || "กรุณาลองใหม่อีกครั้ง"}
-            </div>
-          ) : filteredList.length === 0 ? (
-            <div className="py-12 text-center text-xs text-slate-500 font-medium">
-              {search ? "ไม่พบรายการ WIP ที่ตรงกับการค้นหา" : "ไม่มีรายการ WIP ที่ผูกกับ FG ของแผนกนี้ในระบบ"}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-2">
-              {filteredList.map((item) => (
+        {addDialogOpen && (
+          <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/60 backdrop-blur-[2px] p-3 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="add-production-title">
+            <div className="relative flex flex-col w-full max-w-[620px] max-h-[85vh] rounded-xl border border-slate-300 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+              {/* Header */}
+              <div className="flex h-11 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4">
+                <h2 id="add-production-title" className="text-sm sm:text-base font-bold text-slate-800">เพิ่มรายการผลิต</h2>
                 <button
-                  key={item.skuCode}
                   type="button"
-                  onClick={() => onSelect(item)}
-                  className="group flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-md border border-slate-200 bg-white p-3 text-left transition-all hover:border-[#102C57] hover:bg-slate-50 hover:shadow-sm focus:outline-none"
+                  onClick={() => setAddDialogOpen(false)}
+                  aria-label="ปิดหน้าต่างเพิ่มรายการ"
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
                 >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-bold text-[#102C57] group-hover:underline">
-                        {item.skuCode}
-                      </span>
-                      {item.unit && (
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
-                          หน่วย: {item.unit}
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs font-semibold text-slate-800 mt-1 truncate">
-                      {item.name || "-"}
-                    </div>
-                  </div>
-
-                  {/* FG references */}
-                  {item.fgSkus && item.fgSkus.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-1 sm:max-w-xs justify-start sm:justify-end">
-                      <span className="text-[10px] text-slate-400 font-medium">ใช้สำหรับ FG:</span>
-                      {item.fgSkus.slice(0, 3).map((fg) => (
-                        <span
-                          key={fg}
-                          className="rounded bg-blue-50 border border-blue-200 px-1.5 py-0.5 text-[10px] font-mono text-blue-700"
-                        >
-                          {fg}
-                        </span>
-                      ))}
-                      {item.fgSkus.length > 3 && (
-                        <span className="text-[10px] text-slate-400 font-medium">
-                          +{item.fgSkus.length - 3}
-                        </span>
-                      )}
-                    </div>
-                  )}
+                  <X className="h-4 w-4" />
                 </button>
-              ))}
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {/* Switcher Mode */}
+                <div className="grid grid-cols-2 rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-xs font-bold">
+                  <button
+                    type="button"
+                    onClick={() => { setAddMode("fg"); setAddProductSearch(""); setAddPageSize(30); }}
+                    className={`h-7 rounded-md transition-all ${addMode === "fg" ? "bg-white text-[#102C57] shadow-xs" : "text-slate-600 hover:text-slate-900"}`}
+                  >
+                    สินค้า FG
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setAddMode("wip"); setAddProductSearch(""); setAddPageSize(30); }}
+                    className={`h-7 rounded-md transition-all ${addMode === "wip" ? "bg-white text-[#102C57] shadow-xs" : "text-slate-600 hover:text-slate-900"}`}
+                  >
+                    WIP
+                  </button>
+                </div>
+
+                {/* Search */}
+                <div>
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                    <span>{addMode === "fg" ? "ค้นหาสินค้า FG (เฉพาะสินค้าที่มี BOM อนุมัติแล้ว)" : "ค้นหา WIP"}</span>
+                    {!addProductSearch.trim() && deptSkuSet && (
+                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-200">
+                        เฉพาะแผนกนี้ {addProductsFiltered.length} รายการ
+                      </span>
+                    )}
+                  </div>
+                  <div className="relative mt-1">
+                    <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                    <input
+                      autoFocus
+                      value={addProductSearch}
+                      onChange={(event) => { setAddProductSearch(event.target.value); setAddPageSize(30); }}
+                      placeholder="ค้นหารหัสสินค้า / ชื่อสินค้า / แบรนด์"
+                      className="h-8 w-full rounded-lg border border-slate-300 bg-white pl-8 pr-3 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Product Table */}
+                <div className="max-h-[180px] overflow-y-auto rounded-lg border border-slate-200">
+                  <table className="w-full border-collapse text-xs">
+                    <thead className="sticky top-0 bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
+                      <tr className="h-7">
+                        <th className="w-8 border-r border-slate-200 p-1 text-center" />
+                        <th className="w-[110px] border-r border-slate-200 px-2 text-left font-medium">รหัสสินค้า</th>
+                        <th className="border-r border-slate-200 px-2 text-left font-medium">ชื่อสินค้า</th>
+                        <th className="w-[90px] border-r border-slate-200 px-2 text-left font-medium">แบรนด์</th>
+                        {addMode === "fg" && <th className="w-[80px] border-b border-slate-200 px-2 text-center font-medium">BOM</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {addProducts.map((item) => {
+                        const code = item.skuCode;
+                        const name = item.name || item.skuName;
+                        const checked = addForm.skuCode === code;
+                        return (
+                          <tr
+                            key={code}
+                            onClick={() => addMode === "fg" ? setAddFg({ ...addFg, skuCode: code }) : setAddWip({ ...addWip, skuCode: code })}
+                            className={`cursor-pointer transition-colors ${checked ? "bg-amber-50" : "hover:bg-slate-50"}`}
+                          >
+                            <td className="border-r border-slate-200 p-1 text-center">
+                              <input type="radio" name="add-product" checked={checked} onChange={() => {}} aria-label={`เลือก ${code}`} />
+                            </td>
+                            <td className="border-r border-slate-200 px-2 py-1 font-bold text-slate-800 font-mono text-[11px]">{code}</td>
+                            <td className="border-r border-slate-200 px-2 py-1 text-slate-700 whitespace-nowrap" title={name}>{name}</td>
+                            <td className="border-r border-slate-200 px-2 py-1 text-slate-600 whitespace-nowrap">{item.brand || "-"}</td>
+                            {addMode === "fg" && (
+                              <td className="px-2 py-1 text-center">
+                                <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
+                                  มี BOM
+                                </span>
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })}
+                      {!addProducts.length && <EmptyRow colSpan={addMode === "fg" ? 5 : 4}>ไม่พบสินค้าที่ค้นหา</EmptyRow>}
+                      {addProductsHasMore && (
+                        <tr>
+                          <td colSpan={addMode === "fg" ? 5 : 4} className="p-0">
+                            <button
+                              type="button"
+                              onClick={() => setAddPageSize((n) => n + 30)}
+                              className="w-full py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50 border-t border-slate-200"
+                            >
+                              แสดงเพิ่มอีก 30 รายการ ({addProductsFiltered.length - addProducts.length} รายการที่เหลือ)
+                            </button>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Form Details */}
+                <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-2.5">
+                  <h3 className="mb-1.5 text-xs font-bold text-slate-700">รายละเอียดการผลิต</h3>
+                  <div className={`grid gap-2 text-xs font-semibold ${addFgHasPeopleColumn ? "grid-cols-4" : "grid-cols-3"}`}>
+                    <label className="text-slate-600">
+                      วันที่ผลิต
+                      <input
+                        type="date"
+                        min={today}
+                        value={addForm.workDate}
+                        onChange={(event) => addMode === "fg" ? setAddFg({ ...addFg, workDate: event.target.value }) : setAddWip({ ...addWip, workDate: event.target.value })}
+                        className="mt-1 h-8 w-full rounded border border-slate-300 bg-white px-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                      />
+                    </label>
+                    <label className="text-slate-600">
+                      {addMode === "fg" ? "Section" : "ห้องผลิต"}
+                      <select
+                        value={addForm.sectionId || (addMode === "fg" ? selectedSectionDefId : (plannableWorkCenters[0]?.id || sections[0]?.id || ""))}
+                        onChange={(event) => addMode === "fg" ? setAddFg({ ...addFg, sectionId: event.target.value }) : setAddWip({ ...addWip, sectionId: event.target.value })}
+                        className="mt-1 h-8 w-full rounded border border-slate-300 bg-white px-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500 cursor-pointer"
+                      >
+                        {addSections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
+                      </select>
+                    </label>
+                    {addFgHasPeopleColumn && (
+                      <label className="text-slate-600">
+                        จำนวนคน
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={addFg.people}
+                          onChange={(event) => setAddFg({ ...addFg, people: event.target.value })}
+                          className="mt-1 h-8 w-full rounded border border-slate-300 bg-white px-2 text-right text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                        />
+                      </label>
+                    )}
+                    <label className="text-slate-600">
+                      จำนวนผลิต
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={addForm.plannedQty}
+                        onChange={(event) => addMode === "fg" ? setAddFg({ ...addFg, plannedQty: event.target.value }) : setAddWip({ ...addWip, plannedQty: event.target.value })}
+                        className="mt-1 h-8 w-full rounded border border-slate-300 bg-white px-2 text-right text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="flex h-12 shrink-0 items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4">
+                <button
+                  type="button"
+                  onClick={() => setAddDialogOpen(false)}
+                  className="h-8 rounded-lg border border-slate-300 bg-white px-4 text-xs font-bold text-slate-700 hover:bg-slate-100 shadow-xs transition-colors"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  onClick={addMode === "fg" ? addFgRow : addWipRow}
+                  disabled={!addForm.skuCode || !addForm.workDate || !(addForm.sectionId || (addMode === "fg" ? selectedSectionDefId : (plannableWorkCenters[0]?.id || sections[0]?.id))) || Number(addForm.plannedQty) <= 0}
+                  className="h-8 rounded-lg bg-[var(--surface-navy,#102C57)] px-4 text-xs font-bold text-white hover:bg-[var(--surface-navy,#0c2345)] disabled:opacity-40 shadow-xs transition-colors"
+                >
+                  เพิ่มรายการ
+                </button>
+              </div>
             </div>
-          )}
-        </div>
-      </div>
-    </div>
+          </div>
+        )}
+
+        {/* Sticky Bottom Bar สไตล์ plan.png */}
+        <footer className="sticky bottom-0 z-20 flex min-h-14 items-center justify-between border-t border-slate-200 bg-white px-6 py-2.5 shadow-[0_-3px_12px_rgba(0,0,0,0.06)]">
+          <div className="flex items-center gap-2.5 text-xs font-bold text-[#102C57]">
+            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--surface-navy,#102C57)] text-white">
+              <Info className="h-3 w-3" />
+            </div>
+            <span>{dirtyCount ? `มีการแก้ไขข้อมูล ${dirtyCount} รายการ (ยังไม่ได้บันทึก)` : "ยังไม่มีการแก้ไขข้อมูล"}</span>
+            <span className="text-slate-400 font-normal ml-3 hidden sm:inline">วันที่ก่อน {dateLabel(today)} ไม่สามารถแก้ไขได้</span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={resetChanges}
+              disabled={!dirtyCount}
+              className="h-9 rounded-lg border border-slate-300 bg-white px-4 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-40 transition-colors"
+            >
+              ยกเลิกการแก้ไข
+            </button>
+            <button
+              type="button"
+              onClick={saveAll}
+              disabled={saving || !dirtyCount}
+              className="flex h-9 items-center gap-1.5 rounded-lg bg-[#f6bd16] hover:bg-[#e5ad0e] px-5 text-xs font-black text-[#102C57] shadow-sm disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+            >
+              <Save className="h-4 w-4" />
+              <span>{saving ? "กำลังบันทึก..." : "บันทึกการแก้ไข"}</span>
+            </button>
+          </div>
+        </footer>
+        {planPickerOpen && <RequisitionPlanPicker plans={plans.map(plan => ({ planNo: plan.masterPlanNo, periodStart: plan.periodStart, periodEnd: plan.periodEnd }))} selectedPlanNo={masterPlanNo} onSelect={setMasterPlanNo} onClose={() => setPlanPickerOpen(false)} formatDate={dateLabel} loading={plansLoading} error={plansError} onRetry={() => reloadPlans()} />}
+        {addFgDay && canAddFg && <PlanningSkuPicker skuMap={new Map(fgCatalog.map(item => [item.name, item]))} currentValue="" onClose={() => setAddFgDay(null)} onSelect={(name, brand, formula) => { const product = fgCatalog.find(item => item.name === name); if (product) addFgRow(product, addFgDay, formula); }} />}
+      </section>
+    </main>
   );
 }
+

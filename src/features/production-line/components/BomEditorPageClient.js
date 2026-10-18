@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Check,
   CheckCircle,
@@ -21,13 +20,24 @@ import {
   AlertTriangle,
   ListFilter,
   Printer, // Added icon
+  CalendarDays,
 } from "lucide-react";
 
 import PermissionGate from "@/components/PermissionGate";
+import { A4DocumentLayout } from "@/components/print";
 import { usePermissions } from "@/lib/usePermissions";
 import { usePersistentRouteState } from "@/lib/usePersistentRouteState";
+import { useUnsavedChanges } from "@/lib/tabState";
 import MaterialSelectionDrawer from "./MaterialSelectionDrawer";
+import PlanningSkuPicker from "@/features/production-planning/components/PlanningSkuPicker";
+import ReportTable from "@/components/print/ReportTable";
+import InlineNumberField from "@/components/InlineNumberField";
+import InlineCellPopover from "@/components/InlineCellPopover";
+import RequisitionDialog from "@/features/production-planning/components/RequisitionDialog";
+import styles from "./BomEditorPageClient.module.css";
 import MultiProductImportPreviewModal from "./MultiProductImportPreviewModal";
+import BomCloneDialog from "./BomCloneDialog";
+import { filterBomTreeRows } from "../utils/bomTablePresentation";
 import {
   BOM_ITEM_TYPES,
   BOM_PARENT_CATEGORY_OPTIONS,
@@ -410,19 +420,7 @@ export default function BomEditorPageClient() {
   });
   const [localDraftFormulaKeys, setLocalDraftFormulaKeys] = useState(() => new Set());
   
-  const filteredCloneProducts = useMemo(() => {
-    const term = (cloneDrawerState.searchTerm || "").trim().toLowerCase();
-    if (!term) return cloneDrawerState.products;
-    return cloneDrawerState.products.filter(
-      (p) =>
-        (p.code || "").toLowerCase().includes(term) ||
-        (p.name || "").toLowerCase().includes(term)
-    );
-  }, [cloneDrawerState.products, cloneDrawerState.searchTerm]);
-  const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
-  const [isSelectOpen, setIsSelectOpen] = useState(false);
   const [isProductDrawerOpen, setIsProductDrawerOpen] = useState(false);
-  const [drawerSelectedProductCode, setDrawerSelectedProductCode] = useState("");
   const [expandedWipCodes, setExpandedWipCodes] = useState(new Set());
   const [dirtyProductCodes, setDirtyProductCodes] = useState(new Set());
   const [addingToProductCode, setAddingToProductCode] = useState(null);
@@ -490,10 +488,7 @@ export default function BomEditorPageClient() {
     });
   }, [dataState.materials]);
 
-  const productSearchRef = useRef(null);
-  const materialListRef = useRef(null);
   const fileInputRef = useRef(null);
-  const actionMenuRef = useRef(null);
 
   // Vercel Best Practice: rerender-memo - Memoize expensive computations
   const productMap = useMemo(() => {
@@ -587,6 +582,9 @@ export default function BomEditorPageClient() {
                   id: createRowId(),
                   materialCode: row.material_sku_code,
                   materialGoodsCode: row.material_goods_code || "",
+                  substituteMaterialSkuCodes: Array.isArray(row.substitute_material_sku_codes)
+                    ? row.substitute_material_sku_codes
+                    : [],
                   materialName: row.material_name,
                   itemType: resolveItemTypeByCategory(row.iccat_code),
                   qty: row.qty,
@@ -664,6 +662,9 @@ export default function BomEditorPageClient() {
                     id: createRowId(),
                     materialCode: childRow.material_sku_code,
                     materialGoodsCode: childRow.material_goods_code || "",
+                    substituteMaterialSkuCodes: Array.isArray(childRow.substitute_material_sku_codes)
+                      ? childRow.substitute_material_sku_codes
+                      : [],
                     materialName: childRow.material_name,
                     itemType: resolveItemTypeByCategory(childRow.iccat_code),
                     qty: childRow.qty,
@@ -726,304 +727,6 @@ export default function BomEditorPageClient() {
       window.print();
     }
   }, []);
-
-  const handleCaptureImage = useCallback(async () => {
-    if (!uiState.selectedProductCode) return;
-    updateLoadingState({ isLoadingBom: true });
-    let exportRoot = null;
-    updateNotificationState({
-      notifyMessage: "กำลังบันทึกรูปภาพ...",
-      notifyDetail: "ระบบกำลังเตรียมไฟล์รูปภาพตาราง BOM",
-      notifyTone: "neutral",
-      notifyAction: "",
-    });
-    try {
-      const htmlToImage = await import("html-to-image");
-      const element = document.getElementById("bom-print-table-container");
-      if (!element) {
-        throw new Error("ไม่พบตารางข้อมูลสำหรับบันทึกรูปภาพ");
-      }
-
-      if (document.fonts?.ready) {
-        await document.fonts.ready;
-      }
-
-      exportRoot = document.createElement("div");
-      exportRoot.setAttribute("data-bom-export-root", "true");
-      exportRoot.style.position = "absolute";
-      exportRoot.style.left = "0";
-      exportRoot.style.top = "0";
-      exportRoot.style.zIndex = "-1";
-      exportRoot.style.pointerEvents = "none";
-      exportRoot.style.background = "#ffffff";
-      exportRoot.style.padding = "0";
-      exportRoot.style.boxSizing = "border-box";
-      exportRoot.style.width = `${Math.max(element.scrollWidth, element.clientWidth)}px`;
-
-      const exportClone = element.cloneNode(true);
-      exportClone.id = "bom-print-table-export";
-      exportClone.style.overflow = "visible";
-      exportClone.style.width = `${Math.max(element.scrollWidth, element.clientWidth)}px`;
-      exportClone.style.minWidth = `${Math.max(element.scrollWidth, element.clientWidth)}px`;
-      exportClone.style.maxWidth = "none";
-      exportClone.style.height = "auto";
-      exportClone.style.background = "#ffffff";
-      exportRoot.appendChild(exportClone);
-      document.body.appendChild(exportRoot);
-
-      const liveControlsForExport = element.querySelectorAll("input, select, textarea");
-      const cloneControlsForExport = exportClone.querySelectorAll("input, select, textarea");
-      cloneControlsForExport.forEach((control, index) => {
-        const liveControl = liveControlsForExport[index];
-        if (!liveControl) return;
-
-        const liveStyle = window.getComputedStyle(liveControl);
-        const liveRect = liveControl.getBoundingClientRect();
-        const replacement = document.createElement("div");
-        replacement.textContent =
-          liveControl.tagName === "SELECT"
-            ? liveControl.selectedOptions?.[0]?.textContent?.trim() || liveControl.value || ""
-            : liveControl.value || liveControl.placeholder || "";
-        replacement.style.display = "flex";
-        replacement.style.alignItems = "center";
-        replacement.style.justifyContent =
-          liveStyle.textAlign === "center" ? "center" : liveStyle.textAlign === "right" ? "flex-end" : "flex-start";
-        replacement.style.width = liveRect.width ? `${liveRect.width}px` : liveStyle.width;
-        replacement.style.minHeight = liveRect.height ? `${liveRect.height}px` : liveStyle.height;
-        replacement.style.height = liveRect.height ? `${liveRect.height}px` : liveStyle.height;
-        replacement.style.boxSizing = "border-box";
-        replacement.style.padding = liveStyle.padding;
-        replacement.style.border = liveStyle.border;
-        replacement.style.borderRadius = liveStyle.borderRadius;
-        replacement.style.backgroundColor = liveStyle.backgroundColor;
-        replacement.style.color = liveStyle.color;
-        replacement.style.fontFamily = liveStyle.fontFamily;
-        replacement.style.fontSize = liveStyle.fontSize;
-        replacement.style.fontWeight = liveStyle.fontWeight;
-        replacement.style.lineHeight = liveStyle.lineHeight;
-        replacement.style.letterSpacing = liveStyle.letterSpacing;
-        replacement.style.textAlign = liveStyle.textAlign;
-        replacement.style.whiteSpace = "pre-wrap";
-        replacement.style.overflow = "hidden";
-        replacement.style.textOverflow = "ellipsis";
-        control.replaceWith(replacement);
-      });
-
-      const hiddenNodesForExport = exportClone.querySelectorAll(".no-print, .print-capture-hidden");
-      hiddenNodesForExport.forEach((node) => {
-        node.style.display = "none";
-      });
-
-      const exportTable = exportClone.querySelector("table");
-      if (exportTable) {
-        exportTable.style.width = "100%";
-        exportTable.style.tableLayout = "fixed";
-      }
-
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-
-      const exportWidthWithClone = Math.ceil(Math.max(
-        exportClone.scrollWidth,
-        exportClone.offsetWidth,
-        exportClone.getBoundingClientRect().width
-      ));
-      const exportHeightWithClone = Math.ceil(Math.max(
-        exportClone.scrollHeight,
-        exportClone.offsetHeight,
-        exportClone.getBoundingClientRect().height
-      ));
-      if (exportWidthWithClone < 2 || exportHeightWithClone < 2) {
-        throw new Error("ไม่พบขนาดตารางสำหรับบันทึกรูปภาพ");
-      }
-      const fontEmbedCSS = await htmlToImage.getFontEmbedCSS(exportClone);
-      const exportDataUrl = await htmlToImage.toPng(exportClone, {
-        backgroundColor: "#ffffff",
-        cacheBust: true,
-        width: exportWidthWithClone,
-        height: exportHeightWithClone,
-        canvasWidth: exportWidthWithClone,
-        canvasHeight: exportHeightWithClone,
-        pixelRatio: 1,
-        skipAutoScale: false,
-        preferredFontFormat: "woff2",
-        fontEmbedCSS,
-        style: {
-          background: "#ffffff",
-          margin: "0",
-          maxWidth: "none",
-          overflow: "visible",
-          transform: "none",
-        },
-      });
-
-      const exportLink = document.createElement("a");
-      exportLink.download = `BOM-${uiState.selectedProductCode}-${uiState.selectedFormulaCode || "DEFAULT"}.png`;
-      exportLink.href = exportDataUrl;
-      document.body.appendChild(exportLink);
-      exportLink.click();
-      exportLink.remove();
-
-      updateNotificationState({
-        notifyMessage: "บันทึกรูปภาพสำเร็จ",
-        notifyDetail: `ดาวน์โหลดรูปภาพสำหรับ ${uiState.selectedProductCode} เรียบร้อยแล้ว`,
-        notifyTone: "success",
-        notifyAction: "",
-      });
-      return;
-
-      const exportWidth = Math.max(element.scrollWidth, element.clientWidth);
-      const exportHeight = Math.max(element.scrollHeight, element.clientHeight);
-      const exportScale = Math.max(window.devicePixelRatio || 1, 2);
-
-      const buildCaptureOptions = (foreignObjectRendering) => ({
-        scale: exportScale,
-        useCORS: true,
-        backgroundColor: "#ffffff",
-        logging: false,
-        foreignObjectRendering,
-        removeContainer: true,
-        width: exportWidth,
-        height: exportHeight,
-        windowWidth: window.innerWidth,
-        windowHeight: window.innerHeight,
-        scrollX: window.pageXOffset,
-        scrollY: window.pageYOffset,
-        onclone: (clonedDoc) => {
-          const clonedElement = clonedDoc.getElementById("bom-print-table-container");
-          if (clonedElement) {
-            clonedElement.style.overflow = "visible";
-            clonedElement.style.width = `${exportWidth}px`;
-            clonedElement.style.minWidth = `${exportWidth}px`;
-            clonedElement.style.maxWidth = "none";
-            clonedElement.style.height = `${exportHeight}px`;
-
-            const liveStyle = window.getComputedStyle(element);
-            clonedElement.style.fontFamily = liveStyle.fontFamily;
-            clonedElement.style.color = liveStyle.color;
-            clonedElement.style.backgroundColor = liveStyle.backgroundColor;
-          }
-
-          const toHide = clonedDoc.querySelectorAll(".no-print, .print-capture-hidden");
-          toHide.forEach((el) => {
-            el.setAttribute("data-html2canvas-ignore", "true");
-            el.style.display = "none";
-          });
-
-          const liveControls = element.querySelectorAll("input, select, textarea");
-          const clonedControls = clonedDoc.querySelectorAll("#bom-print-table-container input, #bom-print-table-container select, #bom-print-table-container textarea");
-          clonedControls.forEach((control, index) => {
-            const liveControl = liveControls[index];
-            if (!liveControl) return;
-
-            const liveStyle = window.getComputedStyle(liveControl);
-            const liveRect = liveControl.getBoundingClientRect();
-            const replacement = clonedDoc.createElement("div");
-            replacement.textContent =
-              liveControl.tagName === "SELECT"
-                ? liveControl.selectedOptions?.[0]?.textContent?.trim() || liveControl.value || ""
-                : liveControl.value || liveControl.placeholder || "";
-            replacement.setAttribute("data-capture-control", "true");
-            replacement.style.display = "flex";
-            replacement.style.alignItems = "center";
-            replacement.style.justifyContent = liveStyle.textAlign === "center" ? "center" : liveStyle.textAlign === "right" ? "flex-end" : "flex-start";
-            replacement.style.width = liveRect.width ? `${liveRect.width}px` : liveStyle.width;
-            replacement.style.minHeight = liveRect.height ? `${liveRect.height}px` : liveStyle.height;
-            replacement.style.height = liveRect.height ? `${liveRect.height}px` : liveStyle.height;
-            replacement.style.boxSizing = "border-box";
-            replacement.style.padding = liveStyle.padding;
-            replacement.style.border = liveStyle.border;
-            replacement.style.borderRadius = liveStyle.borderRadius;
-            replacement.style.backgroundColor = liveStyle.backgroundColor;
-            replacement.style.color = liveStyle.color;
-            replacement.style.fontFamily = liveStyle.fontFamily;
-            replacement.style.fontSize = liveStyle.fontSize;
-            replacement.style.fontWeight = liveStyle.fontWeight;
-            replacement.style.lineHeight = liveStyle.lineHeight;
-            replacement.style.letterSpacing = liveStyle.letterSpacing;
-            replacement.style.textAlign = liveStyle.textAlign;
-            replacement.style.whiteSpace = "pre-wrap";
-            replacement.style.overflow = "hidden";
-            replacement.style.textOverflow = "ellipsis";
-
-            control.replaceWith(replacement);
-          });
-
-          const styleTags = clonedDoc.querySelectorAll("style");
-          styleTags.forEach((styleTag) => {
-            try {
-              let css = styleTag.innerHTML;
-              if (css.includes("oklch")) {
-                css = css.replace(/oklch\([^)]+\)/g, "#000000");
-                styleTag.innerHTML = css;
-              }
-            } catch (e) {}
-          });
-
-          try {
-            for (let i = clonedDoc.styleSheets.length - 1; i >= 0; i--) {
-              const sheet = clonedDoc.styleSheets[i];
-              try {
-                const rules = sheet.cssRules || sheet.rules;
-                if (!rules) continue;
-                for (let j = rules.length - 1; j >= 0; j--) {
-                  const rule = rules[j];
-                  if (rule.cssText && rule.cssText.includes("oklch")) {
-                    sheet.deleteRule(j);
-                  }
-                }
-              } catch (e) {
-                // Keep inaccessible stylesheets so the cloned document preserves the live layout.
-              }
-            }
-          } catch (e) {}
-        },
-      });
-
-      let canvas;
-      try {
-        canvas = await html2canvas(element, buildCaptureOptions(true));
-      } catch (foreignObjectError) {
-        console.warn("html2canvas foreignObjectRendering failed, falling back to default renderer.", foreignObjectError);
-        canvas = await html2canvas(element, buildCaptureOptions(false));
-      }
-
-      const link = document.createElement("a");
-      link.download = `BOM-${uiState.selectedProductCode}-${uiState.selectedFormulaCode || "DEFAULT"}.png`;
-      const pngBlob = await new Promise((resolve, reject) => {
-        canvas.toBlob((blob) => {
-          if (blob) {
-            resolve(blob);
-            return;
-          }
-          reject(new Error("Failed to create PNG blob"));
-        }, "image/png");
-      });
-      const blobUrl = URL.createObjectURL(pngBlob);
-      link.href = blobUrl;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(blobUrl);
-
-      updateNotificationState({
-        notifyMessage: "บันทึกรูปภาพสำเร็จ",
-        notifyDetail: `ดาวน์โหลดรูปภาพสำหรับ ${uiState.selectedProductCode} เรียบร้อยแล้ว`,
-        notifyTone: "success",
-        notifyAction: "",
-      });
-    } catch (error) {
-      console.error("Capture image error:", error);
-      updateNotificationState({
-        notifyMessage: "บันทึกรูปภาพไม่สำเร็จ",
-        notifyDetail: error.message || "กรุณาลองใหม่อีกครั้ง",
-        notifyTone: "error",
-        notifyAction: "",
-      });
-    } finally {
-      exportRoot?.remove();
-      updateLoadingState({ isLoadingBom: false });
-    }
-  }, [uiState.selectedProductCode, uiState.selectedFormulaCode, updateLoadingState, updateNotificationState]);
 
   const selectedProduct = useMemo(() => {
     return productMap.get(uiState.selectedProductCode);
@@ -1094,6 +797,9 @@ export default function BomEditorPageClient() {
   const flattenedTreeRows = useMemo(() => {
     return getFlattenedTreeRows();
   }, [getFlattenedTreeRows]);
+  const [treeFilters, setTreeFilters] = useState({query:"",type:"all",category:"all",active:"all"});
+  useEffect(() => { setTreeFilters({query:"",type:"all",category:"all",active:"all"}); }, [selectedProductCode,selectedFormulaCode]);
+  const visibleTreeRows = useMemo(() => filterBomTreeRows(flattenedTreeRows, treeFilters, resolveRowMaterialVariant), [flattenedTreeRows,treeFilters,resolveRowMaterialVariant]);
   const planningSummary = useMemo(() => {
     let wipCount = 0;
     let rawCount = 0;
@@ -1155,13 +861,8 @@ export default function BomEditorPageClient() {
   const [selectedVersionId, setSelectedVersionId] = useState("");
   const [activeVersionId, setActiveVersionId] = useState("");
 
-  const selectedDrawerProduct = useMemo(() => {
-    if (!drawerSelectedProductCode) return selectedProduct || null;
-    return productMap.get(drawerSelectedProductCode) || selectedProduct || null;
-  }, [drawerSelectedProductCode, productMap, selectedProduct]);
 
   const openProductDrawer = useCallback(() => {
-    setDrawerSelectedProductCode(uiState.selectedProductCode || "");
     updateFilterState({
       searchTerm: "",
       categoryFilter: "all",
@@ -1169,7 +870,7 @@ export default function BomEditorPageClient() {
       statusFilter: "all",
     });
     setIsProductDrawerOpen(true);
-  }, [uiState.selectedProductCode, updateFilterState]);
+  }, [updateFilterState]);
 
   const handleSelectProduct = useCallback((product) => {
     if (!product?.code) return;
@@ -1187,7 +888,6 @@ export default function BomEditorPageClient() {
     updateSelectionState({ selectedRows: new Set() });
     updateEditorState({ bulkAddSummary: "" });
     setSelectedVersionId(dataState.versionsByProduct[product.code]?.[0]?.id || "");
-    setDrawerSelectedProductCode(product.code);
     setIsProductDrawerOpen(false);
   }, [
     dataState.bomStatusByProduct,
@@ -1198,10 +898,6 @@ export default function BomEditorPageClient() {
     updateUiState,
   ]);
 
-  const handleSearchFocus = useCallback(() => {
-    setIsSelectOpen(true);
-    updateFilterState({ searchTerm: "" });
-  }, [updateFilterState]);
 
   const versionDetail = versions.find((item) => item.id === selectedVersionId);
   useEffect(() => {
@@ -1236,19 +932,6 @@ export default function BomEditorPageClient() {
     updateUiState({ baseBatch: 1 });
   }, [baseBatch, isSelectedWipUnitMode, updateUiState]);
 
-  const listRef = useRef(null);
-  const rowVirtualizer = useVirtualizer({
-    count: productList.length,
-    getScrollElement: () => listRef.current,
-    estimateSize: () => 68,
-    overscan: 8,
-  });
-  const materialVirtualizer = useVirtualizer({
-    count: availableMaterials.length,
-    getScrollElement: () => materialListRef.current,
-    estimateSize: () => 56,
-    overscan: 10,
-  });
 
   const recentMaterialItems = useMemo(() => {
     return editorState.recentMaterials
@@ -1390,21 +1073,13 @@ export default function BomEditorPageClient() {
   }, []);
 
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (actionMenuRef.current && !actionMenuRef.current.contains(event.target)) {
-        setIsActionMenuOpen(false);
-      }
-    };
     const handleEsc = (event) => {
       if (event.key === "Escape") {
-        setIsActionMenuOpen(false);
         setIsProductDrawerOpen(false);
       }
     };
-    document.addEventListener("mousedown", handleClickOutside);
     document.addEventListener("keydown", handleEsc);
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("keydown", handleEsc);
     };
   }, []);
@@ -1447,6 +1122,7 @@ export default function BomEditorPageClient() {
             itemType,
             uom: row.goods_uom_name || row.uom_name,
             unit: row.goods_uom_name || row.uom_name,
+            isActive: typeof row.is_active === "boolean" ? row.is_active : null,
             formulaOptions: Array.isArray(row.formula_options) ? row.formula_options : [],
             wipFormulaCode: conversionMeta?.formulaCode || null,
             wipFormulaName: conversionMeta?.formulaName || null,
@@ -1500,6 +1176,9 @@ export default function BomEditorPageClient() {
           id: createRowId(),
           materialCode: row.material_sku_code,
           materialGoodsCode: row.material_goods_code || "",
+          substituteMaterialSkuCodes: Array.isArray(row.substitute_material_sku_codes)
+            ? row.substitute_material_sku_codes
+            : [],
           materialName: row.material_name,
           itemType: resolveItemTypeByCategory(row.iccat_code),
           qty: row.qty,
@@ -2488,6 +2167,9 @@ export default function BomEditorPageClient() {
         id: createRowId(),
         materialCode: item.material_sku_code,
         materialGoodsCode: item.material_goods_code || "",
+        substituteMaterialSkuCodes: Array.isArray(item.substitute_material_sku_codes)
+          ? item.substitute_material_sku_codes
+          : [],
         materialName: item.material_name,
         itemType: resolveItemTypeByCategory(item.iccat_code),
         qty: Number(item.qty),
@@ -3004,6 +2686,9 @@ export default function BomEditorPageClient() {
             return {
               material_sku_code: row.materialCode,
               material_goods_code: row.materialGoodsCode || null,
+              substitute_material_sku_codes: Array.isArray(row.substituteMaterialSkuCodes)
+                ? row.substituteMaterialSkuCodes
+                : [],
               qty: row.qty,
               uom_name: resolveBomRowInputUnit(row, rowMaterial),
               notes: row.note ?? row.notes ?? "",
@@ -3196,15 +2881,7 @@ export default function BomEditorPageClient() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [openProductDrawer]);
 
-  useEffect(() => {
-    if (!editorState.isDirty) return;
-    const handleBeforeUnload = (event) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [editorState.isDirty]);
+  useUnsavedChanges(editorState.isDirty, "คุณมีการแก้ไขสูตร BOM ที่ยังไม่ได้บันทึก ต้องการออกจากหน้านี้หรือไม่?");
 
   useEffect(() => {
     if (isProductDrawerOpen) return;
@@ -3238,7 +2915,7 @@ export default function BomEditorPageClient() {
     <PermissionGate
       permissionsAny={["production-line-bom-view", "production-line-bom-manage"]}
     >
-      <div className="flex min-h-screen flex-col bg-[#f6f7f8] text-[#0f172a] font-sans">
+      <div className={styles.page}>
         <input
           ref={fileInputRef}
           type="file"
@@ -3246,204 +2923,14 @@ export default function BomEditorPageClient() {
           className="hidden"
           onChange={handleFileChange}
         />
-        {showToast && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <div className="w-full max-w-md rounded-[2px] border border-[#d4af37]/40 bg-[#0b2141] text-white shadow-2xl">
-              <div className="flex items-start gap-3 px-5 py-4">
-                <div className="mt-0.5">
-                  {notifyTone === "success" ? (
-                    <CheckCircle className="h-5 w-5 text-[#d4af37]" />
-                  ) : notifyTone === "error" ? (
-                    <AlertTriangle className="h-5 w-5 text-rose-300" />
-                  ) : (
-                    <Check className="h-5 w-5 text-white/80" />
-                  )}
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-white">{notifyMessage}</p>
-                  {notifyDetail && (
-                    <p className="mt-1 text-xs text-white/70">{notifyDetail}</p>
-                  )}
-                  {!notifyDetail && notifyAction === "approval" && canRequestApproval && (
-                    <p className="mt-1 text-xs text-white/70">ขั้นตอนถัดไป: ส่งคำขออนุมัติ</p>
-                  )}
-                  {notifyAction === "approval" && canRequestApproval && (
-                    <button
-                      type="button"
-                      onClick={handleRequestApproval}
-                      className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#d4af37] bg-[#102C57] px-3 py-1.5 text-[11px] font-semibold text-[#d4af37] transition-colors hover:bg-[#0a2345]"
-                    >
-                      <Check aria-hidden="true" className="h-3.5 w-3.5" />
-                      ส่งคำขออนุมัติ
-                    </button>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => updateNotificationState({ notifyMessage: "", notifyDetail: "", notifyAction: "", notifyTone: "neutral" })}
-                  className="rounded-full p-1 text-white/70 hover:bg-white/10 hover:text-white"
-                  aria-label="ปิดการแจ้งเตือน"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-        <div className="bg-gradient-to-r from-[#102C57] via-[#0b2141] to-[#102C57] shadow-xl text-white shrink-0 z-40">
-          <div className="max-w-[95%] mx-auto py-4">
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-                <div>
-                  <h6 className="text-[#d4af37] font-bold tracking-[0.2em] text-[10px] uppercase mb-0.5">
-                    Quickplan
-                  </h6>
-                  <h1 className="text-xl md:text-2xl font-bold text-white flex flex-wrap items-center gap-3">
-                    <Layers size={28} className="text-[#d4af37]" />
-                    BOM ไลน์การผลิต
-                    <span className="text-[10px] bg-[#d4af37] text-[#102C57] px-2 py-0.5 rounded-full font-sans font-bold tracking-wider">
-                      {productList.length.toLocaleString()} รายการ
-                    </span>
-                  </h1>
-                </div>
-                <div className="flex flex-col items-start gap-3 lg:items-end">
-                  <button
-                    type="button"
-                    onClick={handleRefreshBom}
-                    disabled={
-                      !selectedProductCode
-                      || isLoadingBom
-                      || editorState.isDirty
-                      || Boolean(editorState.editingRowId)
-                      || isSelectedFormulaLocalDraft
-                    }
-                    title={editorState.isDirty ? "บันทึกการแก้ไขก่อนรีเฟรชข้อมูล" : "โหลดข้อมูล BOM ล่าสุด"}
-                    className="inline-flex items-center gap-2 rounded-full border border-white/40 bg-white/10 px-4 py-2 text-[11px] font-semibold text-white shadow-sm transition-colors hover:border-[#d4af37] hover:text-[#d4af37] disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <RefreshCw aria-hidden="true" className={`h-4 w-4 ${isLoadingBom ? "animate-spin" : ""}`} />
-                    รีเฟรชข้อมูล
-                  </button>
-                  <div className="relative hidden sm:block" ref={actionMenuRef}>
-                    <div className="flex flex-wrap items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={handleOpenImport}
-                        disabled={importState.isParsing}
-                        className="inline-flex items-center gap-2 rounded-l-full rounded-r-none border border-white/40 bg-white/10 px-4 py-2 text-[11px] font-semibold text-white shadow-sm transition-colors duration-200 hover:border-[#d4af37] hover:text-[#d4af37] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <Plus aria-hidden="true" className="h-4 w-4" />
-                        นำเข้า/ส่งออก
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setIsActionMenuOpen((prev) => !prev)}
-                        aria-expanded={isActionMenuOpen}
-                        className="inline-flex items-center rounded-r-full rounded-l-none border border-white/40 border-l-0 bg-white/10 px-2 py-2 text-white hover:border-[#d4af37] hover:text-[#d4af37] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37] focus-visible:ring-offset-2"
-                      >
-                        <ChevronDown aria-hidden="true" className="h-4 w-4" />
-                      </button>
-                    </div>
-                    {isActionMenuOpen && (
-                      <div
-                        role="menu"
-                        className="absolute right-0 mt-2 w-60 rounded-2xl border border-gray-200 bg-white text-[#102C57] shadow-2xl z-50"
-                      >
-                        <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.15em] text-gray-500">
-                          เทมเพลต / นำเข้า / ส่งออก
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsActionMenuOpen(false);
-                            handleDownloadTemplate();
-                          }}
-                          className="flex w-full items-center gap-2 px-4 py-2 text-sm font-semibold hover:bg-gray-50 focus-visible:outline-none focus-visible:bg-gray-100"
-                        >
-                          <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
-                          ดาวน์โหลดเทมเพลต (หลายสินค้า)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsActionMenuOpen(false);
-                            handleOpenImport();
-                          }}
-                          className="flex w-full items-center gap-2 px-4 py-2 text-sm font-semibold hover:bg-gray-50 focus-visible:outline-none focus-visible:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
-                          disabled={importState.isParsing}
-                        >
-                          <Plus className="h-4 w-4 text-[#102C57]" />
-                          นำเข้า Excel (หลายสินค้า)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsActionMenuOpen(false);
-                            handleExportCurrent();
-                          }}
-                          disabled={!selectedProductCode || !bomRows.length}
-                          className="flex w-full items-center gap-2 px-4 py-2 text-sm font-semibold hover:bg-gray-50 focus-visible:outline-none focus-visible:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          <Copy className="h-4 w-4 text-gray-600" />
-                          Export BOM สินค้าปัจจุบัน
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  {hasRejectedLatestVersion && (
-                    <p className="text-[11px] font-semibold text-rose-200">
-                      เวอร์ชัน {latestVersion?.version || "-"} ถูกปฏิเสธแล้ว ·
-                      ระบบยังใช้งาน{versionForSummary?.version ? ` ${versionForSummary.version}` : " เวอร์ชันก่อนหน้า"} อยู่
-                    </p>
-                  )}
-                </div>
-              </div>
-              <div className="grid gap-2 text-xs text-white/70 grid-cols-2 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="rounded-xl border border-[#d4af37]/30 bg-[#102C57]/70 px-3 py-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/60">
-                    สินค้า
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-white">
-                    {selectedProduct?.code || "-"}
-                  </p>
-                  <p className="text-[11px] text-white/70">
-                    {selectedProduct?.name || "-"}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-[#d4af37]/30 bg-[#102C57]/70 px-3 py-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/60">
-                    เวอร์ชันล่าสุด
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-white">
-                    {versionForSummary?.version || "ยังไม่มี"}
-                  </p>
-                  <p className="text-[11px] text-white/70">
-                    {lastUpdatedAt ? formatDate(lastUpdatedAt) : "-"}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-[#d4af37]/30 bg-[#102C57]/70 px-3 py-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/60">
-                    ผู้แก้ไขล่าสุด
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-white">{lastEditor}</p>
-                  <p className="text-[11px] text-white/70">
-                    {selectedProduct?.line || "-"}
-                  </p>
-                </div>
-                <div className={`rounded-xl border px-3 py-2 ${STATUS_SUMMARY_STYLES[status] || "border-[#1f2937]/60 bg-[#0f172a] text-white"}`}>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/60">
-                    สถานะสูตร
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-white">
-                    {STATUS_OPTIONS.find((option) => option.id === status)?.label}
-                  </p>
-                  <p className="text-[11px] text-white/70">
-                    {bomRows.length} วัตถุดิบ
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        {showToast && <RequisitionDialog title={notifyMessage} onClose={() => updateNotificationState({notifyMessage:"",notifyDetail:"",notifyAction:"",notifyTone:"neutral"})}
+          footer={<>{notifyAction === "approval" && canRequestApproval && <button type="button" onClick={handleRequestApproval}>ส่งคำขออนุมัติ</button>}<button type="button" onClick={() => updateNotificationState({notifyMessage:"",notifyDetail:"",notifyAction:"",notifyTone:"neutral"})}>ปิด</button></>}>
+          <p role={notifyTone === "error" ? "alert" : "status"}>{notifyDetail || (notifyAction === "approval" && canRequestApproval ? "ขั้นตอนถัดไป: ส่งคำขออนุมัติ" : notifyMessage)}</p>
+        </RequisitionDialog>}
+        <header className={styles.pageHeader}>
+          <div><span className={styles.moduleLabel}>การผลิต <ChevronRight size={14} aria-hidden="true" /> สูตรการผลิต (BOM)</span><h1>BOM ไลน์การผลิต</h1></div>
+          <div className={styles.headerActions}><CalendarDays size={20} aria-hidden="true" /><div><span>วันที่ปัจจุบัน</span><strong>{new Intl.DateTimeFormat("th-TH",{day:"2-digit",month:"2-digit",year:"numeric",timeZone:"Asia/Bangkok"}).format(new Date())}</strong></div></div>
+        </header>
 
         <div className="flex-1 overflow-y-auto">
           {/* Custom style for high-quality printing & brand design */}
@@ -3492,7 +2979,7 @@ export default function BomEditorPageClient() {
                 font-size: 11px !important;
               }
               th {
-                background-color: #102C57 !important;
+                background-color: var(--surface-navy, #102C57) !important;
                 color: #d4af37 !important;
                 font-weight: bold !important;
                 -webkit-print-color-adjust: exact !important;
@@ -3521,212 +3008,18 @@ export default function BomEditorPageClient() {
             }
           `}</style>
 
-          <div className="mx-auto flex w-full max-w-[95%] flex-col gap-6 py-6 pb-28 lg:pb-6">
+          <div className={styles.content}>
             {/* HORIZONTAL TOP CONTROL PANEL */}
-            <div className="rounded-[2px] border border-[#d4af37]/35 bg-[#102C57] p-4 shadow-sm flex flex-col gap-4 no-print">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#d4af37]">
-                    สินค้า / WIP
-                  </label>
-                  <button
-                    type="button"
-                    onClick={openProductDrawer}
-                    className="flex h-11 w-full items-center justify-between gap-3 rounded-[2px] border border-[#d4af37]/30 bg-white px-3 text-left text-sm font-semibold text-[#102C57] transition-colors hover:border-[#d4af37] hover:bg-[#fffaf0] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4af37]"
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate">
-                        {selectedProduct ? `${selectedProduct.code} - ${selectedProduct.name}` : "เลือกสินค้า"}
-                      </span>
-                      <span className="block truncate text-[10px] font-semibold text-gray-500">
-                        {selectedProduct ? `${selectedProduct.category || "-"} / ${selectedProduct.unit || "-"}` : `${productList.length.toLocaleString()} รายการพร้อมเลือก`}
-                      </span>
-                    </span>
-                    <Search aria-hidden="true" className="h-4 w-4 shrink-0 text-[#d4af37]" />
+            <div className={styles.filters}>
+              <div className={styles.contextGrid}>
+                <label className={styles.productField}><span>รหัสสินค้า <em>*</em></span>
+                  <button type="button" onClick={openProductDrawer} className={styles.productControl}>
+                    <Save size={16} aria-hidden="true" /><strong>{selectedProduct?.code || "เลือกสินค้า"}</strong><span>{selectedProduct?.name || "เลือกสินค้า / WIP"}</span>
                   </button>
-                </div>
-
-                {/* Legacy inline selector kept hidden while the drawer owns product selection. */}
-                <div className="hidden">
-                  <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#d4af37]">
-                    สินค้า / WIP (Finished Good / WIP)
-                  </label>
-                  <div className="relative flex items-center rounded-[2px] border border-[#d4af37]/30 bg-white px-3 py-2 focus-within:border-[#d4af37] focus-within:ring-1 focus-within:ring-[#d4af37]">
-                    <Search aria-hidden="true" className="h-4 w-4 text-gray-400 shrink-0 mr-2" />
-                    <input
-                      id="product-search-input"
-                      name="product-search-input"
-                      type="text"
-                      ref={productSearchRef}
-                      value={isSelectOpen ? searchTerm : (selectedProduct ? `${selectedProduct.code} - ${selectedProduct.name}` : "")}
-                      onFocus={handleSearchFocus}
-                      onChange={(event) => updateFilterState({ searchTerm: event.target.value })}
-                      className="w-full bg-transparent text-sm text-[#102C57] placeholder:text-gray-400 focus-visible:outline-none font-semibold"
-                      placeholder="ค้นหาตามรหัส/ชื่อสินค้า (กด / หรือ Ctrl+K)…"
-                      autoComplete="off"
-                    />
-                    {(isSelectOpen && searchTerm) || (!isSelectOpen && selectedProductCode) ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (isSelectOpen) {
-                            updateFilterState({ searchTerm: "" });
-                          } else {
-                            updateUiState({ selectedProductCode: "" });
-                          }
-                        }}
-                        className="text-gray-400 hover:text-gray-600 focus-visible:outline-none shrink-0"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    ) : null}
-                  </div>
-
-                  {/* Floating Dropdown List */}
-                  {isSelectOpen && (
-                    <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-[2px] border border-gray-200 bg-white shadow-2xl overflow-hidden max-h-[320px] flex flex-col">
-                      <div className="bg-[#102C57] px-3 py-2 flex items-center justify-between text-white shrink-0">
-                        <span className="text-[10px] uppercase font-bold tracking-[0.1em] text-[#d4af37]">ผลลัพธ์การค้นหา</span>
-                        <span className="text-[10px] bg-white/10 px-2 py-0.5 rounded-full font-bold">
-                          {productList.length.toLocaleString()} รายการ
-                        </span>
-                      </div>
-                      <div
-                        ref={listRef}
-                        className="overflow-y-auto grow bg-white"
-                        style={{ height: productList.length > 0 ? `${Math.min(300, productList.length * 68)}px` : "auto" }}
-                      >
-                        <div
-                          style={{
-                            height: `${rowVirtualizer.getTotalSize()}px`,
-                            position: "relative",
-                            width: "100%"
-                          }}
-                        >
-                          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                            const product = productList[virtualRow.index];
-                            if (!product) return null;
-                            const isActive = product.code === uiState.selectedProductCode;
-                            return (
-                              <button
-                                key={product.code}
-                                type="button"
-                                onClick={() => {
-                                  const nextFormulaCode = normalizeFormulaCode(
-                                    dataState.formulasByProduct[product.code]?.[0]?.formula_code || DEFAULT_FORMULA_CODE
-                                  );
-                                  updateUiState({ selectedProductCode: product.code });
-                                  updateUiState({ selectedFormulaCode: nextFormulaCode });
-                                  updateSelectionState({ selectedRows: new Set() });
-                                  updateUiState({ activeTab: "editor" });
-                                  updateEditorState({ bulkAddSummary: "" });
-                                  updateUiState({ bulkInput: "" });
-                                  updateUiState({ newMaterialCode: "" });
-                                  setSelectedVersionId(
-                                    dataState.versionsByProduct[product.code]?.[0]?.id || ""
-                                  );
-                                  updateUiState({ status: dataState.bomStatusByProduct[product.code] || "draft" });
-                                  setIsSelectOpen(false);
-                                }}
-                                className={`absolute left-0 right-0 flex w-full flex-col gap-0.5 border-b border-gray-100 px-4 py-2.5 text-left text-xs transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4af37] ${
-                                  isActive
-                                    ? "bg-[#102C57] text-white"
-                                    : "bg-white text-[#102C57] hover:bg-gray-50"
-                                }`}
-                                style={{
-                                  top: 0,
-                                  transform: `translateY(${virtualRow.start}px)`,
-                                }}
-                              >
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="font-bold">{product.code}</span>
-                                  <span className={`rounded-[2px] px-1.5 py-0.2 text-[9px] font-bold ${
-                                    isActive ? "bg-white/20 text-[#d4af37]" : "bg-[#102C57]/10 text-[#102C57]"
-                                  }`}>
-                                    {product.category}
-                                  </span>
-                                </div>
-                                <span className="truncate opacity-80 font-medium">{product.name}</span>
-                                <span className="text-[10px] opacity-60">
-                                  {product.line ? `${product.line} · ${product.uom || "-"}` : product.uom || "-"}
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                        {isLoadingProducts && (
-                          <div className="px-4 py-6 text-center text-xs text-gray-500">กำลังโหลด...</div>
-                        )}
-                        {!isLoadingProducts && productList.length === 0 && (
-                          <div className="px-4 py-6 text-center text-xs text-gray-500">ไม่พบสินค้า</div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Category Filter */}
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="product-category-filter" className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#d4af37]">
-                    หมวดสินค้า
-                  </label>
-                  <select
-                    id="product-category-filter"
-                    name="product-category-filter"
-                    value={categoryFilter}
-                    onChange={(event) => updateFilterState({ categoryFilter: event.target.value })}
-                    className="h-11 rounded-[2px] border border-[#d4af37]/30 bg-white px-3 text-sm font-semibold text-[#102C57] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4af37]"
-                  >
-                    <option value="all">หมวดสินค้าทั้งหมด</option>
-                    {productCategoryOptions.map((category) => (
-                      <option key={category.value} value={category.value}>
-                        {category.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Line Filter */}
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="product-line-filter" className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#d4af37]">
-                    ประเภทไลน์การผลิต
-                  </label>
-                  <select
-                    id="product-line-filter"
-                    name="product-line-filter"
-                    value={lineFilter}
-                    onChange={(event) => updateFilterState({ lineFilter: event.target.value })}
-                    className="h-11 rounded-[2px] border border-[#d4af37]/30 bg-white px-3 text-sm font-semibold text-[#102C57] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4af37]"
-                  >
-                    <option value="all">ไลน์ผลิตทั้งหมด</option>
-                    {lineOptions.map((line) => (
-                      <option key={line.id} value={line.id}>
-                        {line.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Status Filter */}
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="product-bom-filter" className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#d4af37]">
-                    สถานะสูตร
-                  </label>
-                  <select
-                    id="product-bom-filter"
-                    name="product-bom-filter"
-                    value={statusFilter}
-                    onChange={(event) => updateFilterState({ statusFilter: event.target.value })}
-                    className="h-11 rounded-[2px] border border-[#d4af37]/30 bg-white px-3 text-sm font-semibold text-[#102C57] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4af37]"
-                  >
-                    <option value="all">สถานะสูตรทั้งหมด</option>
-                    {STATUS_OPTIONS.map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                </label>
+                <label><span>หมวดสินค้า</span><select aria-label="หมวดสินค้า" value={categoryFilter} onChange={event=>updateFilterState({categoryFilter:event.target.value})}><option value="all">หมวดสินค้าทั้งหมด</option>{productCategoryOptions.map(category=><option key={category.value} value={category.value}>{category.label}</option>)}</select></label>
+                <label><span>ไลน์การผลิต</span><select aria-label="ไลน์การผลิต" value={lineFilter} onChange={event=>updateFilterState({lineFilter:event.target.value})}><option value="all">ไลน์ผลิตทั้งหมด</option>{lineOptions.map(line=><option key={line.id} value={line.id}>{line.name}</option>)}</select></label>
+                <label><span>สถานะสูตร</span><select aria-label="สถานะสูตร" value={statusFilter} data-status={status} onChange={event=>updateFilterState({statusFilter:event.target.value})}><option value="all">{selectedProductCode ? STATUS_OPTIONS.find(option=>option.id===status)?.label || "สถานะทั้งหมด" : "สถานะทั้งหมด"}</option>{STATUS_OPTIONS.map(option=><option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
               </div>
             </div>
 
@@ -3737,7 +3030,7 @@ export default function BomEditorPageClient() {
                 <p className="mt-2 text-xs text-gray-500">กรุณาเลือกหรือค้นหาผลิตภัณฑ์ด้านบนเพื่อแสดงสูตรย่อยและตรวจสอบโครงสร้าง BOM</p>
               </div>
             ) : (
-              <div id="print-bom-root-container" className="flex min-w-0 flex-col gap-4">
+              <div id="print-bom-root-container" className="flex min-w-0 flex-col">
                 {/* Print Header (Visible only when printing) */}
                 <div className="hidden print:block mb-6 border-b-2 border-[#102C57] pb-4">
                   <div className="flex justify-between items-end">
@@ -3749,7 +3042,7 @@ export default function BomEditorPageClient() {
                       วันที่พิมพ์: {formatDate(new Date())}
                     </div>
                   </div>
-                  <div className="mt-4 grid grid-cols-2 gap-x-8 gap-y-2 text-xs border border-[#102C57]/10 p-4 bg-[#102C57]/[0.02] rounded-[2px]">
+                  <div className="mt-4 grid grid-cols-2 gap-x-8 gap-y-2 text-xs border border-[#102C57]/10 p-4 bg-[var(--surface-navy,#102C57)]/[0.02] rounded-[2px]">
                     <div><span className="font-bold text-[#102C57]">รหัสสินค้า (FG Sku):</span> {selectedProduct?.code || "-"}</div>
                     <div><span className="font-bold text-[#102C57]">เวอร์ชันสูตร (Version):</span> {versionForSummary?.version || "ยังไม่มี"}</div>
                     <div className="col-span-2"><span className="font-bold text-[#102C57]">ชื่อสินค้า (Product Name):</span> {selectedProduct?.name || "-"}</div>
@@ -3762,177 +3055,18 @@ export default function BomEditorPageClient() {
                   </div>
                 </div>
 
-                <div className="relative rounded-[2px] border border-gray-200 bg-white p-4 shadow-sm print:border-none print:p-0 no-print">
-                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
-                    {/* Left: Product Info (Col 4) */}
-                    <div className="lg:col-span-4 flex flex-col gap-1">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className={`rounded-[2px] border px-1.5 py-0.5 text-[10px] font-bold ${
-                          selectedProductType === BOM_ITEM_TYPES.WIP
-                            ? "border-[#d4af37]/75 bg-[#fff7db] text-[#8a6d1f]"
-                            : "border-[#102C57]/35 bg-[#102C57]/10 text-[#102C57]"
-                        }`}>
-                          {selectedProductType}
-                        </span>
-                        <h2 className="text-base font-bold text-[#102C57]">{selectedProduct?.code}</h2>
-                        <span className="text-[10px] text-gray-500 font-semibold bg-gray-100 px-1.5 py-0.5 rounded-[2px]">{selectedProduct?.category}</span>
-                        <span className="text-[10px] text-gray-500 font-semibold bg-gray-100 px-1.5 py-0.5 rounded-[2px]">{selectedProduct?.line || "-"}</span>
-                      </div>
-                      <div className="text-xs font-semibold text-[#5b6b7a] truncate max-w-[350px]" title={selectedProduct?.name}>
-                        {selectedProduct?.name}
-                      </div>
-                    </div>
-
-                    {/* Middle Left: Formula Select (Col 3) */}
-                    <div className="lg:col-span-3 flex flex-col gap-1">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">สูตรที่ใช้งาน</span>
-                      <div className="flex items-center gap-1.5">
-                        <select
-                          value={selectedFormulaCode || DEFAULT_FORMULA_CODE}
-                          onChange={(event) => handleSelectFormula(event.target.value)}
-                          disabled={!selectedProductCode || isLoadingBom}
-                          className="h-8 rounded-[2px] border border-gray-200 bg-white px-2 text-xs font-semibold text-[#102C57] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4af37] grow"
-                        >
-                          {formulaOptions.map((formula) => {
-                            const code = normalizeFormulaCode(formula.formula_code);
-                            const isDraft = localDraftFormulaKeys.has(createFormulaDraftKey(selectedProductCode, code));
-                            return (
-                              <option key={code} value={code}>
-                                {formula.formula_name} ({code}){isDraft ? " *ร่าง" : ""}
-                              </option>
-                            );
-                          })}
-                        </select>
-                        <button
-                          type="button"
-                          onClick={handleOpenRenameFormula}
-                          disabled={
-                            !selectedProductCode
-                            || isReadOnly
-                            || isSelectedFormulaLocalDraft
-                            || editorState.isDirty
-                            || isVersionActionLoading
-                          }
-                          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[2px] border border-gray-200 bg-white text-[#102C57] transition-colors hover:border-[#d4af37] hover:bg-[#fff7db] disabled:cursor-not-allowed disabled:opacity-40 no-print"
-                          title={editorState.isDirty ? "บันทึกการแก้ไขก่อนเปลี่ยนชื่อสูตร" : "แก้ไขชื่อสูตร"}
-                          aria-label="แก้ไขชื่อสูตร"
-                        >
-                          <Pencil size={12} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleDeactivateFormula}
-                          disabled={
-                            !selectedProductCode
-                            || selectedFormulaCode === DEFAULT_FORMULA_CODE
-                            || isReadOnly
-                            || isSelectedFormulaLocalDraft
-                            || editorState.isDirty
-                            || isVersionActionLoading
-                          }
-                          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[2px] border border-rose-200 bg-white text-rose-600 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40 no-print"
-                          title={selectedFormulaCode === DEFAULT_FORMULA_CODE ? "สูตรหลัก DEFAULT ปิดใช้งานไม่ได้" : "ปิดใช้งานสูตร"}
-                          aria-label="ปิดใช้งานสูตร"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleCreateFormula}
-                          disabled={!selectedProductCode || isReadOnly}
-                          className="inline-flex h-8 items-center justify-center gap-1 rounded-[2px] border border-[#d4af37] bg-white px-2.5 text-[11px] font-bold text-[#102C57] transition-colors hover:bg-[#fff7db] disabled:opacity-50 no-print shrink-0"
-                        >
-                          <Plus size={12} />
-                          เพิ่มสูตร
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Middle Right: Production Base (Col 3) */}
-                    <div className="lg:col-span-3 flex flex-col gap-1">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">ฐานสูตรการผลิต</span>
-                      <div className="flex items-center gap-1">
-                        {showBaseBatchInput && (
-                          <input
-                            id="base-batch"
-                            name="base-batch"
-                            type="number"
-                            min={0.0001}
-                            step="0.0001"
-                            value={baseBatch}
-                            onChange={(event) => {
-                              updateUiState({ baseBatch: event.target.value });
-                              if (latestVersion?.versionNo) updateEditorState({ isDirty: true });
-                            }}
-                            disabled={!canEditBaseBoxes}
-                            className="h-8 w-14 rounded-[2px] border border-gray-200 bg-white px-1.5 text-xs font-semibold text-[#102C57] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4af37] shrink-0"
-                            placeholder="Batch"
-                          />
-                        )}
-                        <input
-                          id="base-output-boxes"
-                          name="base-output-boxes"
-                          type="number"
-                          min={0.0001}
-                          step="0.0001"
-                          value={baseOutputBoxes}
-                          onChange={(event) => {
-                            updateUiState({ baseOutputBoxes: event.target.value });
-                            if (latestVersion?.versionNo) updateEditorState({ isDirty: true });
-                          }}
-                          disabled={!canEditBaseBoxes}
-                          className="h-8 w-20 rounded-[2px] border border-gray-200 bg-white px-1.5 text-xs font-semibold text-[#102C57] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4af37] shrink-0"
-                          placeholder={selectedProductUnit}
-                        />
-                        <div className="h-8 px-2 flex items-center justify-center rounded-[2px] border border-[#d4af37]/30 bg-[#fff7db] text-[10px] font-bold text-[#8a6d1f] whitespace-nowrap shrink-0">
-                          {isSelectedProductFg || isSelectedWipUnitMode
-                            ? `${baseOutputDisplay} ${selectedProductUnit}`
-                            : `${boxesPerBatch > 0 ? NUMBER_FORMAT.format(boxesPerBatch) : "-"} ${selectedProductUnit}/b`}
-                        </div>
-                        {latestVersion?.versionNo ? (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              updateEditorState((prev) => ({
-                                baseBoxesEditing: !prev.baseBoxesEditing,
-                              }))
-                            }
-                            disabled={isReadOnly}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-[2px] border border-gray-200 bg-white text-[#102C57] hover:border-[#d4af37] disabled:opacity-50 no-print shrink-0"
-                            title={baseBoxesEditing ? "ล็อกการแก้ไข" : "แก้ไขฐานสูตร"}
-                          >
-                            <Pencil size={12} />
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    {/* Right: Actions (Col 2) */}
-                    <div className="lg:col-span-2 md:col-span-12 flex lg:justify-end md:justify-start items-end gap-2 h-full pb-0.5 no-print">
-                      <button
-                        type="button"
-                        onClick={handleSaveVersion}
-                        disabled={isReadOnly || isLoadingBom || !selectedProductCode}
-                        className="inline-flex h-8 items-center gap-1 rounded-[2px] bg-[#d4af37] px-3 py-1.5 text-xs font-bold text-[#102C57] shadow-sm hover:bg-[#b5952f] disabled:opacity-50 shrink-0"
-                      >
-                        <Save className="h-3.5 w-3.5" />
-                        บันทึกสูตร
-                      </button>
-                      {canManage && requireBomApproval && (
-                        <button
-                          type="button"
-                          onClick={handleRequestApproval}
-                          disabled={!canRequestApproval || isNotifyLoading}
-                          className="inline-flex h-8 items-center gap-1 rounded-[2px] border border-[#d4af37] bg-[#102C57] px-3 py-1.5 text-xs font-bold text-[#d4af37] shadow-sm hover:bg-[#0a2345] disabled:opacity-50 shrink-0"
-                        >
-                          <Check className="h-3.5 w-3.5" />
-                          ส่งขออนุมัติ
-                        </button>
-                      )}
-                    </div>
+                <div className={styles.formulaPanel}>
+                  <div className={styles.formulaGrid}>
+                    <label><span>สูตรที่ใช้งาน</span><select aria-label="สูตรที่ใช้งาน" value={selectedFormulaCode || DEFAULT_FORMULA_CODE} onChange={event=>handleSelectFormula(event.target.value)} disabled={!selectedProductCode || isLoadingBom}>{formulaOptions.map(formula=>{const code=normalizeFormulaCode(formula.formula_code);return <option key={code} value={code}>{formula.formula_name} ({code}){localDraftFormulaKeys.has(createFormulaDraftKey(selectedProductCode,code)) ? " *ร่าง" : ""}</option>})}</select></label>
+                    <label><span>เวอร์ชันล่าสุด</span><div className={styles.versionControl}><strong>{versionForSummary?.version || "—"}</strong><span>{lastUpdatedAt ? `ลงวันที่ ${new Intl.DateTimeFormat("th-TH",{day:"numeric",month:"numeric",year:"numeric"}).format(new Date(lastUpdatedAt))}` : "ยังไม่มีเวอร์ชัน"}</span></div></label>
+                    <label><span>ปริมาณการผลิตฐาน</span><div className={styles.baseControl}>
+                      {showBaseBatchInput && <input aria-label="จำนวนชุดฐาน" type="number" min="0.0001" step="0.0001" value={baseBatch} disabled={!canEditBaseBoxes} onChange={event=>{updateUiState({baseBatch:event.target.value});if(latestVersion?.versionNo)updateEditorState({isDirty:true})}} />}
+                      <input id="base-output-boxes" aria-label="ปริมาณการผลิตฐาน" type="number" min="0.0001" step="0.0001" value={baseOutputBoxes} disabled={!canEditBaseBoxes} onChange={event=>{updateUiState({baseOutputBoxes:event.target.value});if(latestVersion?.versionNo)updateEditorState({isDirty:true})}} />
+                      <span>{selectedProductUnit}</span>
+                    </div></label>
                   </div>
 
-                  <div className="mt-4 flex flex-wrap gap-2 no-print">
+                  <div className={styles.tabs}>
                     {TAB_OPTIONS.map((tab) => (
                       <button
                         key={tab.id}
@@ -3940,7 +3074,7 @@ export default function BomEditorPageClient() {
                         onClick={() => updateUiState({ activeTab: tab.id })}
                         className={`rounded-[2px] px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37] focus-visible:ring-offset-2 touch-manipulation ${activeTab === tab.id
                           ? "bg-[#d4af37] text-[#102C57]"
-                          : "bg-[#102C57]/10 text-[#102C57] hover:bg-[#102C57]/20"
+                          : "bg-[var(--surface-navy,#102C57)]/10 text-[#102C57] hover:bg-[var(--surface-navy,#102C57)]/20"
                           }`}
                         aria-pressed={activeTab === tab.id}
                       >
@@ -3951,72 +3085,28 @@ export default function BomEditorPageClient() {
                 </div>
 
                 {isEditorTab ? (
-                  <div className="rounded-[2px] border border-gray-200 bg-white p-5 shadow-sm mt-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="no-print">
-                        <p className="text-sm font-semibold text-[#102C57] uppercase tracking-[0.1em]">
-                          สูตรการผลิตหลัก (BOM Tree)
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          แสดงความเชื่อมโยงวัตถุดิบและ WIP ทุกระดับ · พิมพ์เพื่อส่งให้ฝ่ายผลิตตรวจสอบ
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2 no-print">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateEditorState((prev) => ({
-                              density: prev.density === "compact" ? "comfortable" : "compact",
-                            }))
-                          }
-                          className="inline-flex items-center gap-1.5 rounded-[2px] border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-[#102C57] hover:bg-[#102C57]/5 transition-colors duration-150"
-                          title={isCompact ? "เปลี่ยนเป็นขนาดปกติ" : "เปลี่ยนเป็นขนาดกะทัดรัด"}
-                        >
-                          <ListFilter className="h-4 w-4 text-[#d4af37]" />
-                          {isCompact ? "โหมดปกติ" : "โหมดกะทัดรัด"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleExpandAll}
-                          disabled={!selectedProductCode || isLoadingBom}
-                          className="inline-flex items-center gap-1.5 rounded-[2px] border border-[#d4af37] bg-white px-3 py-1.5 text-xs font-bold text-[#102C57] hover:bg-[#102C57]/5 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <ChevronDown className="h-4 w-4 text-[#d4af37]" />
-                          ขยายทั้งหมด
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleCollapseAll}
-                          disabled={!selectedProductCode}
-                          className="inline-flex items-center gap-1.5 rounded-[2px] border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-[#102C57] hover:bg-[#102C57]/5 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <ChevronRight className="h-4 w-4" />
-                          ยุบทั้งหมด
-                        </button>
-                        {!isReadOnly && (
-                          <button
-                            type="button"
-                            onClick={handleOpenCloneDrawer}
-                            disabled={!selectedProductCode}
-                            className="inline-flex items-center gap-1.5 rounded-[2px] border border-[#d4af37] bg-white px-3 py-1.5 text-xs font-bold text-[#102C57] hover:bg-[#102C57]/5 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            <Copy className="h-4 w-4 text-[#d4af37]" />
-                            คัดลอกจากสินค้าอื่น
-                          </button>
-                        )}
-                        {!isReadOnly && (
-                          <button
-                            type="button"
-                            onClick={handleOpenMaterialPicker}
-                            disabled={!canSelectMaterials}
-                            className="inline-flex items-center gap-2 rounded-[2px] border border-[#d4af37] bg-[#d4af37] px-3 py-1.5 text-xs font-bold text-[#102C57] transition-colors duration-200 hover:bg-[#b5952f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37] focus-visible:ring-offset-2 touch-manipulation disabled:opacity-50 disabled:cursor-not-allowed"
-                            aria-label="เลือกวัตถุดิบ"
-                          >
-                            <Plus aria-hidden="true" className="h-4 w-4" />
-                            เลือกวัตถุดิบ
-                          </button>
-                        )}
-                      </div>
+                  <div className={styles.editorPanel}>
+                    <div className={styles.tableTools}>
+                      <label className={styles.treeSearch}><Search size={17} aria-hidden="true" /><input type="search" aria-label="ค้นหาในสูตร BOM" placeholder="ค้นหารหัสสินค้า, ชื่อวัตถุดิบ..." value={treeFilters.query} onChange={event=>setTreeFilters(previous=>({...previous,query:event.target.value}))} /></label>
+                      <select aria-label="ประเภทในตาราง BOM" value={treeFilters.type} onChange={event=>setTreeFilters(previous=>({...previous,type:event.target.value}))}><option value="all">ทั้งหมด</option><option value="RAW">RAW</option><option value="WIP">WIP</option></select>
+                      <select aria-label="หมวดในตาราง BOM" value={treeFilters.category} onChange={event=>setTreeFilters(previous=>({...previous,category:event.target.value}))}><option value="all">ทุกประเภทวัตถุดิบ</option>{materialCategoryOptions.filter(option=>option.code!=="All").map(option=><option key={option.code} value={option.code}>{option.label}</option>)}</select>
+                      <select aria-label="การใช้งานในตาราง BOM" value={treeFilters.active} onChange={event=>setTreeFilters(previous=>({...previous,active:event.target.value}))}><option value="all">ทุกสถานะ</option><option value="active">ใช้งาน</option><option value="inactive">ปิดใช้งาน</option></select>
+                      <span className={styles.toolSpace} />
+                      <button type="button" className={styles.addButton} onClick={handleOpenMaterialPicker} disabled={isReadOnly || !canSelectMaterials} aria-label="เลือกวัตถุดิบ"><Plus size={18} aria-hidden="true" />เพิ่มรายการ</button>
+                      <details className={styles.actionsMenu}><summary>เพิ่มเติม <ChevronDown size={15} aria-hidden="true" /></summary><div>
+                        <button type="button" onClick={handleExpandAll} disabled={!selectedProductCode || isLoadingBom}>ขยายทั้งหมด</button>
+                        <button type="button" onClick={handleCollapseAll} disabled={!selectedProductCode}>ยุบทั้งหมด</button>
+                        <button type="button" onClick={handleOpenCloneDrawer} disabled={isReadOnly || !selectedProductCode}>คัดลอกจากสินค้าอื่น</button>
+                        <button type="button" onClick={handleCreateFormula} disabled={isReadOnly || !selectedProductCode}>เพิ่มสูตร</button>
+                        <button type="button" onClick={handleOpenRenameFormula} disabled={!selectedProductCode || isReadOnly || isSelectedFormulaLocalDraft || editorState.isDirty || isVersionActionLoading}>แก้ไขชื่อสูตร</button>
+                        <button type="button" onClick={handleDeactivateFormula} disabled={!selectedProductCode || selectedFormulaCode === DEFAULT_FORMULA_CODE || isReadOnly || isSelectedFormulaLocalDraft || editorState.isDirty || isVersionActionLoading}>ปิดใช้งานสูตร</button>
+                        <button type="button" onClick={()=>updateEditorState(previous=>({baseBoxesEditing:!previous.baseBoxesEditing}))} disabled={isReadOnly}>{baseBoxesEditing ? "ล็อกฐานสูตร" : "แก้ไขฐานสูตร"}</button>
+                        <button type="button" onClick={handleRefreshBom} disabled={!selectedProductCode || isLoadingBom || editorState.isDirty || Boolean(editorState.editingRowId) || isSelectedFormulaLocalDraft}>รีเฟรชข้อมูล</button>
+                        <button type="button" onClick={handleDownloadTemplate}>ดาวน์โหลดเทมเพลต</button>
+                        <button type="button" onClick={handleOpenImport} disabled={isReadOnly || importState.isParsing}>นำเข้า Excel</button>
+                        <button type="button" onClick={handleExportCurrent} disabled={!selectedProductCode || !bomRows.length}>ส่งออก Excel</button>
+                        <button type="button" onClick={handlePrintBom} disabled={!selectedProductCode || !bomRows.length}>พิมพ์ตาราง BOM (A4 แนวนอน)</button>
+                      </div></details>
                     </div>
                     {isSelectedProductWip && (
                       <div className="mt-3 inline-flex rounded-[2px] border border-gray-200 bg-white p-1 text-xs no-print">
@@ -4028,8 +3118,8 @@ export default function BomEditorPageClient() {
                           })}
                           className={`rounded-[2px] px-3 py-1.5 font-bold transition-colors ${
                             wipQtyInputMode === WIP_QTY_INPUT_MODES.UNIT
-                              ? "bg-[#102C57] text-white"
-                              : "text-[#102C57] hover:bg-[#102C57]/10"
+                              ? "bg-[var(--surface-navy,#102C57)] text-white"
+                              : "text-[#102C57] hover:bg-[var(--surface-navy,#102C57)]/10"
                           }`}
                         >
                           ผูก WIP: กรอกเป็นหน่วย
@@ -4039,8 +3129,8 @@ export default function BomEditorPageClient() {
                           onClick={() => updateUiState({ wipQtyInputMode: WIP_QTY_INPUT_MODES.BATCH })}
                           className={`rounded-[2px] px-3 py-1.5 font-bold transition-colors ${
                             wipQtyInputMode === WIP_QTY_INPUT_MODES.BATCH
-                              ? "bg-[#102C57] text-white"
-                              : "text-[#102C57] hover:bg-[#102C57]/10"
+                              ? "bg-[var(--surface-navy,#102C57)] text-white"
+                              : "text-[#102C57] hover:bg-[var(--surface-navy,#102C57)]/10"
                           }`}
                         >
                           ผูก WIP: กรอกเป็นชุด
@@ -4049,9 +3139,9 @@ export default function BomEditorPageClient() {
                     )}
 
 
-                    <div id="bom-print-table-container" className="mt-4 overflow-x-auto lg:overflow-visible bg-white">
-                       <table className="bom-column-order w-full table-fixed border-collapse text-left text-sm table-bordered table-compact">
-                          <thead className="bg-[#102C57] text-sm uppercase tracking-wider text-white text-center sticky top-0 z-20 shadow-md">
+                    <div id="bom-print-table-container" className="print:hidden">
+                       <ReportTable tableClassName={styles.treeTable} wrapperClassName={styles.tableWrapper} minWidth="1280px">
+                          <thead className="bg-[var(--surface-navy,#102C57)] text-sm uppercase tracking-wider text-white text-center sticky top-0 z-20 shadow-md">
                           <tr>
                             <th className="w-10 px-1 py-2 xl:px-2 xl:py-3 font-semibold border-b border-[#0f172a] no-print">
                               <input
@@ -4064,26 +3154,52 @@ export default function BomEditorPageClient() {
                                 aria-label="เลือกทั้งหมด"
                               />
                             </th>
+                            <th className={styles.sequence}>#</th>
                             <th className={`w-[170px] px-1 font-bold uppercase tracking-wider text-[#d4af37] border-b border-[#102C57] text-left ${isCompact ? "text-[13px] py-1.5" : "text-[15px] py-2 xl:py-3"}`}>รหัสวัตถุดิบ</th>
                              <th className={`w-[370px] px-1 font-bold uppercase tracking-wider text-[#d4af37] border-b border-[#102C57] text-left ${isCompact ? "text-[13px] py-1.5" : "text-[15px] py-2 xl:py-3"}`}>ชื่อวัตถุดิบ</th>
                              <th className={`w-[90px] px-1 font-bold uppercase tracking-wider text-[#d4af37] border-b border-[#102C57] text-center ${isCompact ? "text-[13px] py-1.5" : "text-[15px] py-2 xl:py-3"}`}>จำนวน</th>
                              <th className={`w-[90px] px-1 font-bold uppercase tracking-wider text-[#d4af37] border-b border-[#102C57] text-center ${isCompact ? "text-[13px] py-1.5" : "text-[15px] py-2 xl:py-3"}`}>หน่วย</th>
                              <th className={`w-[310px] px-1 font-bold uppercase tracking-wider text-[#d4af37] border-b border-[#102C57] text-center ${isCompact ? "text-[13px] py-1.5" : "text-[15px] py-2 xl:py-3"}`}>ฐานคำนวณ</th>
                              <th className={`w-[130px] px-1 font-bold uppercase tracking-wider text-[#d4af37] border-b border-[#102C57] text-center print-capture-hidden ${isCompact ? "text-[13px] py-1.5" : "text-[15px] py-2 xl:py-3"}`}>วันในแผน</th>
-                             <th className={`w-[65px] px-1 font-bold uppercase tracking-wider text-[#d4af37] border-b border-[#102C57] text-center no-print ${isCompact ? "text-[13px] py-1.5" : "text-[15px] py-2 xl:py-3"}`}>แก้ไข</th>
+                            <th>หมายเหตุ</th><th>การใช้งาน</th>
+                            <th className={`w-[65px] px-1 font-bold uppercase tracking-wider text-[#d4af37] border-b border-[#102C57] text-center no-print ${isCompact ? "text-[13px] py-1.5" : "text-[15px] py-2 xl:py-3"}`}>จัดการ</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 bg-white text-gray-950">
-                          {flattenedTreeRows.map((row) => {
+                          {visibleTreeRows.map((row, rowIndex) => {
                             const rowMaterial = resolveRowMaterialVariant(row);
                             const rowItemType = row.itemType || resolveItemTypeByCategory(rowMaterial?.category);
                             const rowUnit = resolveBomRowInputUnit(row, rowMaterial) || "-";
                             const isChild = row.depth > 0;
                             const isEditableRow = !isChild && !isReadOnly;
                             const displayQty = row.displayQty ?? row.qty;
+                            const substituteCodes = Array.isArray(row.substituteMaterialSkuCodes)
+                              ? row.substituteMaterialSkuCodes
+                              : [];
+                            const primaryCode = String(row.materialCode || "").trim().toUpperCase();
+                            const selectedSubstituteCodes = new Set(
+                              substituteCodes.map((code) => String(code || "").trim().toUpperCase())
+                            );
+                            const substituteOptionsByCode = new Map();
+                            availableMaterials.forEach((material) => {
+                              const code = String(material.code || "").trim().toUpperCase();
+                              const itemType = material.itemType
+                                || resolveItemTypeByCategory(material.category || material.iccat_code);
+                              if (
+                                !code
+                                || code === primaryCode
+                                || selectedSubstituteCodes.has(code)
+                                || itemType !== rowItemType
+                                || substituteOptionsByCode.has(code)
+                              ) return;
+                              substituteOptionsByCode.set(code, { ...material, code });
+                            });
+                            const substituteOptions = Array.from(substituteOptionsByCode.values());
                             return (
                             <tr
                               key={row.id}
+                              data-depth={row.depth || 0}
+                              data-item-type={rowItemType}
                               className={`text-black font-bold transition-all duration-300 ${isCompact ? "text-[13px]" : "text-[15px]"} ${
                                 editingRowId === row.id
                                   ? "bg-amber-50/40 border-y border-dashed border-[#d4af37]/50 shadow-sm"
@@ -4107,7 +3223,8 @@ export default function BomEditorPageClient() {
                                   <span className="text-[#d4af37]/40 select-none text-xs font-mono">│</span>
                                 )}
                               </td>
-                              <td className={`w-[170px] px-1 xl:px-2 ${cellPadding}`}>
+                              <td className={styles.sequence}>{rowIndex + 1}</td>
+                              <td className={`w-[170px] px-1 xl:px-2 ${cellPadding} ${styles.materialCode}`}>
                                 <div 
                                   className="flex flex-col" 
                                   style={{ paddingLeft: `${row.depth * 1.25}rem` }}
@@ -4135,7 +3252,7 @@ export default function BomEditorPageClient() {
                                       <button
                                         type="button"
                                         onClick={() => toggleWipExpand(row.materialCode)}
-                                        className="p-1 hover:bg-[#102C57]/5 rounded-[2px] text-[#d4af37] transition shrink-0 no-print"
+                                        className="p-1 hover:bg-[var(--surface-navy,#102C57)]/5 rounded-[2px] text-[#d4af37] transition shrink-0 no-print"
                                         title={expandedWipCodes.has(row.materialCode) ? "ยุบสูตรย่อย" : "ขยายสูตรย่อย"}
                                       >
                                         {expandedWipCodes.has(row.materialCode) ? (
@@ -4152,7 +3269,7 @@ export default function BomEditorPageClient() {
                                           setAddingToProductCode(row.materialCode);
                                           updateUiState({ isMaterialPickerOpen: true });
                                         }}
-                                        className="inline-flex h-4.5 w-4.5 items-center justify-center rounded-[2px] border border-[#d4af37]/40 bg-white text-[#102C57] hover:bg-[#102C57]/5 transition-colors shrink-0 no-print"
+                                        className="inline-flex h-4.5 w-4.5 items-center justify-center rounded-[2px] border border-[#d4af37]/40 bg-white text-[#102C57] hover:bg-[var(--surface-navy,#102C57)]/5 transition-colors shrink-0 no-print"
                                         title={`เพิ่มวัตถุดิบลงในสูตรของ WIP (${row.materialCode})`}
                                       >
                                         <Plus size={isCompact ? 9 : 11} className="text-[#d4af37]" />
@@ -4168,48 +3285,74 @@ export default function BomEditorPageClient() {
                                       {row.materialName}
                                     </span>
                                   </div>
+                                  {substituteCodes.length > 0 && (
+                                    <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] font-semibold text-slate-600">
+                                      <span>ใช้แทนได้:</span>
+                                      {substituteCodes.map((code) => (
+                                        <span
+                                          key={code}
+                                          className="inline-flex items-center gap-1 rounded-sm border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[#102C57]"
+                                        >
+                                          {code}
+                                          {isEditableRow && editingRowId === row.id && (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleRowChange(
+                                                row.id,
+                                                "substituteMaterialSkuCodes",
+                                                substituteCodes.filter((item) => item !== code)
+                                              )}
+                                              className="text-rose-700 hover:text-rose-900"
+                                              aria-label={`ลบรหัสทดแทน ${code}`}
+                                            >
+                                              <X size={11} aria-hidden="true" />
+                                            </button>
+                                          )}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {isEditableRow && editingRowId === row.id && (
+                                    <select
+                                      value=""
+                                      onChange={(event) => {
+                                        const code = event.target.value;
+                                        if (!code) return;
+                                        handleRowChange(
+                                          row.id,
+                                          "substituteMaterialSkuCodes",
+                                          [...substituteCodes, code]
+                                        );
+                                      }}
+                                      className="mt-1 h-7 w-full rounded-sm border border-amber-300 bg-white px-2 text-[12px] font-semibold text-[#102C57] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37]"
+                                      aria-label={`เพิ่มรหัสทดแทนให้ ${row.materialCode}`}
+                                    >
+                                      <option value="">+ เพิ่มรหัสทดแทน</option>
+                                      {substituteOptions.map((material) => (
+                                        <option key={material.code} value={material.code}>
+                                          {material.code} - {material.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  )}
                                 </div>
                               </td>
                               <td className={`w-[90px] px-1 xl:px-2 ${cellPadding} tabular-nums text-center`}>
                                 <label className="sr-only" htmlFor={`${row.id}-qty`}>
                                   จำนวน
                                 </label>
-                                <input
-                                  id={`${row.id}-qty`}
-                                  name={`${row.id}-qty`}
-                                  type="number"
-                                  inputMode="decimal"
-                                  min="0"
-                                  step="0.0001"
-                                  value={displayQty === "" ? "" : displayQty}
-                                  onChange={(event) => {
-                                    if (!isEditableRow) return;
-                                    const raw = event.target.value;
-                                    if (raw === "") {
-                                      handleRowChange(row.id, "qty", "");
-                                      return;
-                                    }
-                                    const next = Number(raw);
-                                    handleRowChange(
-                                      row.id,
-                                      "qty",
-                                      Number.isFinite(next) ? next : ""
-                                    );
-                                  }}
-                                  onBlur={(event) => {
-                                    if (!isEditableRow) return;
-                                    if (event.target.value !== "") return;
-                                    handleRowChange(row.id, "qty", 0);
-                                  }}
-                                  disabled={!isEditableRow || editingRowId !== row.id}
-                                  className={`w-full min-w-0 rounded-[2px] border border-gray-300 disabled:border-transparent bg-white text-black font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37] focus-visible:ring-offset-2 disabled:bg-transparent disabled:text-black ${isCompact ? "px-1.5 py-0.5 text-[13px] h-7" : "px-2 py-1 text-[15px] h-9"}`}
-                                  autoComplete="off"
+                                <InlineNumberField
+                                  value={displayQty}
+                                  label={`จำนวน ${row.materialGoodsCode || row.materialCode}`}
+                                  disabled={!isEditableRow}
+                                  onCommit={value => handleRowChange(row.id, "qty", value)}
                                 />
                               </td>
                               <td className={`w-[90px] px-1 xl:px-2 ${cellPadding} text-black font-bold text-center ${isCompact ? "text-[13px]" : "text-[15px]"}`}>
                                 {rowUnit}
                               </td>
                               <td className={`w-[310px] px-1 xl:px-2 ${cellPadding} text-center`}>
+                                <InlineCellPopover disabled={!isEditableRow} label={({JOB_QTY:"อิงจำนวนงาน",HEADCOUNT:"อิงจำนวนคน",MACHINE_COUNT:"อิงจำนวนเครื่อง",DOUGH_SET_COUNT:"อิงจำนวนชุดแป้ง"})[row.calculationBasis || "JOB_QTY"]}>
                                 <div className="flex items-center gap-1 justify-center">
                                   <label className="sr-only" htmlFor={`${row.id}-calc-basis`}>
                                     ฐานคำนวณ
@@ -4221,7 +3364,7 @@ export default function BomEditorPageClient() {
                                     onChange={(event) =>
                                       handleRowChange(row.id, "calculationBasis", event.target.value)
                                     }
-                                    disabled={!isEditableRow || editingRowId !== row.id}
+                                    disabled={!isEditableRow}
                                     className={`rounded-[2px] border border-gray-300 disabled:border-transparent bg-white font-bold text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37] focus-visible:ring-offset-2 disabled:bg-transparent disabled:text-black shrink-0 ${
                                       isCompact 
                                         ? "px-1 py-0.5 text-[13px] h-7 w-[130px]" 
@@ -4261,7 +3404,7 @@ export default function BomEditorPageClient() {
                                             event.target.value
                                           )
                                         }
-                                        disabled={!isEditableRow || editingRowId !== row.id}
+                                    disabled={!isEditableRow}
                                         className={`rounded-sm border border-gray-300 disabled:border-transparent bg-white text-black font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37] focus-visible:ring-offset-2 disabled:bg-transparent disabled:text-black shrink-0 ${
                                           isCompact 
                                             ? "px-1 py-0.5 text-[12px] h-7 w-[50px]" 
@@ -4294,7 +3437,7 @@ export default function BomEditorPageClient() {
                                             event.target.value
                                           )
                                         }
-                                        disabled={!isEditableRow || editingRowId !== row.id}
+                                    disabled={!isEditableRow}
                                         className={`rounded-sm border border-gray-300 disabled:border-transparent bg-white text-black font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37] focus-visible:ring-offset-2 disabled:bg-transparent disabled:text-black shrink-0 ${
                                           isCompact 
                                             ? "px-1 py-0.5 text-[12px] h-7 w-[65px]" 
@@ -4309,9 +3452,11 @@ export default function BomEditorPageClient() {
                                     </>
                                   )}
                                 </div>
+                                </InlineCellPopover>
                               </td>
                               <td className={`px-1 xl:px-2 ${cellPadding} print-capture-hidden`}>
                                 {rowItemType === BOM_ITEM_TYPES.WIP ? (
+                                  <InlineCellPopover disabled={!isEditableRow} label={getPlanningOffsetLabel(row.planningOffsetDays)}>
                                   <div className={isCompact ? "space-y-0.5" : "space-y-1"}>
                                     <label
                                       className="sr-only"
@@ -4330,7 +3475,7 @@ export default function BomEditorPageClient() {
                                           normalizePlanningOffsetDays(event.target.value, 0)
                                         )
                                       }
-                                      disabled={!isEditableRow || editingRowId !== row.id}
+                                    disabled={!isEditableRow}
                                       className={`w-full rounded-[2px] border border-[#d4af37]/40 disabled:border-transparent bg-white font-bold text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37] focus-visible:ring-offset-2 disabled:bg-transparent disabled:text-black ${isCompact ? "px-1.5 py-0.5 text-[13px] h-7" : "px-2 py-1 text-[15px] h-9"}`}
                                     >
                                       {PLANNING_OFFSET_OPTIONS.map((option) => (
@@ -4343,12 +3488,15 @@ export default function BomEditorPageClient() {
                                       {getPlanningOffsetLabel(row.planningOffsetDays)}
                                     </p>
                                   </div>
+                                  </InlineCellPopover>
                                 ) : (
                                   <span className={`inline-flex rounded-[2px] border border-black/15 bg-transparent font-bold text-black leading-none ${isCompact ? "px-1.5 py-1 text-[12px]" : "px-2 py-1.5 text-[14px]"}`}>
                                     {getRawPlanningDateLabel(selectedProductType)}
                                   </span>
                                 )}
                               </td>
+                              <td>{row.note || "—"}</td>
+                              <td>{rowMaterial?.isActive === true ? "ใช้งาน" : rowMaterial?.isActive === false ? "ปิดใช้งาน" : "—"}</td>
                               <td className={`px-1 xl:px-2 ${cellPadding} no-print`}>
                                 <div className="flex items-center justify-center gap-2">
                                   <button
@@ -4362,11 +3510,7 @@ export default function BomEditorPageClient() {
                                     className={`inline-flex items-center justify-center bg-transparent transition-all duration-300 hover:scale-115 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${isCompact ? "h-7 w-7" : "h-8 w-8"} ${editingRowId === row.id ? "text-emerald-600 hover:text-emerald-700 rotate-180" : "text-[#102C57] hover:text-[#d4af37]"}`}
                                     aria-label="แก้ไขรายการ"
                                   >
-                                    {editingRowId === row.id ? (
-                                       <Check className={isCompact ? "h-4 w-4" : "h-5 w-5"} aria-hidden="true" />
-                                     ) : (
-                                       <Pencil className={isCompact ? "h-3.5 w-3.5" : "h-4 w-4"} aria-hidden="true" />
-                                     )}
+                                    {editingRowId === row.id ? "เสร็จ" : "แก้ไข"}
                                   </button>
                                   <button
                                     type="button"
@@ -4375,17 +3519,17 @@ export default function BomEditorPageClient() {
                                     className={`inline-flex items-center justify-center bg-transparent text-rose-700 transition-colors duration-200 hover:text-rose-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${isCompact ? "h-7 w-7" : "h-8 w-8"}`}
                                     aria-label="ลบรายการ"
                                   >
-                                    <Trash2 className={isCompact ? "h-3.5 w-3.5" : "h-4 w-4"} aria-hidden="true" />
+                                    <span className="underline">ลบ</span>
                                   </button>
                                 </div>
                               </td>
                             </tr>
                             );
                           })}
-                          {flattenedTreeRows.length === 0 && (
+                          {visibleTreeRows.length === 0 && (
                             <tr>
                               <td
-                                colSpan={8}
+                                colSpan={11}
                                 className="px-4 py-8 text-center text-sm text-gray-500"
                               >
                                 ยังไม่มีสูตรสำหรับสินค้านี้
@@ -4393,37 +3537,91 @@ export default function BomEditorPageClient() {
                             </tr>
                           )}
                         </tbody>
-                      </table>
+                      </ReportTable>
                     </div>
+                    <p className={styles.tableCount}>แสดง {visibleTreeRows.length} รายการ จากทั้งหมด {flattenedTreeRows.length} รายการ</p>
 
-                    <div className="mt-4 rounded-2xl border border-gray-200 bg-[#f8fafc] p-4 no-print">
-                      <label
-                        htmlFor="version-note"
-                        className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500"
-                      >
-                        บันทึกโน้ตเวอร์ชันใหม่
-                      </label>
-                      <div className="mt-2 grid gap-3 lg:grid-cols-[1fr_auto]">
-                        <input
-                          id="version-note"
-                          name="version-note"
-                          value={note}
-                          onChange={(event) => updateUiState({ note: event.target.value })}
-                          disabled={isReadOnly}
-                          className="rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-[#102C57] placeholder:text-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37] focus-visible:ring-offset-2"
-                          placeholder="อธิบายสิ่งที่เปลี่ยน…"
-                          autoComplete="off"
-                        />
-                        <button
-                          type="button"
-                          disabled={isReadOnly}
-                          className="inline-flex items-center justify-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-[#102C57] transition-colors duration-200 hover:border-[#cbd5f5] hover:text-[#0a2345] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37] focus-visible:ring-offset-2 touch-manipulation"
-                        >
-                          <ChevronRight aria-hidden="true" className="h-4 w-4" />
-                          เตรียมสร้างเวอร์ชัน
-                        </button>
-                      </div>
-                    </div>
+                    {/* Universal Standard A4 Vector Print Layout */}
+                    <A4DocumentLayout
+                      orientation="landscape"
+                      title="โครงสร้างสูตรการผลิต (BOM)"
+                      subtitle="BILL OF MATERIALS"
+                      documentNo={selectedProductCode}
+                      meta={{
+                        left: `สินค้า: ${selectedProduct?.code || "-"} - ${selectedProduct?.name || "-"}`,
+                        center: `สูตร: ${uiState.selectedFormulaCode || "DEFAULT"} (เวอร์ชัน ${versionForSummary?.version || "1.0"})`,
+                        right: `จำนวนรายการ: ${flattenedTreeRows.length} รายการ`,
+                      }}
+                      printedBy={versionForSummary?.updatedBy || "System"}
+                      tableSelector=".bom-standard-a4-table"
+                      customStyles={`
+                        .bom-standard-a4-table th:nth-child(1),
+                        .bom-standard-a4-table td:nth-child(1),
+                        .bom-standard-a4-table th:nth-child(5),
+                        .bom-standard-a4-table td:nth-child(5),
+                        .bom-standard-a4-table th:nth-child(6),
+                        .bom-standard-a4-table td:nth-child(6),
+                        .bom-standard-a4-table th:nth-child(7),
+                        .bom-standard-a4-table td:nth-child(7) {
+                          text-align: center !important;
+                        }
+                        .bom-standard-a4-table th:nth-child(2),
+                        .bom-standard-a4-table td:nth-child(2),
+                        .bom-standard-a4-table th:nth-child(3),
+                        .bom-standard-a4-table td:nth-child(3) {
+                          text-align: left !important;
+                        }
+                        .bom-standard-a4-table th:nth-child(4),
+                        .bom-standard-a4-table td:nth-child(4) {
+                          text-align: right !important;
+                        }
+                      `}
+                    >
+                      <tr className="table-header">
+                        <th style={{ width: "5%" }}>ลำดับ</th>
+                        <th style={{ width: "16%" }}>รหัสวัตถุดิบ</th>
+                        <th style={{ width: "36%" }}>ชื่อวัตถุดิบ</th>
+                        <th style={{ width: "11%" }}>จำนวน</th>
+                        <th style={{ width: "8%" }}>หน่วย</th>
+                        <th style={{ width: "14%" }}>ประเภท</th>
+                        <th style={{ width: "10%" }}>วันในแผน</th>
+                      </tr>
+                      {flattenedTreeRows.map((row, index) => {
+                        const rowMaterial = resolveRowMaterialVariant(row);
+                        const rowUnit = resolveBomRowInputUnit(row, rowMaterial) || "-";
+                        const isChild = row.depth > 0;
+                        const displayQty = row.displayQty ?? row.qty;
+                        return (
+                          <tr key={`print-bom-row-${row.id}`} className={isChild ? "bg-slate-50/50" : ""}>
+                            <td className="text-center font-mono text-xs">{index + 1}</td>
+                            <td className="font-mono text-xs font-bold" style={{ paddingLeft: `${row.depth * 10 + 4}px` }}>
+                              {isChild ? "└─ " : ""}{row.materialGoodsCode || row.materialCode}
+                            </td>
+                            <td className="text-left">
+                              <div className="font-medium text-xs text-slate-900">{rowMaterial?.name || row.materialName || "-"}</div>
+                            </td>
+                            <td className="text-right font-mono text-xs font-bold">
+                              {typeof displayQty === "number" ? NUMBER_FORMAT.format(displayQty) : (displayQty || "-")}
+                            </td>
+                            <td className="text-center text-xs">{rowUnit}</td>
+                            <td className="text-center text-xs text-slate-700">
+                              {row.itemType || resolveItemTypeByCategory(rowMaterial?.category) || "-"}
+                            </td>
+                            <td className="text-center font-mono text-xs">
+                              {row.planningOffsetDays != null ? `D+${row.planningOffsetDays}` : "-"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {flattenedTreeRows.length === 0 && (
+                        <tr>
+                          <td colSpan={7} className="text-center py-6 text-sm text-slate-500">
+                            ยังไม่มีข้อมูลสูตรการผลิต
+                          </td>
+                        </tr>
+                      )}
+                    </A4DocumentLayout>
+
                   </div>
                 ) : (
                   <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
@@ -4457,7 +3655,7 @@ export default function BomEditorPageClient() {
                               type="button"
                               onClick={() => setSelectedVersionId(version.id)}
                               className={`w-full rounded-2xl border px-4 py-3 text-left transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37] focus-visible:ring-offset-2 touch-manipulation ${isActive
-                                ? "border-[#102C57] bg-[#102C57] text-white"
+                                ? "border-[#102C57] bg-[var(--surface-navy,#102C57)] text-white"
                                 : "border-[#e2e8f0] bg-[#f8fafc] text-[#102C57] hover:bg-[#e2e8f0]"
                                 }`}
                             >
@@ -4524,7 +3722,7 @@ export default function BomEditorPageClient() {
                                         : `ฐานสูตร ${NUMBER_FORMAT.format(Number(versionDetail.baseBatch || 1))} batch = ${NUMBER_FORMAT.format(Number(versionDetail.baseOutputBoxes || 1))} ${selectedProductUnit}`}
                                     </span>
                                     {isSelectedProductWip && (
-                                      <span className="rounded-full border border-[#102C57]/20 bg-[#102C57]/5 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#102C57]">
+                                      <span className="rounded-full border border-[#102C57]/20 bg-[var(--surface-navy,#102C57)]/5 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#102C57]">
                                         โหมดกรอก: {versionDetail.wipQtyInputMode === WIP_QTY_INPUT_MODES.BATCH ? "ชุด" : "หน่วย"}
                                       </span>
                                     )}
@@ -4623,7 +3821,7 @@ export default function BomEditorPageClient() {
                                       type="button"
                                       onClick={() => updateNotificationState({ activeDiffTab: tab.id })}
                                       className={`rounded-full px-3 py-1 text-[11px] font-semibold transition-colors duration-200 ${activeDiffTab === tab.id
-                                        ? "bg-[#102C57] text-white"
+                                        ? "bg-[var(--surface-navy,#102C57)] text-white"
                                         : "bg-[#f1f5f9] text-[#102C57] hover:bg-[#e2e8f0]"
                                         }`}
                                     >
@@ -4787,212 +3985,23 @@ export default function BomEditorPageClient() {
             </div>
           )}
 
-          <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-200 bg-white/95 px-4 py-3 shadow-[0_-12px_30px_rgba(15,23,42,0.08)] backdrop-blur lg:hidden no-print">
-            <div className="mx-auto flex w-full max-w-[95%] items-center gap-2">
-              {!isReadOnly && (
-                <button
-                  type="button"
-                  onClick={handleOpenCloneDrawer}
-                  disabled={!selectedProductCode}
-                  className="flex-1 rounded-[2px] border border-[#d4af37] bg-white px-2 py-2 text-[11px] font-bold text-[#102C57] transition-colors duration-200 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Copy className="mr-1 inline-block h-3.5 w-3.5 text-[#d4af37]" />
-                  คัดลอกจากสินค้าอื่น
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={handleSaveVersion}
-                disabled={isReadOnly || isLoadingBom || !selectedProductCode}
-                className="flex-1 rounded-[2px] bg-[#d4af37] px-2 py-2 text-[11px] font-bold text-[#102C57] transition-colors duration-200 hover:bg-[#b5952f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {isLoadingBom ? "กำลังบันทึก..." : "บันทึกสูตร"}
-              </button>
-            </div>
-          </div>
         </div >
+        <footer className={styles.saveBar}>
+          <label htmlFor="bom-footer-note" className={styles.footerTitle}><strong>บันทึกโน้ตเวอร์ชันใหม่</strong><span className={editorState.isDirty ? styles.pending : ""}>{editorState.isDirty ? "ยังไม่บันทึกการแก้ไข" : "ไม่มีการแก้ไข"}</span></label>
+          <input id="bom-footer-note" value={note || ""} onChange={event => updateUiState({ note: event.target.value })} disabled={isReadOnly} placeholder="ระบุรายละเอียดการเปลี่ยนแปลง" />
+          {canManage && requireBomApproval && <button type="button" onClick={handleRequestApproval} disabled={!canRequestApproval || isNotifyLoading}>ส่งขออนุมัติ</button>}
+          <button type="button" className={styles.saveButton} onClick={handleSaveVersion} disabled={isReadOnly || isLoadingBom || !selectedProductCode}><Save size={18} aria-hidden="true" />{isLoadingBom ? "กำลังบันทึก…" : "บันทึกสูตร"}</button>
+        </footer>
       </div >
 
       {isProductDrawerOpen && (
-        <div className="fixed inset-0 z-[9999] flex justify-end bg-[#07111f]/55 backdrop-blur-[2px] no-print">
-          <button
-            type="button"
-            aria-label="ปิดตัวเลือกสินค้า"
-            className="hidden flex-1 cursor-default lg:block"
-            onClick={() => setIsProductDrawerOpen(false)}
-          />
-          <aside className="flex h-full w-full max-w-[840px] flex-col border-l border-[#d4af37]/40 bg-white shadow-[-24px_0_60px_rgba(2,6,23,0.25)]">
-            <div className="border-b border-[#d4af37]/35 bg-[#102C57] px-5 py-4 text-white">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#d4af37]">
-                    BOM Product Selector
-                  </p>
-                  <h2 className="mt-1 text-lg font-bold">เลือกรายการสินค้า</h2>
-                  <p className="mt-1 text-xs font-medium text-white/70">
-                    เลือกสินค้า FG หรือ WIP เพื่อดูและแก้ไขสูตรผลิต
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsProductDrawerOpen(false)}
-                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[2px] border border-[#d4af37]/40 text-[#d4af37] transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4af37]"
-                  aria-label="ปิดตัวเลือกสินค้า"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
-                <label className="relative block">
-                  <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#102C57]/55" />
-                  <input
-                    value={searchTerm}
-                    onChange={(event) => updateFilterState({ searchTerm: event.target.value })}
-                    placeholder="ค้นหารหัสสินค้า หรือชื่อสินค้า"
-                    className="h-10 w-full rounded-[2px] border border-[#d4af37]/35 bg-white pl-9 pr-3 text-sm font-semibold text-[#102C57] placeholder:text-[#64748b] focus:border-[#d4af37] focus:outline-none focus:ring-1 focus:ring-[#d4af37]"
-                    autoComplete="off"
-                  />
-                </label>
-                <div className="flex items-center gap-2 rounded-[2px] border border-[#d4af37]/30 bg-white/10 px-3 text-xs font-bold text-white">
-                  <ListFilter className="h-4 w-4 text-[#d4af37]" />
-                  {productList.length.toLocaleString()} รายการ
-                </div>
-              </div>
-            </div>
-
-            <div className="grid gap-3 border-b border-gray-200 bg-[#f8fafc] px-5 py-3 sm:grid-cols-2">
-              <select
-                value={categoryFilter}
-                onChange={(event) => updateFilterState({ categoryFilter: event.target.value })}
-                className="h-9 rounded-[2px] border border-gray-200 bg-white px-3 text-xs font-semibold text-[#102C57] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4af37]"
-                aria-label="กรองหมวดสินค้า"
-              >
-                <option value="all">หมวดสินค้าทั้งหมด</option>
-                {productCategoryOptions.map((category) => (
-                  <option key={category.value} value={category.value}>
-                    {category.label}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={statusFilter}
-                onChange={(event) => updateFilterState({ statusFilter: event.target.value })}
-                className="h-9 rounded-[2px] border border-gray-200 bg-white px-3 text-xs font-semibold text-[#102C57] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4af37]"
-                aria-label="กรองสถานะสูตร"
-              >
-                <option value="all">สถานะสูตรทั้งหมด</option>
-                <option value="draft">ร่าง</option>
-                <option value="pending_review">รอตรวจ</option>
-                <option value="approved">อนุมัติแล้ว</option>
-                <option value="rejected">ไม่อนุมัติ</option>
-              </select>
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-auto">
-              <table className="w-full table-fixed border-collapse text-sm">
-                <thead className="sticky top-0 z-10 bg-[#102C57] text-left text-[11px] font-bold uppercase tracking-[0.08em] text-[#d4af37]">
-                  <tr>
-                    <th className="w-[72px] px-4 py-3 text-center">ลำดับ</th>
-                    <th className="w-[140px] px-4 py-3">รหัสสินค้า</th>
-                    <th className="px-4 py-3">ชื่อสินค้า</th>
-                    <th className="w-[110px] px-4 py-3">หน่วย</th>
-                    <th className="w-[120px] px-4 py-3 text-center">สถานะ</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {productList.map((product, productIndex) => {
-                    const isActive = product.code === drawerSelectedProductCode;
-                    const productStatus = dataState.bomStatusByProduct[product.code] || "draft";
-                    return (
-                      <tr
-                        key={product.code}
-                        onClick={() => setDrawerSelectedProductCode(product.code)}
-                        onDoubleClick={() => handleSelectProduct(product)}
-                        className={`cursor-pointer transition-colors ${
-                          isActive ? "bg-[#fff7db]" : "bg-white hover:bg-[#f8fafc]"
-                        }`}
-                      >
-                        <td className="px-4 py-3 text-center align-middle text-xs font-bold text-[#102C57]">
-                          {productIndex + 1}
-                        </td>
-                        <td className="px-4 py-3 align-middle">
-                          <div className="flex items-center gap-2">
-                            <span className={`h-2 w-2 rounded-full ${isActive ? "bg-[#d4af37]" : "bg-gray-300"}`} />
-                            <span className="font-bold text-[#102C57]">{product.code}</span>
-                          </div>
-                          <div className="mt-1 text-[10px] font-semibold text-gray-500">
-                            {product.category || "-"}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 align-middle">
-                          <div className="truncate font-semibold text-[#102C57]" title={product.name}>
-                            {product.name || "-"}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 align-middle text-xs font-bold text-[#102C57]">
-                          {product.unit || "-"}
-                        </td>
-                        <td className="px-4 py-3 text-center align-middle">
-                          <span className={`inline-flex min-w-[86px] justify-center rounded-[2px] border px-2 py-1 text-[11px] font-bold ${
-                            STATUS_BADGE_STYLES[productStatus] || "border-gray-200 bg-gray-50 text-gray-600"
-                          }`}>
-                            {PRODUCT_STATUS_LABELS[productStatus] || productStatus}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {isLoadingProducts && (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-10 text-center text-sm font-semibold text-gray-500">
-                        กำลังโหลดรายการสินค้า...
-                      </td>
-                    </tr>
-                  )}
-                  {!isLoadingProducts && productList.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-10 text-center text-sm font-semibold text-gray-500">
-                        ไม่พบสินค้า
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="border-t border-gray-200 bg-white px-5 py-3">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0 text-xs text-gray-500">
-                  <span className="font-bold text-[#102C57]">
-                    {selectedDrawerProduct?.code || "-"}
-                  </span>
-                  <span className="mx-2 text-gray-300">/</span>
-                  <span className="truncate">
-                    {selectedDrawerProduct?.name || "ยังไม่ได้เลือกสินค้า"}
-                  </span>
-                </div>
-                <div className="flex shrink-0 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsProductDrawerOpen(false)}
-                    className="h-9 rounded-[2px] border border-gray-300 bg-white px-4 text-xs font-bold text-[#102C57] transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4af37]"
-                  >
-                    ยกเลิก
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!selectedDrawerProduct}
-                    onClick={() => handleSelectProduct(selectedDrawerProduct)}
-                    className="inline-flex h-9 items-center gap-2 rounded-[2px] bg-[#d4af37] px-4 text-xs font-bold text-[#102C57] transition-colors hover:bg-[#c19b2d] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4af37] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <Check className="h-4 w-4" />
-                    เลือกสินค้า
-                  </button>
-                </div>
-              </div>
-            </div>
-          </aside>
-        </div>
+        <PlanningSkuPicker title="เลือกสินค้า / WIP" description="เลือกสินค้าเพื่อจัดการสูตรการผลิต"
+          confirmLabel="เลือกสินค้า" detailsColumn={{label:"สถานะสูตร",render:product => PRODUCT_STATUS_LABELS[dataState.bomStatusByProduct[product.code]] || "ร่าง"}}
+          requireBom={false} loading={isLoadingProducts} error={productsError}
+          onRetry={() => fetchProducts()} currentValue={selectedProductCode}
+          skuMap={new Map(productList.map(product => [product.code, { ...product, skuCode: product.code, itemType: resolveItemTypeByCategory(product.category), hasBom: Boolean(product.formulaOptions?.length) }]))}
+          onSelect={code => { const product = productMap.get(code); if (product) handleSelectProduct(product); }}
+          onClose={() => setIsProductDrawerOpen(false)} />
       )}
 
       {/* Material Selection Drawer */}
@@ -5025,448 +4034,29 @@ export default function BomEditorPageClient() {
         isSubmitting={importState.isSubmitting}
       />
       {formulaRenameState.isOpen && (
-        <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-[#07111f]/65 p-4 backdrop-blur-[2px] no-print">
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void handleRenameFormula();
-            }}
-            className="w-full max-w-md overflow-hidden rounded-[4px] border border-[#d4af37]/45 bg-white shadow-2xl"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="rename-formula-title"
-          >
-            <div className="flex items-start justify-between gap-3 bg-[#102C57] px-5 py-4 text-white">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#d4af37]">
-                  Formula management
-                </p>
-                <h3 id="rename-formula-title" className="mt-1 text-lg font-bold">
-                  แก้ไขชื่อสูตร
-                </h3>
-                <p className="mt-1 text-xs text-white/65">
-                  รหัส {normalizeFormulaCode(selectedFormulaCode)} จะยังคงเดิม
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setFormulaRenameState({
-                  isOpen: false,
-                  formulaName: "",
-                  isSaving: false,
-                  error: "",
-                })}
-                disabled={formulaRenameState.isSaving}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-[2px] border border-white/20 text-white/75 hover:bg-white/10 hover:text-white disabled:opacity-40"
-                aria-label="ปิดหน้าต่างแก้ชื่อสูตร"
-              >
-                <X size={15} />
-              </button>
-            </div>
-            <div className="space-y-3 px-5 py-5">
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-bold text-[#102C57]">ชื่อสูตรใหม่</span>
-                <input
-                  autoFocus
-                  type="text"
-                  value={formulaRenameState.formulaName}
-                  onChange={(event) => setFormulaRenameState((prev) => ({
-                    ...prev,
-                    formulaName: event.target.value,
-                    error: "",
-                  }))}
-                  maxLength={120}
-                  className="h-10 w-full rounded-[2px] border border-slate-300 px-3 text-sm font-semibold text-[#102C57] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37]"
-                  placeholder="ชื่อสูตร"
-                />
-              </label>
-              {formulaRenameState.error && (
-                <p className="rounded-[2px] border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
-                  {formulaRenameState.error}
-                </p>
-              )}
-            </div>
-            <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">
-              <button
-                type="button"
-                onClick={() => setFormulaRenameState({
-                  isOpen: false,
-                  formulaName: "",
-                  isSaving: false,
-                  error: "",
-                })}
-                disabled={formulaRenameState.isSaving}
-                className="h-9 rounded-[2px] border border-slate-300 bg-white px-4 text-xs font-bold text-[#102C57] hover:bg-slate-50 disabled:opacity-40"
-              >
-                ยกเลิก
-              </button>
-              <button
-                type="submit"
-                disabled={!formulaRenameState.formulaName.trim() || formulaRenameState.isSaving}
-                className="inline-flex h-9 items-center gap-1.5 rounded-[2px] bg-[#d4af37] px-4 text-xs font-black text-[#102C57] hover:bg-[#e3c45c] disabled:opacity-40"
-              >
-                <Save size={14} />
-                {formulaRenameState.isSaving ? "กำลังบันทึก..." : "บันทึกชื่อสูตร"}
-              </button>
-            </div>
+        <RequisitionDialog title="แก้ไขชื่อสูตร" busy={formulaRenameState.isSaving}
+          onClose={() => setFormulaRenameState(prev => ({...prev,isOpen:false}))}
+          footer={<><button type="button" disabled={formulaRenameState.isSaving} onClick={() => setFormulaRenameState(prev => ({...prev,isOpen:false}))}>ยกเลิก</button><button type="submit" form="bom-rename-form" disabled={!formulaRenameState.formulaName.trim() || formulaRenameState.isSaving}>บันทึกชื่อสูตร</button></>}>
+          <form id="bom-rename-form" className={styles.formFields} onSubmit={event => {event.preventDefault();void handleRenameFormula();}}>
+            <p>รหัส {normalizeFormulaCode(selectedFormulaCode)} จะยังคงเดิม</p>
+            <label>ชื่อสูตร<input autoFocus value={formulaRenameState.formulaName} disabled={formulaRenameState.isSaving} onChange={event => setFormulaRenameState(prev => ({...prev,formulaName:event.target.value,error:""}))} /></label>
+            {formulaRenameState.error && <p role="alert">{formulaRenameState.error}</p>}
           </form>
-        </div>
+        </RequisitionDialog>
       )}
-
       {formulaModalState.isOpen && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-[#07111f]/55 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md overflow-hidden rounded-[2px] border border-[#d4af37]/35 bg-gradient-to-b from-[#102C57] to-[#0b2141] shadow-[0_24px_60px_rgba(2,6,23,0.45)]">
-            <div className="flex items-start justify-between border-b border-[#d4af37]/25 px-5 py-4">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#d4af37]/80">
-                  Formula Setup
-                </p>
-                <h3 className="mt-1 text-lg font-bold text-white">เพิ่มสูตรการผลิต</h3>
-                <p className="text-xs text-white/70">กำหนดรายละเอียดรหัสและชื่อสูตรให้เรียบร้อยก่อนบันทึก</p>
-              </div>
-              <button
-                type="button"
-                onClick={closeFormulaModal}
-                className="rounded-full border border-[#d4af37]/30 p-1.5 text-[#d4af37] transition-colors hover:bg-white/10"
-                aria-label="ปิดหน้าต่างเพิ่มสูตร"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="space-y-4 px-5 py-4">
-              <div className="grid grid-cols-1 gap-4">
-                <label className="block">
-                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d4af37]/85">
-                    รหัสสูตร
-                  </span>
-                  <input
-                    value={formulaModalState.formulaCode}
-                    onChange={(event) =>
-                      setFormulaModalState((prev) => ({
-                        ...prev,
-                        formulaCode: event.target.value.toUpperCase(),
-                        error: "",
-                      }))
-                    }
-                    placeholder="เช่น F2 หรือ ALT-A"
-                    className="h-11 w-full rounded-[2px] border border-[#284871] bg-[#0a1930] px-3 text-sm font-semibold text-white placeholder:text-[#9bb2d2]/65 focus:border-[#d4af37] focus:outline-none focus:ring-2 focus:ring-[#d4af37]/30"
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d4af37]/85">
-                    ชื่อสูตร
-                  </span>
-                  <input
-                    value={formulaModalState.formulaName}
-                    onChange={(event) =>
-                      setFormulaModalState((prev) => ({
-                        ...prev,
-                        formulaName: event.target.value,
-                        error: "",
-                      }))
-                    }
-                    placeholder="เช่น สูตรทดแทนแป้ง"
-                    className="h-11 w-full rounded-[2px] border border-[#284871] bg-[#0a1930] px-3 text-sm font-semibold text-white placeholder:text-[#9bb2d2]/65 focus:border-[#d4af37] focus:outline-none focus:ring-2 focus:ring-[#d4af37]/30"
-                  />
-                </label>
-              </div>
-
-              <div>
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d4af37]/85">
-                  เริ่มต้นสูตรใหม่
-                </p>
-                <div className="grid gap-2 grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => setFormulaModalState((prev) => ({ ...prev, seedMode: "blank", error: "" }))}
-                    className={`rounded-[2px] border px-3 py-2 text-left text-xs font-semibold transition-colors ${formulaModalState.seedMode === "blank"
-                      ? "border-[#d4af37] bg-[#d4af37]/15 text-white"
-                      : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
-                      }`}
-                  >
-                    <p className="font-bold">เริ่มแบบว่าง</p>
-                    <p className="mt-1 text-[10px] font-normal text-white/50 leading-tight">เพิ่มวัตถุดิบใหม่เองทั้งหมด</p>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFormulaModalState((prev) => ({ ...prev, seedMode: "clone", error: "" }))}
-                    className={`rounded-[2px] border px-3 py-2 text-left text-xs font-semibold transition-colors ${formulaModalState.seedMode === "clone"
-                      ? "border-[#d4af37] bg-[#d4af37]/15 text-white"
-                      : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
-                      }`}
-                  >
-                    <p className="font-bold">คัดลอกจากสูตรปัจจุบัน</p>
-                    <p className="mt-1 text-[10px] font-normal text-white/50 leading-tight">เหมาะสำหรับสูตรทางเลือกอื่นๆ</p>
-                  </button>
-                </div>
-              </div>
-
-              {formulaModalState.error && (
-                <p className="rounded-[2px] border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-200">
-                  {formulaModalState.error}
-                </p>
-              )}
-              <p className="text-[11px] text-white/50 leading-normal">
-                หลังเพิ่มสูตรแล้ว ต้องกดปุ่ม &quot;บันทึกสูตร&quot; ด้านขวาบนอีกครั้ง เพื่อสร้างเวอร์ชันและบันทึกลงระบบ
-              </p>
-            </div>
-            <div className="flex items-center justify-end gap-2 border-t border-[#d4af37]/20 bg-[#081d3d]/90 px-5 py-4">
-              <button
-                type="button"
-                onClick={closeFormulaModal}
-                className="rounded-[2px] border border-white/20 bg-transparent px-4 py-2 text-xs font-bold uppercase tracking-[0.1em] text-white transition-colors hover:bg-white/10"
-              >
-                ยกเลิก
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmCreateFormula}
-                className="rounded-[2px] bg-[#d4af37] px-4 py-2 text-xs font-bold uppercase tracking-[0.1em] text-[#102C57] shadow-[0_8px_20px_rgba(212,175,55,0.3)] transition-colors hover:bg-[#c29c27]"
-              >
-                บันทึกสูตร
-              </button>
-            </div>
-          </div>
-        </div>
+        <RequisitionDialog title="เพิ่มสูตรการผลิต" onClose={closeFormulaModal}
+          footer={<><button type="button" onClick={closeFormulaModal}>ยกเลิก</button><button type="submit" form="bom-new-form">เพิ่มสูตร</button></>}>
+          <form id="bom-new-form" className={styles.formFields} onSubmit={event => {event.preventDefault();handleConfirmCreateFormula();}}>
+            <label>รหัสสูตร<input autoFocus value={formulaModalState.formulaCode} onChange={event => setFormulaModalState(prev => ({...prev,formulaCode:event.target.value.toUpperCase(),error:""}))} /></label>
+            <label>ชื่อสูตร<input value={formulaModalState.formulaName} onChange={event => setFormulaModalState(prev => ({...prev,formulaName:event.target.value,error:""}))} /></label>
+            <label>เริ่มต้นสูตรใหม่<select value={formulaModalState.seedMode} onChange={event => setFormulaModalState(prev => ({...prev,seedMode:event.target.value,error:""}))}><option value="blank">เริ่มแบบว่าง</option><option value="clone">คัดลอกจากสูตรปัจจุบัน</option></select></label>
+            {formulaModalState.error && <p role="alert">{formulaModalState.error}</p>}
+            <p>เพิ่มสูตรแล้ว กด “บันทึกสูตร” เพื่อสร้างเวอร์ชันและบันทึกลงระบบ</p>
+          </form>
+        </RequisitionDialog>
       )}
-
-      {/* Clone BOM Selector Drawer */}
-      {cloneDrawerState.isOpen && (
-        <div className="fixed inset-0 z-[120] flex justify-end bg-[#07111f]/55 backdrop-blur-[2px] no-print">
-          <button
-            type="button"
-            onClick={() => setCloneDrawerState((prev) => ({ ...prev, isOpen: false }))}
-            className="absolute inset-0 cursor-default bg-transparent focus-visible:outline-none"
-            aria-label="ปิดกล่องคัดลอกสูตร"
-          />
-          <aside className="relative z-10 flex h-full w-full max-w-[960px] flex-col border-l border-[#d4af37]/40 bg-white shadow-[-24px_0_60px_rgba(2,6,23,0.25)]">
-            <div className="border-b border-[#d4af37]/35 bg-[#102C57] px-5 py-4 text-white">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#d4af37]">
-                    BOM Cross-Product Cloner
-                  </p>
-                  <h2 className="mt-1 text-lg font-bold">คัดลอก BOM จากสินค้าอื่น</h2>
-                  <p className="mt-1 text-xs font-medium text-white/70">
-                    เลือกสินค้าและสูตรต้นทางเพื่อโคลนโครงสร้างวัตถุดิบลงในการจัดสูตรใหม่
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setCloneDrawerState((prev) => ({ ...prev, isOpen: false }))}
-                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[2px] border border-[#d4af37]/40 text-[#d4af37] transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4af37]"
-                  aria-label="ปิดการคัดลอกสูตร"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-
-            <div className="flex flex-1 min-h-0">
-              {/* Left Pane: Products with BOM list */}
-              <div className="flex flex-1 flex-col min-h-0 border-r border-gray-200">
-                <div className="p-4 border-b border-gray-100 bg-[#f8fafc]">
-                  <label className="relative block">
-                    <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#102C57]/55" />
-                    <input
-                      value={cloneDrawerState.searchTerm}
-                      onChange={(event) =>
-                        setCloneDrawerState((prev) => ({ ...prev, searchTerm: event.target.value }))
-                      }
-                      placeholder="ค้นหารหัส หรือชื่อสินค้าต้นทางที่มี BOM แล้ว..."
-                      className="h-10 w-full rounded-[2px] border border-gray-200 bg-white pl-9 pr-3 text-sm font-semibold text-[#102C57] placeholder:text-[#64748b] focus:border-[#d4af37] focus:outline-none focus:ring-1 focus:ring-[#d4af37]"
-                      autoComplete="off"
-                    />
-                  </label>
-                </div>
-
-                <div className="flex-1 overflow-auto">
-                  {cloneDrawerState.isLoading ? (
-                    <div className="flex h-32 items-center justify-center text-xs font-semibold text-[#102C57]/70">
-                      กำลังโหลดรายการสินค้า...
-                    </div>
-                  ) : filteredCloneProducts.length === 0 ? (
-                    <div className="flex h-32 items-center justify-center text-xs font-semibold text-gray-500">
-                      ไม่พบสินค้าต้นทางที่มี BOM ตรงกับที่ค้นหา
-                    </div>
-                  ) : (
-                    <table className="w-full table-fixed border-collapse text-sm">
-                      <thead className="sticky top-0 z-10 bg-[#102C57] text-left text-[11px] font-bold uppercase tracking-[0.08em] text-[#d4af37]">
-                        <tr>
-                          <th className="w-[150px] px-4 py-3">รหัสสินค้า</th>
-                          <th className="px-4 py-3">ชื่อสินค้า</th>
-                          <th className="w-[140px] px-4 py-3">หมวดหมู่</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {filteredCloneProducts.map((product) => {
-                          const isSelected = product.code === cloneDrawerState.selectedProductCode;
-                          return (
-                            <tr
-                              key={product.code}
-                              onClick={() => {
-                                const formulas = product.formulaOptions || [];
-                                const firstFormula = formulas[0]?.formula_code || "DEFAULT";
-                                setCloneDrawerState((prev) => ({
-                                  ...prev,
-                                  selectedProductCode: product.code,
-                                  selectedFormulaCode: firstFormula,
-                                  error: "",
-                                }));
-                              }}
-                              className={`cursor-pointer transition-colors ${
-                                isSelected ? "bg-[#fff7db]" : "bg-white hover:bg-[#f8fafc]"
-                              }`}
-                            >
-                              <td className="px-4 py-3 align-middle font-bold text-[#102C57]">
-                                {product.code}
-                              </td>
-                              <td className="px-4 py-3 align-middle text-[#102C57]">
-                                {product.name}
-                              </td>
-                              <td className="px-4 py-3 align-middle text-xs text-gray-500">
-                                {product.categoryName || product.category}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-              </div>
-
-              {/* Right Pane: Clone Configuration Form */}
-              <div className="w-[340px] bg-[#f8fafc] p-5 flex flex-col justify-between overflow-y-auto">
-                <div className="space-y-4">
-                  <div>
-                    <h4 className="text-xs font-bold uppercase tracking-[0.15em] text-[#102C57] border-b border-gray-200 pb-2">
-                      รายละเอียดสูตรใหม่
-                    </h4>
-                  </div>
-                  
-                  <label className="block">
-                    <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d4af37]/85">
-                      รหัสสูตรใหม่
-                    </span>
-                    <input
-                      value={cloneDrawerState.formulaCode}
-                      onChange={(event) =>
-                        setCloneDrawerState((prev) => ({
-                          ...prev,
-                          formulaCode: event.target.value.toUpperCase(),
-                          error: "",
-                        }))
-                      }
-                      placeholder="เช่น F2 หรือ ALT-A"
-                      className="h-10 w-full rounded-[2px] border border-gray-300 bg-white px-3 text-sm font-semibold text-[#102C57] focus:border-[#d4af37] focus:outline-none focus:ring-1 focus:ring-[#d4af37]"
-                    />
-                  </label>
-
-                  <label className="block">
-                    <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d4af37]/85">
-                      ชื่อสูตรใหม่
-                    </span>
-                    <input
-                      value={cloneDrawerState.formulaName}
-                      onChange={(event) =>
-                        setCloneDrawerState((prev) => ({
-                          ...prev,
-                          formulaName: event.target.value,
-                          error: "",
-                        }))
-                      }
-                      placeholder="เช่น สูตรทดแทนแป้ง"
-                      className="h-10 w-full rounded-[2px] border border-gray-300 bg-white px-3 text-sm font-semibold text-[#102C57] focus:border-[#d4af37] focus:outline-none focus:ring-1 focus:ring-[#d4af37]"
-                    />
-                  </label>
-
-                  <div className="pt-2 border-t border-gray-200">
-                    <h4 className="text-xs font-bold uppercase tracking-[0.15em] text-[#102C57] pb-2">
-                      ข้อมูลสูตรต้นแบบ
-                    </h4>
-                  </div>
-
-                  <div className="rounded-[2px] border border-gray-200 bg-white p-3 space-y-2">
-                    <div>
-                      <p className="text-[9px] font-bold uppercase tracking-wider text-gray-500">สินค้าต้นแบบ</p>
-                      <p className="text-xs font-bold text-[#102C57]">
-                        {cloneDrawerState.selectedProductCode
-                          ? cloneDrawerState.selectedProductCode
-                          : "ยังไม่ได้เลือกสินค้า"}
-                      </p>
-                      {cloneDrawerState.selectedProductCode && (
-                        <p className="text-[11px] text-gray-600 line-clamp-2 leading-normal mt-0.5">
-                          {cloneDrawerState.products.find(p => p.code === cloneDrawerState.selectedProductCode)?.name}
-                        </p>
-                      )}
-                    </div>
-
-                    {cloneDrawerState.selectedProductCode && (
-                      <div className="pt-1">
-                        <label className="block">
-                          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                            สูตรต้นแบบที่ต้องการคัดลอก
-                          </span>
-                          <select
-                            value={cloneDrawerState.selectedFormulaCode}
-                            onChange={(event) =>
-                              setCloneDrawerState((prev) => ({
-                                ...prev,
-                                selectedFormulaCode: event.target.value,
-                                error: "",
-                              }))
-                            }
-                            className="h-9 w-full rounded-[2px] border border-gray-300 bg-white px-2 text-xs font-semibold text-[#102C57] focus:border-[#d4af37] focus:outline-none"
-                          >
-                            {(() => {
-                              const prod = cloneDrawerState.products.find(p => p.code === cloneDrawerState.selectedProductCode);
-                              const formulas = prod?.formulaOptions || [];
-                              if (formulas.length === 0) {
-                                return <option value="DEFAULT">สูตรหลัก (DEFAULT)</option>;
-                              }
-                              return formulas.map((f) => (
-                                <option key={f.formula_code} value={f.formula_code}>
-                                  {f.formula_name} ({f.formula_code})
-                                </option>
-                              ));
-                            })()}
-                          </select>
-                        </label>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-3 pt-4 border-t border-gray-200">
-                  {cloneDrawerState.error && (
-                    <p className="rounded-[2px] border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-600 leading-normal">
-                      {cloneDrawerState.error}
-                    </p>
-                  )}
-                  
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setCloneDrawerState((prev) => ({ ...prev, isOpen: false }))}
-                      className="flex-1 h-10 rounded-[2px] border border-gray-300 bg-white text-xs font-bold uppercase tracking-[0.1em] text-[#102C57] hover:bg-gray-50 transition-colors"
-                    >
-                      ยกเลิก
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleConfirmClone}
-                      className="flex-1 h-10 rounded-[2px] bg-[#d4af37] text-xs font-bold uppercase tracking-[0.1em] text-[#102C57] shadow-[0_8px_20px_rgba(212,175,55,0.2)] hover:bg-[#c29c27] transition-colors"
-                    >
-                      ยืนยันการคัดลอก
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </aside>
-        </div>
-      )}
+      {cloneDrawerState.isOpen && <BomCloneDialog state={cloneDrawerState} setState={setCloneDrawerState} onConfirm={handleConfirmClone} onClose={() => setCloneDrawerState(prev => ({...prev,isOpen:false}))} />}
     </PermissionGate >
   );
 }

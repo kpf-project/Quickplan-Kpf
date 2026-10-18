@@ -25,6 +25,7 @@ export function resolveRequisitionDocumentParent({ skuCode, skuName, categoryCod
 }
 
 export function resolveRequisitionDocumentDiscriminator(item = {}) {
+  if (item.consolidateRequisitionPreviewByDate === true) return "CONSOLIDATED";
   const parentSku = normalizeSku(item.parentSku);
   if (parentSku) return parentSku;
   const workstreamCode = normalizeText(item.workstreamCode).toUpperCase() || "DEFAULT";
@@ -38,6 +39,16 @@ export function buildRequisitionDocumentBaseKey(item = {}) {
     normalizeText(item.shiftCode || item.shiftId).toUpperCase() || "UNASSIGNED_SHIFT",
     resolveRequisitionDocumentDiscriminator(item),
   ].join("|");
+}
+
+export function selectRequisitionWorkNames(directNames, inferredNames) {
+  const selected = directNames?.size ? directNames : inferredNames;
+  return selected?.size ? Array.from(selected).filter(Boolean) : [];
+}
+
+export function findRequisitionWorkNames(namesByKey, key, parentSku) {
+  const sku = normalizeSku(parentSku);
+  return namesByKey.get(sku ? `${key}|${sku}` : key);
 }
 
 export async function loadRequisitionParentCategoryMap(supabase, planRows = []) {

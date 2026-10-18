@@ -1,14 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Archive, LogOut, Power, RefreshCw, Save, ShieldAlert, Trash2, UserCog, XCircle } from "lucide-react";
+import { Archive, LogOut, Power, RefreshCw, Save, ShieldAlert, Trash2, UserCog, X, User, KeyRound, Building2, ShieldCheck } from "lucide-react";
 import { adminFetch } from "@/lib/adminClient";
+import SettingsTable from "@/components/settings/SettingsTable";
+import WeightScalePaginationBar from "@/features/production-line/components/WeightScalePaginationBar";
+import SettingsDialog from "@/components/settings/SettingsDialog";
 
 export default function UserManagementPanel({ roles, departments, isLoading }) {
   const [users, setUsers] = useState([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [listPage, setListPage] = useState(1);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [formState, setFormState] = useState({
     username: "",
@@ -67,10 +73,9 @@ export default function UserManagementPanel({ roles, departments, isLoading }) {
 
   const filteredUsers = useMemo(() => {
     const keyword = searchTerm.trim().toLowerCase();
-    if (!keyword) {
-      return users;
-    }
     return users.filter((user) => {
+      if (departmentFilter && user.department?.id !== departmentFilter) return false;
+      if (statusFilter && (user.deleted_at ? "deleted" : user.is_archived ? "archived" : user.is_active ? "active" : "inactive") !== statusFilter) return false;
       const departmentName = user.department?.name ?? "";
       const roleName = user.role?.name ?? "";
       return [
@@ -82,7 +87,10 @@ export default function UserManagementPanel({ roles, departments, isLoading }) {
         .toLowerCase()
         .includes(keyword);
     });
-  }, [searchTerm, users]);
+  }, [searchTerm, users, departmentFilter, statusFilter]);
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / 15));
+  const safePage = Math.min(listPage, totalPages);
+  const pagedUsers = filteredUsers.slice((safePage - 1) * 15, safePage * 15);
 
   const startEditUser = (user) => {
     setSelectedUserId(user.id);
@@ -231,62 +239,21 @@ export default function UserManagementPanel({ roles, departments, isLoading }) {
     && !isSelectedSelf;
 
   return (
-    <div className="space-y-8">
-      {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 pb-4 border-b border-slate-100 select-none">
-        <div>
-          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#d4af37]">
-            User Catalog
-          </span>
-          <h2 className="text-[16px] font-black text-[#102C57] mt-0.5">
-            จัดการข้อมูลผู้ใช้งาน
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            แก้ไขชื่อผู้ใช้ รหัสผ่าน แผนก และสิทธิ์ระดับผู้ดูแลระบบ
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={loadUsers}
-            disabled={isLoadingUsers}
-            className="inline-flex items-center gap-2 bg-[#102C57] text-white text-[10px] font-black uppercase tracking-widest px-4 py-2 border border-[#102C57] hover:bg-[#d4af37] hover:text-[#102C57] hover:border-[#d4af37] transition rounded-[2px]"
-          >
-            <RefreshCw size={12} className={isLoadingUsers ? "animate-spin" : ""} />
-            {isLoadingUsers ? "LOADING..." : "REFRESH"}
-          </button>
-        </div>
-      </div>
-
+    <div className="settings-catalog">
       {/* 1. Edit User Form Block (Shown only when selected) */}
       {selectedUser && (
+        <SettingsDialog compact label="แก้ไขผู้ใช้" onClose={clearSelection} busy={isSubmitting || isActionSubmitting}>
         <form
           onSubmit={handleSubmit}
-          className="border border-[#d4af37]/30 bg-[#fdf7e6]/30 p-6 space-y-5 rounded-[2px]"
+          className="settings-edit-form"
         >
-          <div className="flex items-center justify-between gap-4 pb-2 border-b border-slate-200">
-            <div>
-              <p className="text-xs font-black uppercase tracking-wider text-[#102C57]">
-                กำลังแก้ไขบัญชี: {selectedUser.username}
-              </p>
-              <p className="text-[11px] text-slate-500 mt-0.5">
-                เว้นรหัสผ่านว่างได้หากไม่ต้องการเปลี่ยนแปลง
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={clearSelection}
-              className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-rose-600 transition"
-            >
-              <XCircle size={13} />
-              ยกเลิกการแก้ไข
-            </button>
-          </div>
+          <div className="settings-modal-title"><h2>แก้ไขผู้ใช้</h2><button type="button" aria-label="ปิดการแก้ไขผู้ใช้" disabled={isSubmitting || isActionSubmitting} onClick={clearSelection}><X size={18}/></button></div>
 
           {/* Form Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="settings-user-fields">
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase tracking-wider text-slate-600">Username</label>
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-600">ชื่อผู้ใช้งาน (USERNAME)</label>
+              <span className="settings-input-icon"><User size={15}/></span>
               <input
                 value={formState.username}
                 onChange={(event) =>
@@ -296,19 +263,27 @@ export default function UserManagementPanel({ roles, departments, isLoading }) {
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase tracking-wider text-slate-600">รหัสผ่านใหม่</label>
-              <input
-                type="password"
-                value={formState.password}
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-600">บทบาท</label>
+              <span className="settings-input-icon"><ShieldCheck size={15}/></span>
+              <select
+                value={formState.roleId}
                 onChange={(event) =>
-                  setFormState((prev) => ({ ...prev, password: event.target.value }))
+                  setFormState((prev) => ({ ...prev, roleId: event.target.value }))
                 }
-                placeholder="ปล่อยว่างหากคงเดิม"
+                disabled={isLoading}
                 className="w-full h-9 px-3 border border-slate-200 bg-white text-xs font-semibold focus:outline-none rounded-[2px]"
-              />
+              >
+                <option value="">เลือกบทบาท</option>
+                {roles.map((role) => (
+                  <option key={role.id} value={role.id}>
+                    {role.name}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="space-y-1">
               <label className="text-[10px] font-black uppercase tracking-wider text-slate-600">แผนก</label>
+              <span className="settings-input-icon"><Building2 size={15}/></span>
               <select
                 value={formState.departmentId}
                 onChange={(event) =>
@@ -326,27 +301,22 @@ export default function UserManagementPanel({ roles, departments, isLoading }) {
               </select>
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase tracking-wider text-slate-600">บทบาท</label>
-              <select
-                value={formState.roleId}
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-600">รหัสผ่านใหม่ (ถ้าเปลี่ยน)</label>
+              <span className="settings-input-icon"><KeyRound size={15}/></span>
+              <input
+                type="password"
+                value={formState.password}
                 onChange={(event) =>
-                  setFormState((prev) => ({ ...prev, roleId: event.target.value }))
+                  setFormState((prev) => ({ ...prev, password: event.target.value }))
                 }
-                disabled={isLoading}
+                placeholder="ปล่อยว่างหากคงเดิม"
                 className="w-full h-9 px-3 border border-slate-200 bg-white text-xs font-semibold focus:outline-none rounded-[2px]"
-              >
-                <option value="">เลือกบทบาท</option>
-                {roles.map((role) => (
-                  <option key={role.id} value={role.id}>
-                    {role.name}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
           </div>
 
           {/* Account Actions Section */}
-          <div className="border border-slate-200 bg-white p-4 rounded-[2px] space-y-4">
+          <details className="settings-account-actions"><summary>คำสั่งบัญชีและความปลอดภัย</summary>
             <div>
               <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-700">คำสั่งสิทธิ์และความปลอดภัย</h4>
               <p className="text-[10px] text-slate-400">ระบุเหตุผลและกดปุ่มด้านล่างเพื่อดำเนินการทันที</p>
@@ -375,7 +345,7 @@ export default function UserManagementPanel({ roles, departments, isLoading }) {
                 className="h-9 inline-flex items-center justify-center gap-1.5 border border-slate-200 text-slate-800 text-[10px] font-black uppercase tracking-widest transition rounded-[2px] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
               >
                 <Power size={12} />
-                {selectedUser.is_active ? "DEACTIVATE ACCOUNT" : "ACTIVATE ACCOUNT"}
+                {selectedUser.is_active ? "ปิดใช้งานบัญชี" : "เปิดใช้งานบัญชี"}
               </button>
               <button
                 type="button"
@@ -386,7 +356,7 @@ export default function UserManagementPanel({ roles, departments, isLoading }) {
                 className="h-9 inline-flex items-center justify-center gap-1.5 border border-amber-200 bg-amber-50 text-amber-700 text-[10px] font-black uppercase tracking-widest transition rounded-[2px] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-amber-100"
               >
                 <LogOut size={12} />
-                FORCE LOGOUT ALL
+                ออกจากทุกเครื่อง
               </button>
               <button
                 type="button"
@@ -398,7 +368,7 @@ export default function UserManagementPanel({ roles, departments, isLoading }) {
                 className="h-9 inline-flex items-center justify-center gap-1.5 border border-orange-200 bg-orange-50 text-orange-700 text-[10px] font-black uppercase tracking-widest transition rounded-[2px] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-orange-100"
               >
                 <Archive size={12} />
-                ARCHIVE
+                เก็บเข้าคลัง
               </button>
               <button
                 type="button"
@@ -410,7 +380,7 @@ export default function UserManagementPanel({ roles, departments, isLoading }) {
                 className="h-9 inline-flex items-center justify-center gap-1.5 border border-rose-200 bg-rose-50 text-rose-700 text-[10px] font-black uppercase tracking-widest transition rounded-[2px] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-rose-100"
               >
                 <Trash2 size={12} />
-                HARD DELETE
+                ลบถาวร
               </button>
             </div>
             
@@ -420,57 +390,24 @@ export default function UserManagementPanel({ roles, departments, isLoading }) {
                 <span>บัญชีปัจจุบันไม่มีสิทธิ์ Super Admin จึงไม่สามารถใช้คำสั่งลบถาวร (Hard Delete) ได้</span>
               </div>
             )}
-          </div>
+          </details>
 
-          {/* Form Actions Footer */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-3 border-t border-slate-200">
-            <div className="text-xs">
-              {statusMessage ? (
-                <span
-                  className={`font-bold ${
-                    statusTone === "error"
-                      ? "text-rose-600"
-                      : statusTone === "success"
-                      ? "text-emerald-600"
-                      : "text-[#8a6b10]"
-                  }`}
-                >
-                  {statusMessage}
-                </span>
-              ) : (
-                <span className="text-slate-500 italic">
-                  ระบบบันทึกความปลอดภัยและประวัติการสั่งงานโดยอัตโนมัติ
-                </span>
-              )}
-            </div>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="inline-flex items-center justify-center gap-1.5 bg-[#d4af37] text-[#102C57] text-[10px] font-black uppercase tracking-widest px-5 py-2.5 rounded-[2px] hover:bg-[#102C57] hover:text-white transition shadow-sm border border-[#d4af37]"
-            >
-              <Save size={12} />
-              {isSubmitting ? "SAVING..." : "UPDATE CONFIG"}
-            </button>
+          {statusMessage && <p role="status" className={statusTone === "error" ? "text-rose-600" : "text-emerald-700"}>{statusMessage}</p>}
+          <div className="settings-modal-actions settings-user-save">
+            <button type="button" disabled={isSubmitting || isActionSubmitting} onClick={clearSelection}>ยกเลิก</button>
+            <button type="submit" disabled={isSubmitting || isActionSubmitting} className="settings-primary">{isSubmitting ? "กำลังบันทึก..." : "บันทึกการเปลี่ยนแปลง"}</button>
           </div>
         </form>
+        </SettingsDialog>
       )}
 
       {/* 2. User Catalog List Block */}
       <div className="border border-slate-200 rounded-[2px] overflow-hidden bg-white">
-        {/* Table Search Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-5 py-4 border-b border-slate-200 select-none bg-slate-50/50">
-          <div>
-            <h3 className="text-xs font-black uppercase tracking-wider text-[#102C57]">สารบัญผู้ใช้งานทั้งหมด</h3>
-            <p className="text-[11px] text-slate-500 mt-0.5">เลือกปุ่ม {"แก้ไข"} ท้ายรายชื่อเพื่อจัดการข้อมูลสิทธิ์</p>
-          </div>
-          <div className="relative">
-            <input
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="ค้นหาตามชื่อ แผนก หรือบทบาท..."
-              className="h-9 w-full sm:w-64 border border-slate-200 bg-white px-3 text-xs font-semibold focus:outline-none rounded-[2px]"
-            />
-          </div>
+        <div className="settings-filter-row">
+          <input aria-label="ค้นหาผู้ใช้" value={searchTerm} onChange={(event) => {setSearchTerm(event.target.value);setListPage(1);}} placeholder="ค้นหาชื่อผู้ใช้ แผนก หรือบทบาท..." />
+          <select aria-label="กรองแผนก" value={departmentFilter} onChange={(event) => {setDepartmentFilter(event.target.value);setListPage(1);}}><option value="">ทุกแผนก</option>{departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select>
+          <select aria-label="กรองสถานะผู้ใช้" value={statusFilter} onChange={(event) => {setStatusFilter(event.target.value);setListPage(1);}}><option value="">ทุกสถานะ</option><option value="active">ใช้งาน</option><option value="inactive">ปิดใช้งาน</option><option value="archived">Archive</option><option value="deleted">ลบถาวร</option></select>
+          <button type="button" className="settings-primary" disabled={isLoadingUsers} onClick={loadUsers}><RefreshCw size={14} />รีเฟรช</button>
         </div>
 
         {loadError && (
@@ -480,11 +417,10 @@ export default function UserManagementPanel({ roles, departments, isLoading }) {
         )}
 
         {/* Catalog Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left border-collapse">
+        <SettingsTable label="จัดการผู้ใช้">
             <thead>
               <tr className="bg-slate-50 text-slate-500 border-b border-slate-200 uppercase font-black tracking-widest text-[9px]">
-                <th className="px-5 py-3.5">Username</th>
+                <th className="settings-sequence">ลำดับ</th><th className="px-5 py-3.5">ชื่อผู้ใช้งาน</th>
                 <th className="px-5 py-3.5">แผนก (Department)</th>
                 <th className="px-5 py-3.5">บทบาท (Access Role)</th>
                 <th className="px-5 py-3.5 text-center">สถานะใช้งาน</th>
@@ -494,7 +430,7 @@ export default function UserManagementPanel({ roles, departments, isLoading }) {
             <tbody className="divide-y divide-slate-100">
               {isLoadingUsers ? (
                 <tr>
-                  <td colSpan={5} className="px-5 py-8 text-center text-slate-400 italic">
+                  <td colSpan={6} className="px-5 py-8 text-center text-slate-400 italic">
                     กำลังดึงข้อมูลรายชื่อพนักงานและผู้ใช้งานจากเซิร์ฟเวอร์...
                   </td>
                 </tr>
@@ -505,9 +441,9 @@ export default function UserManagementPanel({ roles, departments, isLoading }) {
                   </td>
                 </tr>
               ) : (
-                filteredUsers.map((user) => (
+                pagedUsers.map((user, index) => (
                   <tr key={user.id} className="hover:bg-slate-50/50 transition">
-                    <td className="px-5 py-3.5 font-bold text-[#102C57]">{user.username}</td>
+                    <td>{(safePage - 1) * 15 + index + 1}</td><td className="px-5 py-3.5 font-bold text-[#102C57]">{user.username}</td>
                     <td className="px-5 py-3.5 text-slate-600 font-medium">
                       {user.department?.name ?? "-"}
                     </td>
@@ -540,15 +476,15 @@ export default function UserManagementPanel({ roles, departments, isLoading }) {
                         disabled={Boolean(user.deleted_at)}
                         className="inline-flex items-center gap-2 text-[#102C57] hover:text-[#d4af37] text-[10px] font-black uppercase tracking-widest border border-slate-200 px-3 py-1.5 rounded-[2px] transition hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
                       >
-                        EDIT USER
+                        แก้ไข
                       </button>
                     </td>
                   </tr>
                 ))
               )}
             </tbody>
-          </table>
-        </div>
+        </SettingsTable>
+        <WeightScalePaginationBar page={safePage} totalPages={totalPages} totalCount={filteredUsers.length} limit={15} onPageChange={setListPage} isLoading={isLoadingUsers} />
       </div>
     </div>
   );

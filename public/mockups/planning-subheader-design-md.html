@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KPF Production Planning - Sub-Header (DOC/DESIGN.md)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    body {
+      font-family: 'Noto Sans Thai', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #0c1017;
+      color: #e2e8f0;
+    }
+    /* DOC/DESIGN.md rules: Razor-sharp 2px border radius, no soft bubbly pills */
+    .razor-2px { border-radius: 2px !important; }
+    .label-upper { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; }
+  </style>
+</head>
+<body class="p-4 md:p-8 space-y-12 max-w-7xl mx-auto">
+
+  <!-- Header Banner -->
+  <div class="border-b border-slate-800 pb-5">
+    <div class="flex items-center gap-2 mb-1.5">
+      <span class="w-2 h-2 bg-[#d4af37] razor-2px inline-block"></span>
+      <span class="label-upper text-[#d4af37] font-bold">KPF PRECISION DESIGN SYSTEM · DOC/DESIGN.MD</span>
+    </div>
+    <h1 class="text-2xl font-bold text-white tracking-tight">Sub-Header กลางประจำโมดูล "วางแผนการผลิต"</h1>
+    <p class="text-slate-400 text-xs mt-1 max-w-3xl leading-relaxed">
+      ออกแบบตามมาตรฐาน <strong class="text-white">DOC/DESIGN.md</strong>: มุมเหลี่ยมคมกริบ 2px (Precision Engineering), แถบเตี้ยเพียง <strong class="text-emerald-400">42px</strong>, ตัดข้อความบรรยายทิ้ง 100%, ไม่มีปุ่มขยะเฉพาะหน้า, ทางการ Modern สุขุม จริงจัง
+    </p>
+  </div>
+
+  <!-- VARIANT 1: CRISP EDITORIAL LIGHT (เหมาะกับหน้าวางแผนที่ตารางข้อมูลเป็นสีขาว) -->
+  <section class="space-y-3">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="px-2 py-0.5 razor-2px bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold">แนะนำ</span>
+        <h2 class="text-sm font-bold uppercase tracking-wider text-white">Variant A: Crisp Editorial Light (สูง 42px · เรียบหรู สะอาดตา คมกริบ)</h2>
+      </div>
+      <span class="text-[11px] font-mono text-slate-400">Height: 42px | Border-radius: 2px</span>
+    </div>
+
+    <!-- The Sub-Header Component -->
+    <div class="bg-white border border-slate-200 razor-2px px-3 py-1 flex items-center justify-between shadow-sm">
+      <!-- Left: Clean Systematic Title -->
+      <div class="flex items-center gap-2.5 shrink-0">
+        <div class="w-5 h-5 razor-2px bg-[#102C57] flex items-center justify-center text-[#d4af37] text-xs font-black">
+          P
+        </div>
+        <span class="font-bold text-sm text-[#102C57] tracking-tight">วางแผนการผลิต</span>
+        <span class="text-slate-300">|</span>
+        <span class="label-upper text-slate-400 font-semibold text-[10px] hidden sm:inline">PLANNING MODULE</span>
+      </div>
+
+      <!-- Center/Right: 5 Precision Tabs -->
+      <nav class="flex items-center gap-1">
+        <!-- Active Tab: Inverted Deep Navy with 2px razor precision -->
+        <a href="#v1" class="razor-2px bg-[#102C57] text-white px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 transition border border-[#102C57]">
+          <span>📋</span> แผนหลัก
+        </a>
+        <!-- Inactive Tabs -->
+        <a href="#v1" class="razor-2px text-slate-600 hover:text-slate-900 hover:bg-slate-100 px-3 py-1.5 text-xs font-medium transition flex items-center gap-1.5">
+          <span>🏭</span> งานแผนก
+        </a>
+        <a href="#v1" class="razor-2px text-slate-600 hover:text-slate-900 hover:bg-slate-100 px-3 py-1.5 text-xs font-medium transition flex items-center gap-1.5">
+          <span>📊</span> รายงาน & ปรับแผน
+        </a>
+        <a href="#v1" class="razor-2px text-slate-600 hover:text-slate-900 hover:bg-slate-100 px-3 py-1.5 text-xs font-medium transition flex items-center gap-1.5">
+          <span>📄</span> Preview ใบเบิก
+        </a>
+        <a href="#v1" class="razor-2px text-slate-600 hover:text-slate-900 hover:bg-slate-100 px-3 py-1.5 text-xs font-medium transition flex items-center gap-1.5 relative">
+          <span>🔔</span> แจ้งเตือน
+          <span class="w-1.5 h-1.5 bg-[#DA291C] razor-2px inline-block ml-0.5"></span>
+        </a>
+      </nav>
+    </div>
+
+    <!-- Factory Grid preview below -->
+    <div class="bg-white border border-slate-200 razor-2px p-4 text-xs text-slate-700">
+      <div class="flex items-center justify-between border-b border-slate-200 pb-2 mb-3">
+        <span class="font-bold text-slate-900 text-xs">ตารางวางแผนผลิตประจำสัปดาห์ (Master Schedule Grid)</span>
+        <span class="label-upper text-slate-500 text-[10px]">MP-2026-10-001 · กะ 1</span>
+      </div>
+      <table class="w-full border-collapse border border-slate-200 text-left text-xs">
+        <thead class="bg-slate-50 text-slate-800 font-bold border-b border-slate-200">
+          <tr>
+            <th class="p-2 border border-slate-200">แผนก</th>
+            <th class="p-2 border border-slate-200">สินค้า (FG)</th>
+            <th class="p-2 border border-slate-200 text-center">จ. 05 ต.ค.</th>
+            <th class="p-2 border border-slate-200 text-center">อ. 06 ต.ค.</th>
+            <th class="p-2 border border-slate-200 text-center">พ. 07 ต.ค.</th>
+            <th class="p-2 border border-slate-200 text-center">พฤ. 08 ต.ค.</th>
+            <th class="p-2 border border-slate-200 text-center">ศ. 09 ต.ค.</th>
+          </tr>
+        </thead>
+        <tbody class="text-slate-600">
+          <tr class="hover:bg-slate-50/80">
+            <td class="p-2 border border-slate-200 font-semibold text-slate-900">แผนกอบ</td>
+            <td class="p-2 border border-slate-200">WKB-0064 เนื้อออพาย</td>
+            <td class="p-2 border border-slate-200 text-center font-mono">1,200 kg</td>
+            <td class="p-2 border border-slate-200 text-center font-mono">1,200 kg</td>
+            <td class="p-2 border border-slate-200 text-center font-mono">-</td>
+            <td class="p-2 border border-slate-200 text-center font-mono">800 kg</td>
+            <td class="p-2 border border-slate-200 text-center font-mono">-</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- VARIANT 2: DEEP NAVY PRECISION (พื้นหลังเข้ม สไตล์ห้องควบคุม Chiaroscuro) -->
+  <section class="space-y-3">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="px-2 py-0.5 razor-2px bg-blue-500/20 text-blue-400 border border-blue-500/30 text-xs font-bold">สไตล์คอนโซล</span>
+        <h2 class="text-sm font-bold uppercase tracking-wider text-white">Variant B: Deep Navy Chiaroscuro (สูง 42px · ดุดัน ทรงพลัง คอนทราสต์สูง)</h2>
+      </div>
+      <span class="text-[11px] font-mono text-slate-400">Height: 42px | Border-radius: 2px</span>
+    </div>
+
+    <!-- The Sub-Header Component -->
+    <div class="bg-[#102C57] border-b border-white/10 razor-2px px-3 py-1 flex items-center justify-between text-white shadow-md">
+      <!-- Left: Clean Systematic Title -->
+      <div class="flex items-center gap-2.5 shrink-0">
+        <span class="w-2 h-2 bg-[#d4af37] razor-2px inline-block"></span>
+        <span class="font-bold text-sm text-white tracking-tight">วางแผนการผลิต</span>
+        <span class="text-white/20">|</span>
+        <span class="label-upper text-white/50 text-[10px] hidden sm:inline font-mono">CONTROL CENTER</span>
+      </div>
+
+      <!-- Center/Right: 5 Precision Tabs -->
+      <nav class="flex items-center gap-1">
+        <!-- Active Tab: Solid White card with razor-sharp 2px border -->
+        <a href="#v2" class="razor-2px bg-white text-[#102C57] px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 transition shadow-sm">
+          <span>📋</span> แผนหลัก
+        </a>
+        <!-- Inactive Tabs -->
+        <a href="#v2" class="razor-2px text-white/70 hover:text-white hover:bg-white/10 px-3 py-1.5 text-xs font-medium transition flex items-center gap-1.5">
+          <span>🏭</span> งานแผนก
+        </a>
+        <a href="#v2" class="razor-2px text-white/70 hover:text-white hover:bg-white/10 px-3 py-1.5 text-xs font-medium transition flex items-center gap-1.5">
+          <span>📊</span> รายงาน & ปรับแผน
+        </a>
+        <a href="#v2" class="razor-2px text-white/70 hover:text-white hover:bg-white/10 px-3 py-1.5 text-xs font-medium transition flex items-center gap-1.5">
+          <span>📄</span> Preview ใบเบิก
+        </a>
+        <a href="#v2" class="razor-2px text-white/70 hover:text-white hover:bg-white/10 px-3 py-1.5 text-xs font-medium transition flex items-center gap-1.5 relative">
+          <span>🔔</span> แจ้งเตือน
+          <span class="w-1.5 h-1.5 bg-[#DA291C] razor-2px inline-block ml-0.5"></span>
+        </a>
+      </nav>
+    </div>
+  </section>
+
+</body>
+</html>

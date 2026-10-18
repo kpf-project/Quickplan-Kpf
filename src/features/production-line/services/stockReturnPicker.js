@@ -45,6 +45,9 @@ function normalizePickerRow(row, progress) {
     barcode: normalizeUpperText(row?.barcode),
     productCode: normalizeUpperText(row?.product_code),
     productName: normalizeText(row?.product_name_snapshot),
+    targetProductCode: normalizeUpperText(row?.target_product_code),
+    targetProductName: normalizeText(row?.target_product_name_snapshot),
+    targetProductCategoryCode: normalizeUpperText(row?.target_product_category_code),
     lotNo: normalizeText(row?.lot_no),
     originalWeightKg,
     returnedWeightKg,
@@ -61,6 +64,8 @@ function buildSearchText(row) {
     row.barcode,
     row.productCode,
     row.productName,
+    row.targetProductCode,
+    row.targetProductName,
     row.lotNo,
   ]
     .map(normalizeUpperText)

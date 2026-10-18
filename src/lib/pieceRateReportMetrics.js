@@ -7,11 +7,12 @@ export function resolvePieceRateReportMetrics(row) {
   }
 
   const countValue = Number(row.input_value || 0);
+  const hasActualWeight = Number(row?.metadata?.actualWeightKg) > 0;
   const weightKg = Number(row.weight_kg_snapshot || row.kg_per_pail_snapshot || 0);
   return {
     entryCountValue,
     countValue,
-    normalizedKgAmount: Number.isFinite(weightKg) && weightKg > 0
+    normalizedKgAmount: !hasActualWeight && Number.isFinite(weightKg) && weightKg > 0
       ? Number((countValue * weightKg).toFixed(4))
       : normalizedKgAmount,
   };

@@ -7,11 +7,15 @@ const root = path.resolve(import.meta.dirname, "..");
 const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8");
 const migration = read("supabase/migrations/20260907123000_harden_weight_scale_stock_lifecycle.sql");
 const concurrencyMigration = read("supabase/migrations/20260911045858_harden_receipt_idempotency_and_atomic_batch_issue.sql");
+const idempotentCancellationMigrationName = fs
+  .readdirSync(path.join(root, "supabase/migrations"))
+  .find((name) => name.endsWith("_make_weight_receipt_cancellation_idempotent.sql"));
 
 test("stock mutation routes require attendance manage permission", () => {
   for (const route of [
     "src/app/api/scale/receipts/route.js",
     "src/app/api/scale/receipts/[receiptId]/cancel/route.js",
+    "src/app/api/scale/receipts/cancel-by-barcode/route.js",
     "src/app/api/production-stock/issues/route.js",
     "src/app/api/production-stock/issues/batch/route.js",
     "src/app/api/production-stock/issues/[issueItemId]/cancel/route.js",
@@ -39,6 +43,15 @@ test("receipt cancellation locks and validates before one atomic update", () => 
     read("src/lib/scale/receipts.js"),
     /rpc\(\s*"cancel_production_weight_receipt"/
   );
+});
+
+test("repeated receipt cancellation returns success without writing another reversal", () => {
+  assert.ok(idempotentCancellationMigrationName, "idempotent cancellation migration is missing");
+  const idempotentMigration = read(`supabase/migrations/${idempotentCancellationMigrationName}`);
+
+  assert.match(idempotentMigration, /v_receipt\.status = 'voided'/);
+  assert.match(idempotentMigration, /'alreadyCancelled', true/);
+  assert.match(idempotentMigration, /update public\.production_weight_receipts[\s\S]*status = 'voided'/);
 });
 
 test("return barcodes are serialized by root receipt and database-unique", () => {

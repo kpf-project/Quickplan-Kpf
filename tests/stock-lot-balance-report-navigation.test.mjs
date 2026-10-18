@@ -108,16 +108,12 @@ test("A4 lot balance report uses centered company headers and the logged-in prin
   const source = readRepoFile(
     "src/features/production-line/components/ProductionStockLotBalanceReportPageClient.js"
   );
-  const headerGrids = source.match(/grid grid-cols-\[1fr_auto_1fr\]/g) || [];
-  const centeredTitles = source.match(/lot-balance-report-title[^\"]*text-center/g) || [];
-  const thaiCompanyNames = source.match(/บริษัท เคพีฟู้ดส์ จำกัด/g) || [];
-  const englishCompanyNames = source.match(/K\.P\. foods Co\.,Ltd\./g) || [];
-  const printerBindings = source.match(/profile\.username \|\| "-"/g) || [];
+  const reportHeaderUsages = source.match(/<ReportHeader/g) || [];
+  const reportTitles = source.match(/title="รายงานสรุปยอดคงเหลือสินค้าแยกตาม Lot"/g) || [];
+  const printerBindings = source.match(/printedBy=\{profile\.username \|\| "-"}/g) || [];
 
-  assert.equal(headerGrids.length, 2, "preview and print should use centered three-column headers");
-  assert.equal(centeredTitles.length, 2, "both report titles should occupy the centered column");
-  assert.equal(thaiCompanyNames.length, 2, "both headers should show the requested Thai company name");
-  assert.equal(englishCompanyNames.length, 2, "both headers should show the requested English company name");
+  assert.equal(reportHeaderUsages.length, 2, "preview and print should use standardized ReportHeader");
+  assert.equal(reportTitles.length, 2, "both report headers should use the expected title");
   assert.equal(printerBindings.length, 2, "both headers should display the logged-in username");
   assert.doesNotMatch(source, /profile\?\.name|profile\.name/);
 });

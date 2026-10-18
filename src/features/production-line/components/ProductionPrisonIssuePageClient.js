@@ -698,7 +698,7 @@ export default function ProductionPrisonIssuePageClient({
         title="เบิกออกเรือนจำ"
       />
 
-      <section className="border-b border-[#1f3047] bg-[#102C57] text-white">
+      <section className="border-b border-[#1f3047] bg-[var(--surface-navy,#102C57)] text-white">
         <div className="mx-auto max-w-[84rem] px-4 pb-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between border-t border-white/10 pt-4">
             <div className={`inline-flex items-center gap-2 border px-4 py-2 text-xs font-black uppercase tracking-[0.18em] ${statusTone}`}>
@@ -718,7 +718,7 @@ export default function ProductionPrisonIssuePageClient({
             <div className="border-b border-[#e2e8f0] p-6 sm:p-8 lg:col-span-8 lg:border-b-0 lg:border-r lg:p-10">
               {!lastScannedItem ? (
                 <div className="flex h-full flex-col items-center justify-center py-8 text-center">
-                  <div className="flex flex-col items-center gap-5 rounded-lg border-2 border-[#d4af37]/40 bg-[#102C57] px-10 py-8 shadow-[0_12px_40px_rgba(16,44,87,0.45)]">
+                  <div className="flex flex-col items-center gap-5 rounded-lg border-2 border-[#d4af37]/40 bg-[var(--surface-navy,#102C57)] px-10 py-8 shadow-[0_12px_40px_rgba(16,44,87,0.45)]">
                     <PrisonIcon size={72} className="text-[#d4af37]" />
                     <div className="flex flex-col items-center gap-2">
                       <p className="text-[11px] font-black uppercase tracking-[0.35em] text-[#d4af37]">ระบบเบิกเรือนจำ</p>
@@ -797,7 +797,7 @@ export default function ProductionPrisonIssuePageClient({
               <button
                 type="button"
                 onClick={openIssuePicker}
-                className="flex h-14 items-center justify-center gap-2 bg-[#102C57] text-[10px] font-black uppercase tracking-wider text-white transition hover:bg-[#173b72]"
+                className="flex h-14 items-center justify-center gap-2 bg-[var(--surface-navy,#102C57)] text-[10px] font-black uppercase tracking-wider text-white transition hover:bg-[var(--surface-navy,#173b72)]"
               >
                 <ListChecks size={16} />
                 เลือกรายการเบิกออก
@@ -809,7 +809,7 @@ export default function ProductionPrisonIssuePageClient({
             </div>
           </div>
 
-          <div className="relative bg-[#102C57] px-4 py-8 text-center sm:px-10 lg:py-12">
+          <div className="relative bg-[var(--surface-navy,#102C57)] px-4 py-8 text-center sm:px-10 lg:py-12">
             <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#d4af37_1px,transparent_1px)] [background-size:20px_20px]" />
 
             <div className="relative flex flex-col items-center justify-center">
@@ -945,7 +945,7 @@ export default function ProductionPrisonIssuePageClient({
             aria-describedby="prison-issue-blocking-error-message"
             className="w-full max-w-xl overflow-hidden border-2 border-[#d4af37] bg-white shadow-[0_30px_80px_rgba(0,0,0,0.35)]"
           >
-            <div className="border-b border-[#d4af37]/35 bg-[#102C57] px-5 py-4 text-white sm:px-6">
+            <div className="border-b border-[#d4af37]/35 bg-[var(--surface-navy,#102C57)] px-5 py-4 text-white sm:px-6">
               <div className="flex items-start gap-3">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center border border-[#d4af37] bg-[#d4af37]/10 text-[#d4af37]">
                   <AlertTriangle size={24} />
@@ -993,7 +993,7 @@ export default function ProductionPrisonIssuePageClient({
                 type="button"
                 onClick={closeBlockingError}
                 autoFocus
-                className="inline-flex h-12 items-center justify-center gap-2 border border-[#102C57] bg-[#102C57] px-6 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#173b72]"
+                className="inline-flex h-12 items-center justify-center gap-2 border border-[#102C57] bg-[var(--surface-navy,#102C57)] px-6 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-[var(--surface-navy,#173b72)]"
               >
                 <Check size={17} />
                 ตกลง
@@ -1006,7 +1006,7 @@ export default function ProductionPrisonIssuePageClient({
       {isPickerOpen ? (
         <div className="fixed inset-0 z-[130] flex items-center justify-center bg-[#08111f]/80 px-3 py-4 backdrop-blur-sm sm:px-6">
           <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden border-2 border-[#d4af37] bg-white shadow-[0_30px_80px_rgba(0,0,0,0.35)]">
-            <div className="flex flex-col gap-4 border-b border-[#d4af37]/30 bg-[#102C57] px-4 py-4 text-white sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-4 border-b border-[#d4af37]/30 bg-[var(--surface-navy,#102C57)] px-4 py-4 text-white sm:px-6 lg:flex-row lg:items-center lg:justify-between">
               <div className="min-w-0">
                 <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.24em] text-[#d4af37]">
                   <PrisonIcon size={14} /> เบิกออกเรือนจำแบบกลุ่ม
@@ -1075,7 +1075,7 @@ export default function ProductionPrisonIssuePageClient({
                 <button
                   type="button"
                   onClick={handleSearchPicker}
-                  className="mt-5 inline-flex h-11 items-center justify-center gap-2 bg-[#102C57] px-5 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#173b72] lg:mt-auto"
+                  className="mt-5 inline-flex h-11 items-center justify-center gap-2 bg-[var(--surface-navy,#102C57)] px-5 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:bg-[var(--surface-navy,#173b72)] lg:mt-auto"
                 >
                   {isPickerLoading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
                   ค้นหา
@@ -1283,7 +1283,7 @@ export default function ProductionPrisonIssuePageClient({
       {isCameraOpen ? (
         <div className="fixed inset-0 z-[140] flex items-center justify-center bg-[#08111f]/85 px-4">
           <div className="w-full max-w-3xl border-2 border-[#d4af37] bg-white shadow-[0_30px_80px_rgba(0,0,0,0.35)]">
-            <div className="flex items-center justify-between border-b border-[#d4af37]/30 bg-[#102C57] px-4 py-4 text-white sm:px-6">
+            <div className="flex items-center justify-between border-b border-[#d4af37]/30 bg-[var(--surface-navy,#102C57)] px-4 py-4 text-white sm:px-6">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#d4af37]">Mobile Scanner</p>
                 <h3 className="mt-1 text-xl font-black tracking-[0.08em]">สแกนด้วยกล้อง</h3>
@@ -1325,7 +1325,7 @@ export default function ProductionPrisonIssuePageClient({
                       await stopCameraScanner();
                       setIsCameraOpen(false);
                     }}
-                    className="inline-flex h-11 items-center gap-2 bg-[#102C57] px-4 text-sm font-bold text-white transition hover:bg-[#173b72]"
+                    className="inline-flex h-11 items-center gap-2 bg-[var(--surface-navy,#102C57)] px-4 text-sm font-bold text-white transition hover:bg-[var(--surface-navy,#173b72)]"
                   >
                     <X size={16} />
                     ปิด

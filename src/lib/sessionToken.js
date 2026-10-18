@@ -1,6 +1,7 @@
 import "server-only";
 
 import crypto from "crypto";
+import { deflateRawSync, inflateRawSync } from "node:zlib";
 
 export const SESSION_COOKIE_NAME = "kpf-session";
 export const SESSION_TTL_SECONDS = 4 * 60 * 60;
@@ -78,6 +79,11 @@ export function createSessionToken(payload, ttlSeconds = SESSION_TTL_SECONDS) {
     iat: issuedAt,
     exp: issuedAt + ttlSeconds,
   };
+  // Keep expanded role grants below browser cookie limits; signed legacy tokens remain readable.
+  if (Array.isArray(tokenPayload.permissions) && Buffer.byteLength(JSON.stringify(tokenPayload.permissions)) > 1500) {
+    tokenPayload.permissionsCompressed = deflateRawSync(Buffer.from(JSON.stringify(tokenPayload.permissions))).toString("base64url");
+    delete tokenPayload.permissions;
+  }
 
   const encodedHeader = base64UrlEncode(JSON.stringify(HEADER));
   const encodedPayload = base64UrlEncode(JSON.stringify(tokenPayload));
@@ -116,6 +122,11 @@ export function verifySessionToken(token) {
   let payload;
   try {
     payload = JSON.parse(base64UrlDecode(encodedPayload));
+    if (payload.permissionsCompressed) {
+      payload.permissions = JSON.parse(inflateRawSync(Buffer.from(payload.permissionsCompressed, "base64url"), { maxOutputLength: 65536 }).toString("utf8"));
+      if (!Array.isArray(payload.permissions) || payload.permissions.some(key => typeof key !== "string")) return null;
+      delete payload.permissionsCompressed;
+    }
   } catch (error) {
     return null;
   }

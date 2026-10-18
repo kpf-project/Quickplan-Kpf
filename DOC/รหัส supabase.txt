@@ -1,6 +1,0 @@
-login
-itkpf2024@gmail.com
-Kpf#14!15four
-
-project: production-kpf
-Database password : Kpf#14!15four

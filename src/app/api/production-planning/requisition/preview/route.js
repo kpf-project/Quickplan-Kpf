@@ -16,6 +16,8 @@ import {
   loadRequisitionParentCategoryMap,
   resolveRequisitionDocumentDiscriminator,
   resolveRequisitionDocumentParent,
+  selectRequisitionWorkNames,
+  findRequisitionWorkNames,
 } from "@/lib/requisitionDocumentGrouping";
 import { buildRequisitionRoutingMap, loadRequisitionRoutingRows } from "@/lib/requisitionRouting";
 import {
@@ -24,8 +26,18 @@ import {
   loadRequisitionAccessScope,
 } from "@/lib/requisitionPreviewAccess";
 import { fetchSupabaseRowsByChunks } from "@/lib/supabaseRangeFetch";
+import { fetchGatewayJson } from "@/lib/gatewayClient";
+import { formatRequisitionRemarkDate } from "@/lib/requisitionExportFormat";
+import { matchErpActualDocuments } from "@/lib/requisitionErpActual";
 
 export const dynamic = "force-dynamic";
+
+const ERP_SYNC_START_DATE = "2026-07-01";
+const MANUAL_ERP_SYNC = {
+  erpDate: "2026-09-24",
+  workDate: "2026-09-25",
+  departmentNames: ["ขาไก่", "เวเฟอร์สติ๊ก", "บิสกิต"],
+};
 
 function formatTimeOnly(value) {
   if (!value) return null;
@@ -85,6 +97,7 @@ function buildDailyDocumentKey({
   shiftCode,
   parentSku,
   workstreamCode,
+  consolidateRequisitionPreviewByDate,
   materialGroup,
   workDate,
 }) {
@@ -93,10 +106,137 @@ function buildDailyDocumentKey({
     String(ownerDepartmentId || "").trim(),
     String(roomId || "").trim(),
     String(shiftCode || "").trim().toUpperCase(),
-    resolveRequisitionDocumentDiscriminator({ parentSku, workstreamCode }),
+    resolveRequisitionDocumentDiscriminator({
+      parentSku,
+      workstreamCode,
+      consolidateRequisitionPreviewByDate,
+    }),
     String(materialGroup || "").trim().toUpperCase(),
     String(workDate || "").trim(),
   ].join("|");
+}
+
+async function loadErpRequisitionCandidates({
+  documentRefs,
+  departmentCodes,
+  workDates,
+  erpDateFrom = null,
+  erpDateTo = null,
+}) {
+  const rows = [];
+  let cursor = "";
+  for (let page = 0; page < 10; page += 1) {
+    const params = new URLSearchParams({
+      pageSize: "500",
+      documentRefs: documentRefs.join("|"),
+      departmentCodes: departmentCodes.join("|"),
+      remarkDates: workDates.map(formatRequisitionRemarkDate).join("|"),
+    });
+    if (erpDateFrom) params.set("dateFrom", erpDateFrom);
+    if (erpDateTo) params.set("dateTo", erpDateTo);
+    if (cursor) params.set("cursor", cursor);
+    const result = await fetchGatewayJson("/api/raw-material-requisitions", params, "production");
+    if (!result.ok) {
+      return { rows: [], error: result.error?.message || "ไม่สามารถอ่านใบเบิกจาก ERP ได้", truncated: false };
+    }
+    rows.push(...(Array.isArray(result.data?.data) ? result.data.data : []));
+    if (!result.data?.cursor?.hasMore || !result.data?.cursor?.next) {
+      return { rows, error: null, truncated: false };
+    }
+    cursor = result.data.cursor.next;
+  }
+  return { rows, error: null, truncated: true };
+}
+
+function replaceDateWithErpActual(doc, match) {
+  const dateValue = match.workDate;
+  const lineMap = new Map();
+
+  const existingLineByKey = new Map(
+    (doc.lines || []).map((line) => [
+      `${String(line.materialGoodsCode || line.materialSkuCode || "").trim().toUpperCase()}|${String(line.unit || "").trim().toUpperCase()}`,
+      line,
+    ])
+  );
+
+  (doc.lines || []).forEach((line) => {
+    const qtyByDate = { ...(line.qtyByDate || {}) };
+    delete qtyByDate[dateValue];
+    const erpLotsByDate = { ...(line.erpLotsByDate || {}) };
+    delete erpLotsByDate[dateValue];
+    const totalQty = Number(Object.values(qtyByDate).reduce((sum, qty) => sum + toNumber(qty, 0), 0).toFixed(3));
+    if (totalQty > 0) {
+      lineMap.set(
+        `${String(line.materialGoodsCode || line.materialSkuCode || "").trim().toUpperCase()}|${String(line.unit || "").trim().toUpperCase()}`,
+        { ...line, qtyByDate, totalQty, erpLotsByDate }
+      );
+    }
+  });
+
+  (match.rows || []).forEach((row) => {
+    const materialGoodsCode = String(row?.TRD_SH_CODE || "").trim().toUpperCase();
+    const unit = String(row?.TRD_UTQNAME || "").trim();
+    const qty = Number(toNumber(row?.TRD_QTY, 0).toFixed(3));
+    if (!materialGoodsCode || qty <= 0) return;
+    const key = `${materialGoodsCode}|${unit.toUpperCase()}`;
+    if (!lineMap.has(key)) {
+      const existing = existingLineByKey.get(key);
+      lineMap.set(key, {
+        materialSkuCode: existing?.materialSkuCode || String(row?.PARENT_SKU_CODE || materialGoodsCode).trim().toUpperCase(),
+        materialGoodsCode,
+        materialName: existing?.materialName || String(row?.TRD_SH_NAME || materialGoodsCode).trim(),
+        unit: existing?.unit || unit,
+        itemType: existing?.itemType || "RAW",
+        qtyByDate: {},
+        totalQty: 0,
+        erpLotsByDate: existing?.erpLotsByDate ? { ...existing.erpLotsByDate } : {},
+      });
+    }
+    const line = lineMap.get(key);
+    line.qtyByDate[dateValue] = Number((toNumber(line.qtyByDate[dateValue], 0) + qty).toFixed(3));
+    line.totalQty = Number((toNumber(line.totalQty, 0) + qty).toFixed(3));
+    line.erpLotsByDate = { ...(line.erpLotsByDate || {}) };
+    if (!Array.isArray(line.erpLotsByDate[dateValue])) line.erpLotsByDate[dateValue] = [];
+    const lotNo = String(row?.TRD_LOT_NO || "").trim();
+    const warehouseCode = String(row?.WL_CODE || "").trim();
+    const existingLot = line.erpLotsByDate[dateValue].find(
+      (item) => item.lotNo === lotNo && item.warehouseCode === warehouseCode
+    );
+    if (existingLot) existingLot.qty = Number((toNumber(existingLot.qty, 0) + qty).toFixed(3));
+    else line.erpLotsByDate[dateValue].push({ lotNo, warehouseCode, qty, fifoDate: row?.DI_DATE || null });
+  });
+
+  doc.lines = Array.from(lineMap.values()).sort((a, b) =>
+    String(a.materialGoodsCode || "").localeCompare(String(b.materialGoodsCode || ""))
+  );
+  doc.plannedDocumentNoByDate ||= {};
+  doc.erpSyncByDate ||= {};
+  if (match.actualDocumentNo !== match.plannedDocumentNo) {
+    doc.plannedDocumentNoByDate[dateValue] = match.plannedDocumentNo;
+  }
+  doc.documentNoByDate[dateValue] = match.actualDocumentNo;
+  doc.exportedByDate[dateValue] = true;
+  doc.erpSyncByDate[dateValue] = {
+    status: match.status,
+    plannedDocumentNo: match.plannedDocumentNo,
+    actualDocumentNo: match.actualDocumentNo,
+  };
+}
+
+function applyErpMatches(matches) {
+  matches.forEach((match) => {
+    if (match.status !== "review") {
+      replaceDateWithErpActual(match.doc, match);
+      return;
+    }
+    match.doc.erpSyncByDate ||= {};
+    match.doc.erpSyncByDate[match.workDate] = {
+      status: "review",
+      plannedDocumentNo: match.plannedDocumentNo,
+      reason: match.reason,
+      candidates: match.candidates,
+    };
+  });
 }
 
 export async function GET(request) {
@@ -140,12 +280,13 @@ export async function GET(request) {
 
     const [mainRows, subRows, deptResult] = await Promise.all([
       loadMainPlanRowsForClaimDemand(supabaseAdmin, {
+        releasedOnly: true,
         masterPlanNo,
         dateFrom,
         dateTo,
         includeWipMaterials: true,
       }),
-      loadSubplanRowsForClaimDemand(supabaseAdmin, { masterPlanNo, dateFrom, dateTo }),
+      loadSubplanRowsForClaimDemand(supabaseAdmin, { masterPlanNo, dateFrom, dateTo, releasedOnly: true }),
       supabaseAdmin
         .from("production_departments")
         .select("id,code,name,is_central_department")
@@ -185,9 +326,8 @@ export async function GET(request) {
       });
     }
 
-    const [ownerByMaterialKey, requiredWipSkuSet, parentCategoryBySku] = await Promise.all([
+    const [ownerByMaterialKey, parentCategoryBySku] = await Promise.all([
       loadMaterialOwnerMap(supabaseAdmin),
-      loadRequiredRequisitionWipSkuSet(supabaseAdmin, collectSnapshotWipSkuCodes(rows)),
       loadRequisitionParentCategoryMap(supabaseAdmin, rows),
     ]);
 
@@ -213,9 +353,12 @@ export async function GET(request) {
       rows.map((row) => row?.owner_department_id)
     );
 
-    const workCenterIds = Array.from(
-      new Set((routingRows || []).map((row) => String(row?.work_center_id || "").trim()).filter(Boolean))
-    );
+    const workCenterIds = Array.from(new Set([
+      ...(routingRows || []).map((row) => String(row?.work_center_id || "").trim()),
+      ...rows
+        .filter(isSubplanRow)
+        .map((row) => resolveSectionMeta(row).sectionId),
+    ].filter(Boolean)));
     let workCenterById = new Map();
     if (workCenterIds.length) {
       const workCenters = await fetchSupabaseRowsByChunks(
@@ -228,6 +371,9 @@ export async function GET(request) {
       workCenterById = new Map(workCenters.map((wc) => [String(wc.id), wc]));
     }
 
+    const requiredWipSkuSet = await loadRequiredRequisitionWipSkuSet(
+      supabaseAdmin, collectSnapshotWipSkuCodes(rows)
+    );
     const routingByKey = buildRequisitionRoutingMap(routingRows);
 
     const { data: shiftRows } = await supabaseAdmin
@@ -247,6 +393,7 @@ export async function GET(request) {
     }
 
     const roomWipNamesByDeptDate = new Map();
+    const directRoomWipNamesByDeptDate = new Map();
     const addWipName = (
       departmentId,
       roomId,
@@ -255,7 +402,8 @@ export async function GET(request) {
       workstreamCode,
       workDate,
       wipSku,
-      wipName
+      wipName,
+      isDirectRoomPlan
     ) => {
       if (!departmentId || !roomId || !workDate || !wipName) return;
       const baseKey = [
@@ -265,12 +413,26 @@ export async function GET(request) {
         String(workstreamCode || "DEFAULT").trim(),
         workDate,
       ].join("|");
-      const keys = [baseKey, `${baseKey}|${String(wipSku || "").trim().toUpperCase()}`];
+      const consolidatedBaseKey = [
+        departmentId,
+        roomId,
+        String(shiftCode || shiftId || "").trim().toUpperCase(),
+        "CONSOLIDATED",
+        workDate,
+      ].join("|");
+      const keys = [
+        baseKey,
+        `${baseKey}|${String(wipSku || "").trim().toUpperCase()}`,
+        consolidatedBaseKey,
+      ];
+      const target = isDirectRoomPlan
+        ? directRoomWipNamesByDeptDate
+        : roomWipNamesByDeptDate;
       keys.forEach((key) => {
-        if (!roomWipNamesByDeptDate.has(key)) {
-          roomWipNamesByDeptDate.set(key, new Set());
+        if (!target.has(key)) {
+          target.set(key, new Set());
         }
-        roomWipNamesByDeptDate.get(key).add(wipName);
+        target.get(key).add(wipName);
       });
     };
 
@@ -334,9 +496,7 @@ export async function GET(request) {
         ? plannedQty.toLocaleString("th-TH")
         : Number(plannedQty.toFixed(3));
       const showUnit = unit && unit.toLowerCase() !== "batch" ? ` ${unit}` : "";
-      const subplanWipName = isSubplanRow(planRow)
-        ? `${rawWipName} ${formattedQty}${showUnit}`
-        : null;
+      const subplanWipName = `${rawWipName} ${formattedQty}${showUnit}`;
 
       mapRequisitionSnapshotMaterials(planRow, requiredWipSkuSet).forEach((material) => {
         const routing =
@@ -361,7 +521,8 @@ export async function GET(request) {
             resolvedSectionId || "DEFAULT",
             workDate,
             parentSku,
-            subplanWipName
+            subplanWipName,
+            isSubplanRow(planRow) && workCenterId === resolvedSectionId
           );
         }
 
@@ -442,8 +603,8 @@ export async function GET(request) {
       if (!documentMap.has(finalKey)) {
         documentMap.set(finalKey, {
           documentKey: finalKey,
-          parentSku: item.parentSku,
-          parentSkuName: item.parentSkuName,
+          parentSku: item.consolidateRequisitionPreviewByDate ? null : item.parentSku,
+          parentSkuName: item.consolidateRequisitionPreviewByDate ? null : item.parentSkuName,
           ownerDepartmentId: item.ownerDepartmentId,
           ownerDepartmentCode: item.ownerDepartmentCode,
           ownerDepartmentName: item.ownerDepartmentName,
@@ -460,8 +621,12 @@ export async function GET(request) {
           roomLabel: item.roomLabel,
           roomCode: item.roomCode,
           consolidateRequisitionPreviewByDate: item.consolidateRequisitionPreviewByDate === true,
-          workstreamCode: item.workstreamCode,
-          workstreamName: item.workstreamName,
+          workstreamCode: item.consolidateRequisitionPreviewByDate
+            ? "CONSOLIDATED"
+            : item.workstreamCode,
+          workstreamName: item.consolidateRequisitionPreviewByDate
+            ? "รวมตามห้องผลิต"
+            : item.workstreamName,
           dispatchSplitMode: item.dispatchSplitMode,
           dispatchMaterialGroup: splitByType ? (item.dispatchMaterialGroup || "RAW") : null,
           workDate: item.workDate,
@@ -493,17 +658,23 @@ export async function GET(request) {
       const metadata = group?.metadata && typeof group.metadata === "object" ? group.metadata : {};
       const claimGrain = String(group?.claim_grain || "").trim().toLowerCase();
       if (claimGrain === "daily") {
-        const key = buildDailyDocumentKey({
+        const dailyKeys = [false, true].map((consolidateRequisitionPreviewByDate) => buildDailyDocumentKey({
           ownerDepartmentId: metadata.ownerDepartmentId,
           roomId: metadata.roomId,
           shiftCode: metadata.shiftCode,
           parentSku: metadata.parentSku,
           workstreamCode: metadata.workstreamCode,
+          consolidateRequisitionPreviewByDate,
           materialGroup: metadata.dispatchMaterialGroup,
           workDate: metadata.selectedDate || metadata.bucketDate || metadata.workDate,
-        });
-        if (key && group?.document_no) {
-          dailyDocumentNoMap.set(key, group.document_no);
+        }));
+        if (group?.document_no) {
+          dailyKeys.forEach((key) => {
+            if (!key) return;
+            const documentNos = dailyDocumentNoMap.get(key) || new Set();
+            documentNos.add(group.document_no);
+            dailyDocumentNoMap.set(key, documentNos);
+          });
         }
         return;
       }
@@ -556,8 +727,12 @@ export async function GET(request) {
 
         return {
           ...doc,
-          workstreamCode: doc.sectionCodes.size === 1 ? Array.from(doc.sectionCodes)[0] : "MIXED",
-          workstreamName: doc.sectionNames.size === 1 ? Array.from(doc.sectionNames)[0] : "หลายส่วนงาน",
+          workstreamCode: doc.consolidateRequisitionPreviewByDate
+            ? "CONSOLIDATED"
+            : (doc.sectionCodes.size === 1 ? Array.from(doc.sectionCodes)[0] : "MIXED"),
+          workstreamName: doc.consolidateRequisitionPreviewByDate
+            ? "รวมตามห้องผลิต"
+            : (doc.sectionNames.size === 1 ? Array.from(doc.sectionNames)[0] : "หลายส่วนงาน"),
           sectionCodes: undefined,
           sectionNames: undefined,
           workNamesByDate: {},
@@ -581,10 +756,12 @@ export async function GET(request) {
       const workNamesByDate = {};
       dateColumns.forEach((dateValue) => {
         const key = `${departmentId}|${roomId}|${shiftKey}|${doc.workstreamCode || "DEFAULT"}|${dateValue}`;
-        const names = roomWipNamesByDeptDate.get(`${key}|${String(doc.parentSku || "").trim().toUpperCase()}`)
-          || roomWipNamesByDeptDate.get(key);
-        if (names && names.size) {
-          workNamesByDate[dateValue] = Array.from(names).filter(Boolean);
+        const names = selectRequisitionWorkNames(
+          findRequisitionWorkNames(directRoomWipNamesByDeptDate, key, doc.parentSku),
+          findRequisitionWorkNames(roomWipNamesByDeptDate, key, doc.parentSku)
+        );
+        if (names.length) {
+          workNamesByDate[dateValue] = names;
         }
 
         const documentNos = new Set();
@@ -594,24 +771,26 @@ export async function GET(request) {
           shiftCode: doc.shiftCode || doc.shiftId,
           parentSku: doc.parentSku,
           workstreamCode: doc.workstreamCode,
+          consolidateRequisitionPreviewByDate: doc.consolidateRequisitionPreviewByDate,
           materialGroup: doc.dispatchMaterialGroup || "",
           workDate: dateValue,
         });
-        const dailyDocumentNo = dailyDocumentNoMap.get(dailyDocKey);
-        if (dailyDocumentNo) {
-          documentNos.add(dailyDocumentNo);
+        const dailyDocumentNos = dailyDocumentNoMap.get(dailyDocKey);
+        if (dailyDocumentNos) {
+          Array.from(dailyDocumentNos).forEach((documentNo) => documentNos.add(documentNo));
         }
 
         weeklyDocumentEntries.forEach((entry) => {
+          if (!names.length && !(doc.lines || []).some((line) => toNumber(line.qtyByDate?.[dateValue], 0) > 0)) return;
           if (!entry.dateFrom || !entry.dateTo) return;
           if (dateValue < entry.dateFrom || dateValue > entry.dateTo) return;
           if (String(doc.ownerDepartmentId || "").trim() !== entry.ownerDepartmentId) return;
           if (String(doc.roomId || "").trim() !== entry.roomId) return;
           if (String(doc.shiftCode || doc.shiftId || "").trim().toUpperCase() !== entry.shiftCode) return;
-          if (
+          if (!doc.consolidateRequisitionPreviewByDate && (
             resolveRequisitionDocumentDiscriminator(doc)
             !== resolveRequisitionDocumentDiscriminator(entry)
-          ) return;
+          )) return;
           if (String(doc.dispatchMaterialGroup || "").trim().toUpperCase() !== entry.materialGroup) return;
           documentNos.add(entry.documentNo);
         });
@@ -624,6 +803,185 @@ export async function GET(request) {
       doc.workNamesByDate = workNamesByDate;
     });
 
+    const exportSlotsByDocumentNo = new Map();
+    documents.forEach((doc) => {
+      Object.entries(doc.documentNoByDate || {}).forEach(([workDate, documentNo]) => {
+        String(documentNo || "").split(/\s+\/\s+/).map((value) => value.trim()).filter(Boolean).forEach((value) => {
+          if (!exportSlotsByDocumentNo.has(value)) exportSlotsByDocumentNo.set(value, []);
+          exportSlotsByDocumentNo.get(value).push({ doc, workDate });
+        });
+      });
+    });
+
+    if (exportSlotsByDocumentNo.size > 0) {
+      const { data: exportedLines, error: exportedLinesError } = await supabaseAdmin
+        .from("production_requisition_export_lines")
+        .select("doc_ref, sku_code, qty, uom, lot_no, warehouse_code, meta")
+        .in("doc_ref", Array.from(exportSlotsByDocumentNo.keys()));
+      if (exportedLinesError) throw exportedLinesError;
+
+      (exportedLines || []).forEach((row) => {
+        const lotNo = String(row?.lot_no || "").trim();
+        const slots = exportSlotsByDocumentNo.get(String(row?.doc_ref || "").trim()) || [];
+        const materialGoodsCode = normalizeSku(row?.meta?.materialGoodsCode || row?.sku_code);
+        const slot = slots.find((item) => (
+          (item.doc?.lines || []).some((line) => normalizeSku(line?.materialGoodsCode) === materialGoodsCode)
+        ));
+        if (!lotNo || !slot) return;
+        const { doc, workDate } = slot;
+        const line = (doc.lines || []).find((item) => normalizeSku(item?.materialGoodsCode) === materialGoodsCode);
+        if (!line) return;
+        line.exportedLotsByDate ||= {};
+        line.exportedLotsByDate[workDate] ||= [];
+        line.exportedLotsByDate[workDate].push({
+          lotNo,
+          warehouseCode: String(row?.warehouse_code || "").trim(),
+          qty: Number(toNumber(row?.qty, 0).toFixed(3)),
+          fifoDate: row?.meta?.fifoAllocation?.fifoDate || null,
+        });
+      });
+    }
+
+    const syncSlots = [];
+    documents.forEach((doc) => {
+      const documentDates = new Map();
+      Object.entries(doc.documentNoByDate || {}).forEach(([workDate, documentNo]) => {
+        String(documentNo || "").split(/\s+\/\s+/).map((value) => value.trim()).filter(Boolean).forEach((value) => {
+          if (!documentDates.has(value)) documentDates.set(value, []);
+          documentDates.get(value).push(workDate);
+        });
+      });
+
+      Object.entries(doc.documentNoByDate || {}).forEach(([workDate, plannedDocumentNo]) => {
+        if (workDate < ERP_SYNC_START_DATE) return;
+        const refs = String(plannedDocumentNo || "").split(/\s+\/\s+/).map((value) => value.trim()).filter(Boolean);
+        doc.erpSyncByDate ||= {};
+        if (refs.length > 1) {
+          syncSlots.push({
+            key: `${doc.documentKey}|${workDate}`,
+            doc,
+            workDate,
+            plannedDocumentNo,
+            plannedDocumentNos: refs,
+            departmentCode: doc.ownerDepartmentCode,
+            departmentName: doc.ownerDepartmentName,
+            roomLabel: doc.roomLabel,
+            expectedParentSkus: [],
+          });
+          return;
+        }
+        if (refs.length !== 1 || (documentDates.get(refs[0]) || []).length > 1) {
+          doc.erpSyncByDate[workDate] = {
+            status: "review",
+            plannedDocumentNo,
+            reason: "ใบรวมสัปดาห์หรือหลายเลขเอกสารไม่สามารถแยกยอด ERP จริงเป็นรายวันได้อย่างแม่นยำ",
+            candidates: refs,
+          };
+          return;
+        }
+        syncSlots.push({
+          key: `${doc.documentKey}|${workDate}`,
+          doc,
+          workDate,
+          plannedDocumentNo: refs[0],
+          departmentCode: doc.ownerDepartmentCode,
+          departmentName: doc.ownerDepartmentName,
+          roomLabel: doc.roomLabel,
+          expectedParentSkus: Array.from(new Set(
+            (doc.lines || [])
+              .filter((line) => toNumber(line?.qtyByDate?.[workDate], 0) > 0)
+              .map((line) => normalizeSku(line?.materialSkuCode || line?.materialGoodsCode))
+              .filter(Boolean)
+          )),
+        });
+      });
+    });
+
+    let erpSyncError = null;
+    let erpSyncTruncated = false;
+    if (syncSlots.length) {
+      const candidates = await loadErpRequisitionCandidates({
+        documentRefs: Array.from(new Set(syncSlots.flatMap((slot) => (
+          slot.plannedDocumentNos?.length ? slot.plannedDocumentNos : [slot.plannedDocumentNo]
+        )))),
+        departmentCodes: Array.from(new Set(syncSlots.map((slot) => slot.departmentCode).filter(Boolean))),
+        workDates: Array.from(new Set(syncSlots.map((slot) => slot.workDate))),
+      });
+      erpSyncError = candidates.error;
+      erpSyncTruncated = candidates.truncated;
+      if (!candidates.error && !candidates.truncated) {
+        applyErpMatches(matchErpActualDocuments(syncSlots, candidates.rows));
+      } else {
+        syncSlots.forEach((slot) => {
+          slot.doc.erpSyncByDate[slot.workDate] = {
+            status: "review",
+            plannedDocumentNo: slot.plannedDocumentNo,
+            reason: candidates.truncated
+              ? "ข้อมูลใบเบิก ERP เกินขอบเขตที่โหลดได้ กรุณาตรวจสอบ"
+              : candidates.error,
+            candidates: [],
+          };
+        });
+      }
+    }
+
+    const manualSlots = documents.filter((doc) => {
+      if (doc.documentNoByDate?.[MANUAL_ERP_SYNC.workDate]) return false;
+      const departmentName = `${doc.ownerDepartmentName || ""} ${doc.qaDepartmentName || ""}`;
+      return MANUAL_ERP_SYNC.departmentNames.some((name) => departmentName.includes(name))
+        && (doc.lines || []).some((line) => toNumber(line?.qtyByDate?.[MANUAL_ERP_SYNC.workDate], 0) > 0);
+    }).map((doc) => ({
+      key: `${doc.documentKey}|${MANUAL_ERP_SYNC.workDate}|manual`,
+      doc,
+      workDate: MANUAL_ERP_SYNC.workDate,
+      plannedDocumentNo: "",
+      departmentCode: doc.ownerDepartmentCode || doc.qaDepartmentCode,
+      departmentName: doc.ownerDepartmentName || doc.qaDepartmentName,
+      roomLabel: doc.roomLabel,
+      expectedParentSkus: Array.from(new Set(
+        (doc.lines || [])
+          .filter((line) => toNumber(line?.qtyByDate?.[MANUAL_ERP_SYNC.workDate], 0) > 0)
+          .map((line) => normalizeSku(line?.materialSkuCode || line?.materialGoodsCode))
+          .filter(Boolean)
+      )),
+    }));
+
+    if (manualSlots.length) {
+      const manualCandidates = await loadErpRequisitionCandidates({
+        documentRefs: [],
+        departmentCodes: [],
+        workDates: [MANUAL_ERP_SYNC.workDate],
+        erpDateFrom: MANUAL_ERP_SYNC.erpDate,
+        erpDateTo: MANUAL_ERP_SYNC.erpDate,
+      });
+      erpSyncError ||= manualCandidates.error;
+      erpSyncTruncated ||= manualCandidates.truncated;
+      if (!manualCandidates.error && !manualCandidates.truncated) {
+        applyErpMatches(matchErpActualDocuments(manualSlots, manualCandidates.rows));
+      } else {
+        manualSlots.forEach((slot) => {
+          slot.doc.erpSyncByDate ||= {};
+          slot.doc.erpSyncByDate[slot.workDate] = {
+            status: "review",
+            plannedDocumentNo: "",
+            reason: manualCandidates.truncated
+              ? "ข้อมูลใบเบิก ERP เกินขอบเขตที่โหลดได้ กรุณาตรวจสอบ"
+              : manualCandidates.error,
+            candidates: [],
+          };
+        });
+      }
+    }
+
+    const erpSyncSummary = documents.reduce((summary, doc) => {
+      Object.values(doc.erpSyncByDate || {}).forEach((entry) => {
+        if (entry?.status === "exact") summary.exact += 1;
+        else if (entry?.status === "routing") summary.routing += 1;
+        else if (entry?.status === "review") summary.review += 1;
+      });
+      return summary;
+    }, { exact: 0, routing: 0, review: 0 });
+
     return NextResponse.json({
       data: documents,
       meta: {
@@ -631,6 +989,10 @@ export async function GET(request) {
         totalDocuments: documents.length,
         totalLines: documents.reduce((sum, doc) => sum + (doc.lines?.length || 0), 0),
         dateColumns,
+        erpSync: erpSyncSummary,
+        erpSyncError,
+        erpSyncTruncated,
+        erpSyncStartDate: ERP_SYNC_START_DATE,
       },
     });
   } catch (error) {

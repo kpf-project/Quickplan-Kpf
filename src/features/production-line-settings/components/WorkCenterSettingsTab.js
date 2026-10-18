@@ -24,6 +24,7 @@ const DEFAULT_FORM = {
   description: "",
   sortOrder: 0,
   isActive: true,
+  requiresPlanning: false,
   consolidateRequisitionPreviewByDate: false,
 };
 
@@ -49,6 +50,7 @@ function mapForm(row, fallbackDepartmentId = "") {
     description: row.description || "",
     sortOrder: Number(row.sort_order ?? 0),
     isActive: Boolean(row.is_active),
+    requiresPlanning: Boolean(row.requires_planning),
     consolidateRequisitionPreviewByDate: Boolean(row.consolidate_requisition_preview_by_date),
   };
 }
@@ -256,6 +258,7 @@ export default function WorkCenterSettingsTab({ canManage = false }) {
       description: normalizeText(form.description),
       sortOrder: form.sortOrder,
       isActive: form.isActive,
+      requiresPlanning: form.requiresPlanning,
       consolidateRequisitionPreviewByDate: form.consolidateRequisitionPreviewByDate,
       deliveryPointId: form.deliveryPointId || null,
     };
@@ -389,7 +392,7 @@ export default function WorkCenterSettingsTab({ canManage = false }) {
             onClick={() => setActiveSubTab("work-centers")}
             className={`inline-flex h-10 items-center gap-2 px-4 text-sm font-semibold ${
               activeSubTab === "work-centers"
-                ? "bg-[#102C57] text-white"
+                ? "bg-[var(--surface-navy,#102C57)] text-white"
                 : "bg-white text-[#102C57] hover:bg-[#f6f7f9]"
             }`}
           >
@@ -401,7 +404,7 @@ export default function WorkCenterSettingsTab({ canManage = false }) {
             onClick={() => setActiveSubTab("delivery-points")}
             className={`inline-flex h-10 items-center gap-2 border-l border-[#d2d2d2] px-4 text-sm font-semibold ${
               activeSubTab === "delivery-points"
-                ? "bg-[#102C57] text-white"
+                ? "bg-[var(--surface-navy,#102C57)] text-white"
                 : "bg-white text-[#102C57] hover:bg-[#f6f7f9]"
             }`}
           >
@@ -414,7 +417,7 @@ export default function WorkCenterSettingsTab({ canManage = false }) {
       {activeSubTab === "work-centers" ? (
       <div className="grid h-full gap-4 p-4 lg:grid-cols-[320px_1fr]">
         <section className="border border-[#d2d2d2] bg-white">
-          <div className="border-b border-[#d2d2d2] bg-[#102C57] px-4 py-4 text-white">
+          <div className="border-b border-[#d2d2d2] bg-[var(--surface-navy,#102C57)] px-4 py-4 text-white">
             <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#d4af37]">
               Work Centers
             </div>
@@ -430,7 +433,7 @@ export default function WorkCenterSettingsTab({ canManage = false }) {
                   onClick={() => handleSelectDepartment(department.id)}
                   className={`mb-1 w-full border px-3 py-3 text-left transition-colors ${
                     active
-                      ? "border-[#102C57] bg-[#102C57] text-white"
+                      ? "border-[#102C57] bg-[var(--surface-navy,#102C57)] text-white"
                       : "border-transparent bg-white text-[#102C57] hover:border-[#d2d2d2] hover:bg-[#f4f6f8]"
                   }`}
                 >
@@ -476,7 +479,7 @@ export default function WorkCenterSettingsTab({ canManage = false }) {
                 <button
                   type="button"
                   onClick={() => refresh()}
-                  className="inline-flex h-9 items-center gap-2 border border-[#102C57] bg-[#102C57] px-3 text-xs font-semibold text-white hover:bg-[#081c3c]"
+                  className="inline-flex h-9 items-center gap-2 border border-[#102C57] bg-[var(--surface-navy,#102C57)] px-3 text-xs font-semibold text-white hover:bg-[#081c3c]"
                 >
                   <Search size={14} />
                   ค้นหา
@@ -518,6 +521,7 @@ export default function WorkCenterSettingsTab({ canManage = false }) {
                   <th className="px-4 py-3 text-left">จุดส่ง/รับคืน</th>
                   <th className="px-4 py-3 text-center">ลำดับ</th>
                   <th className="px-4 py-3 text-center">รวม Preview/วัน</th>
+                  <th className="px-4 py-3 text-center">ใช้วางแผน</th>
                   <th className="px-4 py-3 text-center">สถานะ</th>
                   <th className="px-4 py-3 text-right">จัดการ</th>
                 </tr>
@@ -525,7 +529,7 @@ export default function WorkCenterSettingsTab({ canManage = false }) {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-14 text-center text-slate-400">
+                    <td colSpan={9} className="px-4 py-14 text-center text-slate-400">
                       กำลังโหลดข้อมูล...
                     </td>
                   </tr>
@@ -536,7 +540,7 @@ export default function WorkCenterSettingsTab({ canManage = false }) {
                       <tr
                         key={row.id}
                         onClick={() => setSelectedWorkCenterId(row.id)}
-                        className={`cursor-pointer border-t border-[#e5e7eb] transition-colors ${selected ? "bg-[#102C57]/5" : "hover:bg-[#f7f8fa]"}`}
+                        className={`cursor-pointer border-t border-[#e5e7eb] transition-colors ${selected ? "bg-[var(--surface-navy,#102C57)]/5" : "hover:bg-[#f7f8fa]"}`}
                       >
                         <td className="px-4 py-3 font-mono text-xs font-semibold text-[#102C57]">{row.code}</td>
                         <td className="px-4 py-3">
@@ -569,6 +573,15 @@ export default function WorkCenterSettingsTab({ canManage = false }) {
                           )}
                         </td>
                         <td className="px-4 py-3 text-center">
+                          {row.requires_planning ? (
+                            <span className="inline-flex border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
+                              วางแผน
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-400">-</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center">
                           <span className={`inline-flex items-center gap-1 border px-2 py-0.5 text-[11px] font-semibold ${row.is_active ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
                             {row.is_active ? <Check size={12} /> : <X size={12} />}
                             {row.is_active ? "ใช้งาน" : "ปิดใช้งาน"}
@@ -597,7 +610,7 @@ export default function WorkCenterSettingsTab({ canManage = false }) {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={8} className="px-4 py-14 text-center text-slate-400">
+                    <td colSpan={9} className="px-4 py-14 text-center text-slate-400">
                       ยังไม่มีห้องผลิตในแผนกนี้
                     </td>
                   </tr>
@@ -616,7 +629,7 @@ export default function WorkCenterSettingsTab({ canManage = false }) {
                 type="button"
                 onClick={openEditModal}
                 disabled={!selectedWorkCenter || !canManage}
-                className="inline-flex h-9 items-center gap-2 border border-[#102C57] bg-white px-3 text-xs font-semibold text-[#102C57] hover:bg-[#102C57] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-9 items-center gap-2 border border-[#102C57] bg-white px-3 text-xs font-semibold text-[#102C57] hover:bg-[var(--surface-navy,#102C57)] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Pencil size={14} />
                 แก้ไข
@@ -664,7 +677,7 @@ export default function WorkCenterSettingsTab({ canManage = false }) {
                   <button
                     type="button"
                     onClick={() => refreshDeliveryPoints()}
-                    className="inline-flex h-9 items-center gap-2 border border-[#102C57] bg-[#102C57] px-3 text-xs font-semibold text-white hover:bg-[#081c3c]"
+                    className="inline-flex h-9 items-center gap-2 border border-[#102C57] bg-[var(--surface-navy,#102C57)] px-3 text-xs font-semibold text-white hover:bg-[#081c3c]"
                   >
                     <Search size={14} />
                     ค้นหา
@@ -698,7 +711,7 @@ export default function WorkCenterSettingsTab({ canManage = false }) {
 
             <div className="overflow-x-auto">
               <table className="w-full min-w-[760px] text-sm">
-                <thead className="bg-[#102C57] text-white">
+                <thead className="bg-[var(--surface-navy,#102C57)] text-white">
                   <tr>
                     <th className="px-4 py-3 text-left">รหัส</th>
                     <th className="px-4 py-3 text-left">ชื่อจุดส่ง/รับคืน</th>
@@ -721,7 +734,7 @@ export default function WorkCenterSettingsTab({ canManage = false }) {
                         <tr
                           key={row.id}
                           onClick={() => setSelectedDeliveryPointId(row.id)}
-                          className={`cursor-pointer border-t border-[#e5e7eb] transition-colors ${selected ? "bg-[#102C57]/5" : "hover:bg-[#f7f8fa]"}`}
+                          className={`cursor-pointer border-t border-[#e5e7eb] transition-colors ${selected ? "bg-[var(--surface-navy,#102C57)]/5" : "hover:bg-[#f7f8fa]"}`}
                         >
                           <td className="px-4 py-3 font-mono text-xs font-semibold text-[#102C57]">{row.code}</td>
                           <td className="px-4 py-3 font-semibold text-[#102C57]">{row.name}</td>
@@ -757,7 +770,7 @@ export default function WorkCenterSettingsTab({ canManage = false }) {
                   type="button"
                   onClick={openEditDeliveryPointModal}
                   disabled={!selectedDeliveryPoint || !canManage}
-                  className="inline-flex h-9 items-center gap-2 border border-[#102C57] bg-white px-3 text-xs font-semibold text-[#102C57] hover:bg-[#102C57] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex h-9 items-center gap-2 border border-[#102C57] bg-white px-3 text-xs font-semibold text-[#102C57] hover:bg-[var(--surface-navy,#102C57)] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Pencil size={14} />
                   แก้ไข
@@ -778,9 +791,9 @@ export default function WorkCenterSettingsTab({ canManage = false }) {
       )}
 
       {isModalOpen && canManage ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#102C57]/70 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--surface-navy,#102C57)]/70 p-4">
           <div className="w-full max-w-xl border border-[#303030] bg-white">
-            <div className="flex items-start justify-between bg-[#102C57] px-5 py-4 text-white">
+            <div className="flex items-start justify-between bg-[var(--surface-navy,#102C57)] px-5 py-4 text-white">
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#d4af37]">
                   {form.id ? "Edit Work Center" : "New Work Center"}
@@ -890,6 +903,18 @@ export default function WorkCenterSettingsTab({ canManage = false }) {
               <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
                 <input
                   type="checkbox"
+                  checked={form.requiresPlanning}
+                  onChange={(event) => setForm((prev) => ({
+                    ...prev,
+                    requiresPlanning: event.target.checked,
+                  }))}
+                  className="rounded border-slate-300 text-[#102C57]"
+                />
+                ใช้วางแผนการผลิต (WIP Planning)
+              </label>
+              <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <input
+                  type="checkbox"
                   checked={form.isActive}
                   onChange={(event) => setForm((prev) => ({ ...prev, isActive: event.target.checked }))}
                   className="rounded border-slate-300 text-[#102C57]"
@@ -920,9 +945,9 @@ export default function WorkCenterSettingsTab({ canManage = false }) {
       ) : null}
 
       {isDeliveryPointModalOpen && canManage ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#102C57]/70 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--surface-navy,#102C57)]/70 p-4">
           <div className="w-full max-w-xl border border-[#303030] bg-white">
-            <div className="flex items-start justify-between bg-[#102C57] px-5 py-4 text-white">
+            <div className="flex items-start justify-between bg-[var(--surface-navy,#102C57)] px-5 py-4 text-white">
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#d4af37]">
                   {deliveryPointForm.id ? "Edit Delivery Point" : "New Delivery Point"}
@@ -1015,9 +1040,9 @@ export default function WorkCenterSettingsTab({ canManage = false }) {
       ) : null}
 
       {deleteModalOpen && canManage ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#102C57]/70 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--surface-navy,#102C57)]/70 p-4">
           <div className="w-full max-w-5xl border border-[#303030] bg-white">
-            <div className="flex items-start justify-between bg-[#102C57] px-5 py-4 text-white">
+            <div className="flex items-start justify-between bg-[var(--surface-navy,#102C57)] px-5 py-4 text-white">
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#d4af37]">
                   Delete Work Center
@@ -1071,7 +1096,7 @@ export default function WorkCenterSettingsTab({ canManage = false }) {
                   </div>
                   <div className="max-h-[360px] overflow-auto">
                     <table className="w-full min-w-[860px] text-sm">
-                      <thead className="sticky top-0 bg-[#102C57] text-white">
+                      <thead className="sticky top-0 bg-[var(--surface-navy,#102C57)] text-white">
                         <tr>
                           <th className="px-3 py-2 text-left">แผนก</th>
                           <th className="px-3 py-2 text-left">FG</th>

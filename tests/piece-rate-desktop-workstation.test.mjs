@@ -223,14 +223,14 @@ test("desktop recent table merges offline outbox rows and shows synchronization 
   assert.match(offlineSource, /export async function getRecentPieceRateOutboxEntries/);
 });
 
-test("desktop employee summary loads every document for today without the detail page cap", () => {
+test("desktop employee summary loads every document for the selected work date", () => {
   const componentSource = fs.readFileSync(
     new URL("../src/app/production-line/attendance/piece-rate-scan/PieceRateDesktopWorkstation.js", import.meta.url),
     "utf8"
   );
 
-  assert.match(componentSource, /dateFrom: todayStr,[\s\S]*dateTo: todayStr,[\s\S]*printAll: true/);
-  assert.doesNotMatch(componentSource, /dateFrom: todayStr,[\s\S]*dateTo: todayStr,[\s\S]*pageSize: 1000/);
+  assert.match(componentSource, /dateFrom: workDate,[\s\S]*dateTo: workDate,[\s\S]*printAll: true/);
+  assert.doesNotMatch(componentSource, /dateFrom: workDate,[\s\S]*dateTo: workDate,[\s\S]*pageSize: 1000/);
 });
 
 test("desktop runtime selection is deferred until after hydration", () => {

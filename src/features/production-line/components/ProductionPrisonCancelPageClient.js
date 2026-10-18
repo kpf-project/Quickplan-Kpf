@@ -595,7 +595,7 @@ export default function ProductionPrisonCancelPageClient({
         title={config.title}
       />
 
-      <section className="border-b border-[#1f3047] bg-[#102C57] text-white">
+      <section className="border-b border-[#1f3047] bg-[var(--surface-navy,#102C57)] text-white">
         <div className="mx-auto max-w-[84rem] px-4 pb-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between border-t border-white/10 pt-4">
             <div className={`inline-flex items-center gap-2 border px-4 py-2 text-xs font-black uppercase tracking-[0.18em] ${statusTone}`}>
@@ -689,7 +689,7 @@ export default function ProductionPrisonCancelPageClient({
                 onClick={() => {
                   document.getElementById("search-section")?.scrollIntoView({ behavior: "smooth" });
                 }}
-                className="flex h-14 items-center justify-center gap-2 bg-[#102C57] text-[10px] font-black uppercase tracking-wider text-white transition hover:bg-[#173b72]"
+                className="flex h-14 items-center justify-center gap-2 bg-[var(--surface-navy,#102C57)] text-[10px] font-black uppercase tracking-wider text-white transition hover:bg-[var(--surface-navy,#173b72)]"
               >
                 <ClipboardList size={16} />
                 {config.triggerLabel}
@@ -697,7 +697,7 @@ export default function ProductionPrisonCancelPageClient({
             </div>
           </div>
 
-          <div className="relative bg-[#102C57] px-4 py-8 text-center sm:px-10 lg:py-12">
+          <div className="relative bg-[var(--surface-navy,#102C57)] px-4 py-8 text-center sm:px-10 lg:py-12">
             <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#d4af37_1px,transparent_1px)] [background-size:20px_20px]" />
 
             <div className="relative flex flex-col items-center justify-center">
@@ -741,7 +741,7 @@ export default function ProductionPrisonCancelPageClient({
         </section>
 
         <section id="search-section" className="overflow-hidden border-2 border-[#d4af37] bg-white shadow-[0_20px_40px_rgba(0,0,0,0.12)]">
-          <div className="flex items-center justify-between border-b border-[#d4af37]/30 bg-[#102C57] px-4 py-4 text-white sm:px-6">
+          <div className="flex items-center justify-between border-b border-[#d4af37]/30 bg-[var(--surface-navy,#102C57)] px-4 py-4 text-white sm:px-6">
             <div>
               <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#d4af37]">รายการเบิกออกเรือนจำ</p>
               <h2 className="mt-1 text-2xl font-black tracking-[0.08em]">ค้นหารายการเบิกและยกเลิก</h2>
@@ -884,7 +884,7 @@ export default function ProductionPrisonCancelPageClient({
                       page: 1,
                     })
                   }
-                  className="inline-flex h-12 items-center gap-2 bg-[#102C57] px-4 text-sm font-bold text-white transition hover:bg-[#173b72]"
+                  className="inline-flex h-12 items-center gap-2 bg-[var(--surface-navy,#102C57)] px-4 text-sm font-bold text-white transition hover:bg-[var(--surface-navy,#173b72)]"
                 >
                   <Search size={16} />
                   ค้นหา
@@ -931,7 +931,7 @@ export default function ProductionPrisonCancelPageClient({
                           type="button"
                           onClick={() => cancelRow(row)}
                           disabled={isPending && activeRowId === row.rowId}
-                          className="inline-flex h-11 items-center gap-2 bg-[#102C57] px-4 text-sm font-bold text-white transition hover:bg-[#173b72] disabled:cursor-not-allowed disabled:opacity-60"
+                          className="inline-flex h-11 items-center gap-2 bg-[var(--surface-navy,#102C57)] px-4 text-sm font-bold text-white transition hover:bg-[var(--surface-navy,#173b72)] disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {isPending && activeRowId === row.rowId ? (
                             <Loader2 size={16} className="animate-spin" />
@@ -969,7 +969,7 @@ export default function ProductionPrisonCancelPageClient({
                     type="button"
                     onClick={() => cancelRow(row)}
                     disabled={isPending && activeRowId === row.rowId}
-                    className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 bg-[#102C57] px-4 text-xs font-bold uppercase tracking-[0.12em] text-white"
+                    className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 bg-[var(--surface-navy,#102C57)] px-4 text-xs font-bold uppercase tracking-[0.12em] text-white"
                   >
                     {isPending && activeRowId === row.rowId ? (
                       <Loader2 size={14} className="animate-spin" />
@@ -1018,7 +1018,7 @@ export default function ProductionPrisonCancelPageClient({
                   || pickerPagination.page >= pickerPagination.totalPages
                   || isPending
                 }
-                className="inline-flex h-11 items-center gap-2 bg-[#102C57] px-4 text-sm font-bold text-white transition hover:bg-[#173b72] disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-11 items-center gap-2 bg-[var(--surface-navy,#102C57)] px-4 text-sm font-bold text-white transition hover:bg-[var(--surface-navy,#173b72)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 ถัดไป
               </button>
@@ -1041,7 +1041,7 @@ export default function ProductionPrisonCancelPageClient({
       {isCameraOpen ? (
         <div className="fixed inset-0 z-[140] flex items-center justify-center bg-[#08111f]/85 px-4">
           <div className="w-full max-w-3xl border-2 border-[#d4af37] bg-white shadow-[0_30px_80px_rgba(0,0,0,0.35)]">
-            <div className="flex items-center justify-between border-b border-[#d4af37]/30 bg-[#102C57] px-4 py-4 text-white sm:px-6">
+            <div className="flex items-center justify-between border-b border-[#d4af37]/30 bg-[var(--surface-navy,#102C57)] px-4 py-4 text-white sm:px-6">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#d4af37]">Mobile Scanner</p>
                 <h3 className="mt-1 text-xl font-black tracking-[0.08em]">{config.title}</h3>
@@ -1092,7 +1092,7 @@ export default function ProductionPrisonCancelPageClient({
                       await stopCameraScanner();
                       setIsCameraOpen(false);
                     }}
-                    className="inline-flex h-11 items-center gap-2 bg-[#102C57] px-4 text-sm font-bold text-white transition hover:bg-[#173b72]"
+                    className="inline-flex h-11 items-center gap-2 bg-[var(--surface-navy,#102C57)] px-4 text-sm font-bold text-white transition hover:bg-[var(--surface-navy,#173b72)]"
                   >
                     <X size={16} />
                     ปิด
@@ -1125,7 +1125,7 @@ export default function ProductionPrisonCancelPageClient({
       {isCameraOpen ? (
         <div className="fixed inset-0 z-[140] flex items-center justify-center bg-[#08111f]/85 px-4">
           <div className="w-full max-w-3xl border-2 border-[#d4af37] bg-white shadow-[0_30px_80px_rgba(0,0,0,0.35)]">
-            <div className="flex items-center justify-between border-b border-[#d4af37]/30 bg-[#102C57] px-4 py-4 text-white sm:px-6">
+            <div className="flex items-center justify-between border-b border-[#d4af37]/30 bg-[var(--surface-navy,#102C57)] px-4 py-4 text-white sm:px-6">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#d4af37]">Mobile Scanner</p>
                 <h3 className="mt-1 text-xl font-black tracking-[0.08em]">{config.title}</h3>
@@ -1176,7 +1176,7 @@ export default function ProductionPrisonCancelPageClient({
                       await stopCameraScanner();
                       setIsCameraOpen(false);
                     }}
-                    className="inline-flex h-11 items-center gap-2 bg-[#102C57] px-4 text-sm font-bold text-white transition hover:bg-[#173b72]"
+                    className="inline-flex h-11 items-center gap-2 bg-[var(--surface-navy,#102C57)] px-4 text-sm font-bold text-white transition hover:bg-[var(--surface-navy,#173b72)]"
                   >
                     <X size={16} />
                     ปิด

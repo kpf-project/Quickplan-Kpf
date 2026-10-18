@@ -86,9 +86,10 @@ function resolveItemTypeByCategory(iccatCode) {
   return "UNKNOWN";
 }
 
-function chooseVersionForPlan(planRow, versions) {
+function chooseVersionForPlan(planRow, versions, latestApproved = false) {
   const preferredVersionId = String(planRow?.bom_version_id || "").trim();
   const preferredFormulaCode = normalizeFormulaCode(planRow?.formula_code);
+  if (latestApproved) return versions[0] || null;
   return (
     versions.find((version) => String(version?.id || "") === preferredVersionId) ||
     versions.find((version) => normalizeFormulaCode(version?.formula_code) === preferredFormulaCode) ||
@@ -216,12 +217,17 @@ function normalizeSnapshotForCompare(snapshotList) {
 function parseArgs(argv) {
   const options = {
     apply: false,
+    latestApproved: false,
     masterPlanNo: "",
     limit: 0,
   };
   argv.forEach((arg) => {
     if (arg === "--apply") {
       options.apply = true;
+      return;
+    }
+    if (arg === "--latest-approved") {
+      options.latestApproved = true;
       return;
     }
     if (arg.startsWith("--master-plan=")) {
@@ -271,6 +277,14 @@ async function main() {
   });
 
   const rows = await loadSubplanRows(supabase, options);
+  if (options.apply && options.latestApproved) {
+    const closedResult = await supabase
+      .from("production_cost_sheets")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "closed");
+    if (closedResult.error) throw closedResult.error;
+    if (closedResult.count > 0) throw new Error(`พบ Cost Sheet ที่ปิดแล้ว ${closedResult.count} รายการ จึงไม่สามารถ restate BOM Snapshot ได้`);
+  }
   const versionsBySku = await loadApprovedBomVersionsBySku(
     supabase,
     rows.map((row) => row?.sku_code)
@@ -281,7 +295,7 @@ async function main() {
 
   for (const row of rows) {
     const versions = versionsBySku.get(normalizeSku(row?.sku_code)) || [];
-    const selectedVersion = chooseVersionForPlan(row, versions);
+    const selectedVersion = chooseVersionForPlan(row, versions, options.latestApproved);
     if (!selectedVersion) {
       skipped.push({
         planId: row.plan_id,
@@ -292,7 +306,8 @@ async function main() {
       continue;
     }
 
-    const snapshot = buildDirectSnapshot(row, selectedVersion, nowIso, options.apply ? "subplan_repair" : "subplan_repair_preview");
+    const source = options.latestApproved ? "current_approved_bom_restatement" : "subplan_repair";
+    const snapshot = buildDirectSnapshot(row, selectedVersion, nowIso, options.apply ? source : `${source}_preview`);
     const currentSnapshot = Array.isArray(row?.bom_snapshot) ? row.bom_snapshot : [];
     const changed = JSON.stringify(normalizeSnapshotForCompare(currentSnapshot))
       !== JSON.stringify(normalizeSnapshotForCompare(snapshot));
@@ -304,15 +319,30 @@ async function main() {
       skuCode: normalizeSku(row?.sku_code),
       currentMaterialCount: Array.isArray(currentSnapshot?.[0]?.materials) ? currentSnapshot[0].materials.length : 0,
       repairedMaterialCount: Array.isArray(snapshot?.[0]?.materials) ? snapshot[0].materials.length : 0,
+      previousBomVersionId: row.bom_version_id || null,
+      newBomVersionId: selectedVersion.id,
+      previousSnapshot: currentSnapshot,
       snapshot,
     });
   }
 
   if (options.apply && changedRows.length) {
+    const backupDir = path.join(process.cwd(), "backups");
+    fs.mkdirSync(backupDir, { recursive: true });
+    const backupPath = path.join(backupDir, `backup-subplan-snapshots-${nowIso.replace(/[:.]/g, "-")}.json`);
+    fs.writeFileSync(backupPath, JSON.stringify(changedRows.map((row) => ({
+      planId: row.planId,
+      masterPlanNo: row.masterPlanNo,
+      skuCode: row.skuCode,
+      bomVersionId: row.previousBomVersionId,
+      bomSnapshot: row.previousSnapshot,
+    })), null, 2));
+    process.stderr.write(`Backup: ${backupPath}\n`);
     for (const row of changedRows) {
       const updateResult = await supabase
         .from("production_plan_status")
         .update({
+          bom_version_id: row.newBomVersionId,
           bom_snapshot: row.snapshot,
           updated_at: nowIso,
         })
@@ -341,6 +371,7 @@ async function main() {
 
   const summary = {
     apply: options.apply,
+    latestApproved: options.latestApproved,
     masterPlanNo: options.masterPlanNo || null,
     inspectedCount: rows.length,
     changedCount: changedRows.length,
@@ -354,6 +385,8 @@ async function main() {
       planId: row.planId,
       masterPlanNo: row.masterPlanNo,
       skuCode: row.skuCode,
+      previousBomVersionId: row.previousBomVersionId,
+      newBomVersionId: row.newBomVersionId,
       currentMaterialCount: row.currentMaterialCount,
       repairedMaterialCount: row.repairedMaterialCount,
     })),

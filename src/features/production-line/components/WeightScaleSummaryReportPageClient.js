@@ -22,6 +22,7 @@ import {
 import { fetchScaleReceiptSummaryReport } from "@/features/production-line/services/scaleClient";
 import WeightScalePrimaryHeader from "@/features/production-line/components/WeightScalePrimaryHeader";
 import { useUserProfile } from "@/lib/useUserProfile";
+import { ReportHeader, ReportFilterBar } from "@/components/print";
 
 const LIMIT_OPTIONS = [20, 50, 100];
 
@@ -727,176 +728,113 @@ export default function WeightScaleSummaryReportPageClient({
       </div>
 
       <div className="mx-auto max-w-[88rem] px-4 py-4 sm:px-6 lg:px-8">
-        <section className="weight-scale-report-screen-only mb-8">
-          <div className="border border-[#d7dde5] bg-[#fcfbf7] px-6 py-3 shadow-sm">
-            <div className="grid gap-4 xl:grid-cols-[1fr_1fr_1.4fr_auto]">
-              <label className="block">
-                <span className="text-[11px] font-black uppercase tracking-[0.2em] text-[#7d8795]">
-                  จากวันที่
-                </span>
-                <div className="mt-1 flex h-10 items-center gap-3 border border-[#d7dde5] bg-white px-4">
-                  <CalendarRange size={16} className="text-[#7d8795]" />
-                  <input
-                    type="date"
-                    value={filters.dateFrom}
-                    onChange={(event) => handleFieldChange("dateFrom", event.target.value)}
-                    className="w-full bg-transparent text-sm font-semibold text-[#102C57] outline-none"
-                  />
-                </div>
+        <section className="weight-scale-report-screen-only mb-6">
+          <ReportFilterBar
+            dateMode="range"
+            dateFrom={filters.dateFrom}
+            dateTo={filters.dateTo}
+            onDateFromChange={(val) => handleFieldChange("dateFrom", val)}
+            onDateToChange={(val) => handleFieldChange("dateTo", val)}
+            isLoading={isPending}
+            onSearch={handleReloadReport}
+            searchButtonLabel="โหลดรายงาน"
+            onPrint={handlePrintReport}
+            printButtonLabel="พิมพ์รายงาน"
+            onExportExcel={() => void handleExportReport()}
+            excelButtonLabel="ส่งออก Excel"
+          >
+            <div className="relative block w-full sm:w-auto min-w-[220px]">
+              <label className="block text-[11px] font-black uppercase tracking-wider text-[#64748b] mb-1">
+                เลือกสินค้า
               </label>
-
-              <label className="block">
-                <span className="text-[11px] font-black uppercase tracking-[0.2em] text-[#7d8795]">
-                  ถึงวันที่
+              <button
+                type="button"
+                onClick={() => setIsProductPickerOpen((current) => !current)}
+                className="flex h-10 w-full items-center justify-between gap-3 rounded-md border border-[#cbd5e1] bg-[#f8fafc] px-3 text-left focus:border-[#102C57] focus:bg-white focus:ring-2 focus:ring-[#102C57]/10 transition"
+              >
+                <span className="min-w-0 truncate text-[13px] font-semibold text-[#102C57]">
+                  {productSummaryLabel}
                 </span>
-                <div className="mt-1 flex h-10 items-center gap-3 border border-[#d7dde5] bg-white px-4">
-                  <CalendarRange size={16} className="text-[#7d8795]" />
-                  <input
-                    type="date"
-                    value={filters.dateTo}
-                    onChange={(event) => handleFieldChange("dateTo", event.target.value)}
-                    className="w-full bg-transparent text-sm font-semibold text-[#102C57] outline-none"
-                  />
-                </div>
-              </label>
+                <ChevronDown
+                  size={16}
+                  className={`shrink-0 text-[#94a3b8] transition ${
+                    isProductPickerOpen ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
 
-              <div className="relative block">
-                <span className="text-[11px] font-black uppercase tracking-[0.2em] text-[#7d8795]">
-                  เลือกสินค้า
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setIsProductPickerOpen((current) => !current)}
-                  className="mt-1 flex h-10 w-full items-center justify-between gap-3 border border-[#d7dde5] bg-white px-4 text-left"
-                >
-                  <span className="min-w-0 truncate text-sm font-semibold text-[#102C57]">
-                    {productSummaryLabel}
-                  </span>
-                  <ChevronDown
-                    size={16}
-                    className={`shrink-0 text-[#7d8795] transition ${
-                      isProductPickerOpen ? "rotate-180" : ""
-                    }`}
-                  />
-                </button>
-
-                {isProductPickerOpen ? (
-                  <div className="absolute left-0 right-0 z-20 mt-2 border border-[#d7dde5] bg-white shadow-[0_18px_40px_rgba(16,44,87,0.14)]">
-                    <div className="flex items-center justify-between border-b border-[#eef2f6] px-4 py-3">
-                      <p className="text-xs font-black uppercase tracking-[0.16em] text-[#7d8795]">
-                        เลือกได้หลายรายการ
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => setIsProductPickerOpen(false)}
-                        className="inline-flex h-8 w-8 items-center justify-center border border-[#d7dde5] text-[#5f6b7b] transition hover:border-[#102C57] hover:text-[#102C57]"
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-3 border-b border-[#eef2f6] px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={clearProductSelection}
-                        className="text-xs font-black uppercase tracking-[0.14em] text-[#7d8795] transition hover:text-[#102C57]"
-                      >
-                        ล้างทั้งหมด
-                      </button>
-                      <span className="text-xs font-semibold text-[#7d8795]">
-                        {selectedProducts.length
-                          ? `เลือกแล้ว ${selectedProducts.length} รายการ`
-                          : "ยังไม่ได้เลือกสินค้า"}
-                      </span>
-                    </div>
-
-                    <div className="max-h-72 overflow-y-auto py-2">
-                      {normalizedProductOptions.length ? (
-                        normalizedProductOptions.map((product) => {
-                          const checked = filters.productCodes.includes(product.code);
-                          return (
-                            <label
-                              key={product.code}
-                              className="flex cursor-pointer items-start gap-3 px-4 py-2 transition hover:bg-[#f8fafc]"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => toggleProductCode(product.code)}
-                                className="mt-1 h-4 w-4 border-[#cdd6e1] text-[#102C57] focus:ring-[#d4af37]"
-                              />
-                              <span className="min-w-0 text-sm text-[#102C57]">
-                                <span className="block font-black">{product.code}</span>
-                                <span className="mt-0.5 block text-[13px] leading-6 text-[#334155]">
-                                  {product.name}
-                                </span>
-                              </span>
-                            </label>
-                          );
-                        })
-                      ) : (
-                        <p className="px-4 py-6 text-sm text-[#7d8795]">
-                          ไม่พบรายการสินค้าให้เลือก
-                        </p>
-                      )}
-                    </div>
+              {isProductPickerOpen ? (
+                <div className="absolute left-0 z-20 mt-2 w-80 max-w-[90vw] rounded-lg border border-[#d7dde5] bg-white shadow-[0_18px_40px_rgba(16,44,87,0.14)] overflow-hidden">
+                  <div className="flex items-center justify-between border-b border-[#eef2f6] px-4 py-2.5 bg-[#f8fafc]">
+                    <p className="text-xs font-black uppercase tracking-[0.16em] text-[#7d8795]">
+                      เลือกได้หลายรายการ
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setIsProductPickerOpen(false)}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded border border-[#d7dde5] text-[#5f6b7b] transition hover:border-[#102C57] hover:text-[#102C57]"
+                    >
+                      <X size={14} />
+                    </button>
                   </div>
-                ) : null}
-              </div>
 
-              <div className="flex items-end">
-                <button
-                  type="button"
-                  onClick={handleReloadReport}
-                  disabled={isPending}
-                  className="inline-flex h-10 w-full items-center justify-center gap-2 border border-[#d4af37] bg-[#102C57] px-5 text-sm font-black uppercase tracking-[0.14em] text-[#fff7df] transition hover:bg-[#173b67] disabled:cursor-not-allowed disabled:opacity-60 xl:w-auto"
-                >
-                  {isPending ? (
-                    <RefreshCw size={16} className="animate-spin" />
-                  ) : (
-                    <FileSearch size={16} />
-                  )}
-                  โหลดรายงาน
-                </button>
-              </div>
+                  <div className="flex items-center justify-between gap-3 border-b border-[#eef2f6] px-4 py-2">
+                    <button
+                      type="button"
+                      onClick={clearProductSelection}
+                      className="text-xs font-black uppercase tracking-[0.14em] text-[#7d8795] transition hover:text-[#102C57]"
+                    >
+                      ล้างทั้งหมด
+                    </button>
+                    <span className="text-xs font-semibold text-[#7d8795]">
+                      {selectedProducts.length
+                        ? `เลือกแล้ว ${selectedProducts.length} รายการ`
+                        : "ยังไม่ได้เลือกสินค้า"}
+                    </span>
+                  </div>
+
+                  <div className="max-h-72 overflow-y-auto py-2">
+                    {normalizedProductOptions.length ? (
+                      normalizedProductOptions.map((product) => {
+                        const checked = filters.productCodes.includes(product.code);
+                        return (
+                          <label
+                            key={product.code}
+                            className="flex cursor-pointer items-start gap-3 px-4 py-2 transition hover:bg-[#f8fafc]"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleProductCode(product.code)}
+                              className="mt-1 h-4 w-4 rounded border-[#cdd6e1] text-[#102C57] focus:ring-[#d4af37]"
+                            />
+                            <span className="min-w-0 text-sm text-[#102C57]">
+                              <span className="block font-black">{product.code}</span>
+                              <span className="mt-0.5 block text-[13px] leading-6 text-[#334155]">
+                                {product.name}
+                              </span>
+                            </span>
+                          </label>
+                        );
+                      })
+                    ) : (
+                      <p className="px-4 py-6 text-sm text-[#7d8795]">
+                        ไม่พบรายการสินค้าให้เลือก
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : null}
             </div>
+          </ReportFilterBar>
 
-            <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div />
-
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <button
-                  type="button"
-                  onClick={handlePrintReport}
-                  className="weight-scale-report-screen-only inline-flex h-10 items-center justify-center gap-2 border border-[#102C57] bg-[#102C57] px-4 text-[11px] font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#173b67]"
-                >
-                  <Printer size={14} />
-                  พิมพ์รายงาน
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => void handleExportReport()}
-                  disabled={isExporting || isPending}
-                  className="weight-scale-report-screen-only inline-flex h-10 items-center justify-center gap-2 border border-[#102C57] bg-white px-4 text-[11px] font-black uppercase tracking-[0.14em] text-[#102C57] transition hover:border-[#d4af37] hover:text-[#7f5d00] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isExporting ? (
-                    <RefreshCw size={14} className="animate-spin" />
-                  ) : (
-                    <Download size={14} />
-                  )}
-                  ส่งออก Excel
-                </button>
-              </div>
-            </div>
-
-            {feedback ? (
-              <p className="mt-4 text-sm font-semibold text-emerald-700">{feedback}</p>
-            ) : null}
-            {errorMessage ? (
-              <p className="mt-4 text-sm font-semibold text-rose-600">{errorMessage}</p>
-            ) : null}
-          </div>
+          {feedback ? (
+            <p className="mt-2 text-sm font-semibold text-emerald-700">{feedback}</p>
+          ) : null}
+          {errorMessage ? (
+            <p className="mt-2 text-sm font-semibold text-rose-600">{errorMessage}</p>
+          ) : null}
+        </section>
 
           <div className="weight-scale-report-screen-only grid gap-px border-x border-b border-[#d7dde5] bg-[#d7dde5] md:grid-cols-3 shadow-sm">
             <div className="bg-white px-5 py-4 flex flex-col items-center text-center">
@@ -929,12 +867,11 @@ export default function WeightScaleSummaryReportPageClient({
               </p>
             </div>
           </div>
-        </section>
 
         {/* Visual Paging Controls */}
         {reportPages.length > 1 && (
           <div className="weight-scale-report-screen-only flex justify-center mb-6">
-            <div className="flex items-center gap-4 bg-[#102C57] text-white px-6 py-2 rounded-full shadow-lg">
+            <div className="flex items-center gap-4 bg-[var(--surface-navy,#102C57)] text-white px-6 py-2 rounded-full shadow-lg">
               <button
                 type="button"
                 onClick={() => setCurrentViewPage(prev => Math.max(0, prev - 1))}
@@ -974,53 +911,22 @@ export default function WeightScaleSummaryReportPageClient({
                 }`}
                 style={{ minHeight: '296mm' }} // Fix height to A4
               >
-                {/* Compact Corporate Header (Formal & Space-Saving) */}
-                <div className="bg-white px-6 py-3 border-b border-black">
-                   <div className="flex justify-between items-end mb-3">
-                      {/* Left: Identity */}
-                      <div className="flex items-center gap-3">
-                        <Image
-                          src="/brand/LOGO-KPF1.png"
-                          alt="KPF"
-                          width={40}
-                          height={40}
-                          className="h-10 w-auto object-contain"
-                        />
-                        <div className="flex flex-col">
-                          <h1 className="text-[14px] font-black text-[#102C57] leading-none uppercase">บริษัท เคพีฟู้ดส์ จำกัด</h1>
-                          <p className="text-[9px] font-bold text-[#64748b] tracking-wider">K.P. foods Co.,Ltd.</p>
-                        </div>
-                      </div>
-
-                      {/* Center: Title */}
-                      <div className="text-center pb-1">
-                        <h2 className="text-[18px] font-black text-[#102C57] leading-none uppercase">รายงานสรุปชั่งเข้าสำเร็จรายวัน</h2>
-                        <p className="text-[9px] font-bold text-[#d4af37] uppercase tracking-[0.2em] mt-1">Daily Weight Summary Report</p>
-                      </div>
-
-                      {/* Right: Audit Info */}
-                      <div className="text-[10px] text-[#102C57] leading-tight text-right">
-                         <p><span className="font-black text-[#64748b] uppercase text-[8px]">วันที่พิมพ์:</span> {printedAtLabel}</p>
-                         <p><span className="font-black text-[#64748b] uppercase text-[8px]">ผู้ออกรายงาน:</span> {profile.username || "System"}</p>
-                         <p><span className="font-black text-[#64748b] uppercase text-[8px]">หน้า:</span> {pageIndex + 1} / {reportPages.length}</p>
-                      </div>
-                   </div>
-
-                   {/* Criteria Summary Row */}
-                   <div className="grid grid-cols-3 border-t border-black pt-2">
-                      <div className="flex gap-2 items-center">
-                        <span className="text-[11px] font-black text-[#64748b] uppercase whitespace-nowrap">แผนก:</span>
-                        <span className="text-[11px] font-bold text-[#102C57]">{departmentName || "-"}</span>
-                      </div>
-                      <div className="flex gap-2 items-center justify-center">
-                        <span className="text-[11px] font-black text-[#64748b] uppercase whitespace-nowrap">ช่วงวันที่:</span>
-                        <span className="text-[11px] font-bold text-[#102C57]">{reportPeriodLabel}</span>
-                      </div>
-                      <div className="flex gap-2 items-center justify-end">
-                        <span className="text-[11px] font-black text-[#64748b] uppercase whitespace-nowrap">ขอบเขต:</span>
-                        <span className="text-[11px] font-bold text-[#102C57] truncate">{selectedProductCountLabel}</span>
-                      </div>
-                   </div>
+                {/* Corporate Report Header */}
+                <div className="bg-white px-6 py-2 border-b border-black">
+                  <ReportHeader
+                    title="รายงานสรุปชั่งเข้าสำเร็จรายวัน"
+                    subtitle="Daily Weight Summary Report"
+                    meta={[
+                      { label: "แผนก", value: departmentName || "-" },
+                      { label: "ช่วงวันที่", value: reportPeriodLabel },
+                      { label: "ขอบเขต", value: selectedProductCountLabel },
+                    ]}
+                    printedAt={printedAtLabel}
+                    printedBy={profile.username || "System"}
+                    page={pageIndex + 1}
+                    totalPages={reportPages.length}
+                    variant="block"
+                  />
                 </div>
 
                 <div className="weight-scale-report-print-body bg-white px-4 py-4 min-h-[235mm] print:border-none print:px-0">
@@ -1047,8 +953,8 @@ export default function WeightScaleSummaryReportPageClient({
                         <col className="w-[10%]" />
                         <col className="w-[15%]" />
                       </colgroup>
-                      <thead className="bg-[#f8f5ee]">
-                        <tr className="border-b border-black text-[12.5px] font-black uppercase tracking-[0.14em] text-[#111111]">
+                      <thead className="bg-[#f8f9fa]">
+                        <tr className="border-b-2 border-[#1a1c1e] text-[12.5px] font-black uppercase tracking-[0.14em] text-[#1a1c1e]">
                           <th className="px-3 py-0.5 text-center">ลำดับ</th>
                           <th className="px-3 py-0.5 text-center">LOT</th>
                           <th className="px-3 py-0.5 text-left">สินค้า</th>
@@ -1060,7 +966,7 @@ export default function WeightScaleSummaryReportPageClient({
                         {pageRows.map((vRow, vIndex) => {
                           if (vRow.type === 'date-header') {
                             return (
-                              <tr key={vIndex} className="bg-[#102C57] text-white">
+                              <tr key={vIndex} className="bg-[var(--surface-navy,#102C57)] text-white">
                                 <td colSpan={5} className="px-3 py-1">
                                   <div className="flex items-center gap-3">
                                     <span className="text-[10px] font-black uppercase tracking-[0.1em] text-[#f3d67a]">วันที่รายงาน:</span>
@@ -1119,9 +1025,13 @@ export default function WeightScaleSummaryReportPageClient({
         <style dangerouslySetInnerHTML={{ __html: `
           @page {
             size: A4 portrait;
-            margin: 7mm;
+            margin: 8mm 6mm;
           }
           @media print {
+            * {
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
             .weight-scale-report-screen-only,
             .weight-scale-report-screen-only *,
             .daily-summary-preview-pages,
@@ -1150,7 +1060,7 @@ export default function WeightScaleSummaryReportPageClient({
             }
             .daily-summary-print-table th,
             .daily-summary-print-table td {
-              border-bottom: 0.5px solid #111827 !important;
+              border-bottom: 0.5pt solid #111827 !important;
               padding: 2.5px 4px !important;
               vertical-align: middle !important;
               white-space: nowrap !important;
@@ -1158,24 +1068,26 @@ export default function WeightScaleSummaryReportPageClient({
               text-overflow: clip !important;
             }
             .daily-summary-print-table .print-report-header th {
-              border-bottom: 1px solid #111827 !important;
+              border-bottom: 0.75pt solid #111827 !important;
               padding: 0 0 5px !important;
               background: #ffffff !important;
             }
             .daily-summary-print-table .print-report-meta th {
-              border-bottom: 1px solid #111827 !important;
+              border-bottom: 0.75pt solid #111827 !important;
               padding: 3px 4px !important;
               background: #ffffff !important;
             }
             .daily-summary-print-table .table-header th {
-              background: #f8f5ee !important;
-              color: #111827 !important;
+              background: #f8f9fa !important;
+              color: #1a1c1e !important;
               font-weight: 900 !important;
               text-align: center !important;
               font-size: 11.5px !important;
+              border: 0.5pt solid #cbd5e1 !important;
+              border-bottom: 2px solid #1a1c1e !important;
             }
             .daily-summary-print-table .date-header-row td {
-              background: #102C57 !important;
+              background: var(--surface-navy, #102C57) !important;
               color: #ffffff !important;
               font-weight: 900 !important;
               padding: 3px 6px !important;
@@ -1191,15 +1103,15 @@ export default function WeightScaleSummaryReportPageClient({
               page-break-inside: avoid !important;
             }
             .daily-summary-print-table tbody tr.item-row {
-              break-inside: auto !important;
-              page-break-inside: auto !important;
+              break-inside: avoid !important;
+              page-break-inside: avoid !important;
             }
             .daily-summary-print-table .subtotal-row td {
               background: #fbfcfd !important;
               font-weight: 900 !important;
             }
             .daily-summary-print-table .grand-total-row td {
-              background: #102C57 !important;
+              background: var(--surface-navy, #102C57) !important;
               color: #ffffff !important;
               font-weight: 900 !important;
               border-bottom-color: #102C57 !important;
@@ -1228,38 +1140,19 @@ export default function WeightScaleSummaryReportPageClient({
               <col className="w-[15%]" />
             </colgroup>
             <thead>
-              <tr className="print-report-header">
-                <th colSpan={5}>
-                  <div className="flex items-end justify-between">
-                    <div className="flex items-center gap-3 text-left">
-                      <Image
-                        src="/brand/LOGO-KPF1.png"
-                        alt="KPF"
-                        width={40}
-                        height={40}
-                        className="h-10 w-auto object-contain"
-                      />
-                      <div>
-                        <div className="text-[13px] font-black text-[#102C57]">บริษัท เคพีฟู้ดส์ จำกัด</div>
-                        <div className="text-[9px] font-bold text-[#64748b]">K.P. foods Co.,Ltd.</div>
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-[17px] font-black text-[#102C57]">รายงานสรุปชั่งเข้าสำเร็จรายวัน</div>
-                      <div className="mt-1 text-[8px] font-black uppercase tracking-[0.22em] text-[#d4af37]">Daily Weight Summary Report</div>
-                    </div>
-                    <div className="text-right text-[9px] leading-tight text-[#102C57]">
-                      <div><span className="font-black text-[#64748b]">วันที่พิมพ์:</span> {printedAtLabel}</div>
-                      <div><span className="font-black text-[#64748b]">ผู้ออกรายงาน:</span> {profile.username || "System"}</div>
-                    </div>
-                  </div>
-                </th>
-              </tr>
-              <tr className="print-report-meta">
-                <th colSpan={2} className="text-left">แผนก: <span className="font-black">{departmentName || "-"}</span></th>
-                <th className="text-center">ช่วงวันที่: <span className="font-black">{reportPeriodLabel}</span></th>
-                <th colSpan={2} className="text-right">ขอบเขต: <span className="font-black">{selectedProductCountLabel}</span></th>
-              </tr>
+              <ReportHeader
+                title="รายงานสรุปชั่งเข้าสำเร็จรายวัน"
+                subtitle="Daily Weight Summary Report"
+                meta={[
+                  { label: "แผนก", value: departmentName || "-" },
+                  { label: "ช่วงวันที่", value: reportPeriodLabel },
+                  { label: "ขอบเขต", value: selectedProductCountLabel },
+                ]}
+                printedAt={printedAtLabel}
+                printedBy={profile.username || "System"}
+                variant="table-rows"
+                colSpan={5}
+              />
               <tr className="table-header">
                 <th>ลำดับ</th>
                 <th>LOT</th>

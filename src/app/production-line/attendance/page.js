@@ -142,7 +142,7 @@ export default function AttendancePage() {
                 <Link
                   key={card.href}
                   href={card.href}
-                  className="group relative flex flex-col items-center text-center p-10 bg-[#102C57] rounded-xl overflow-hidden border border-[#f2b90d]/30 transition-all duration-300 hover:border-[#f2b90d] hover:shadow-[0_4px_20px_rgba(242,185,13,0.25)] shadow-xl"
+                  className="group relative flex flex-col items-center text-center p-10 bg-[var(--surface-navy,#102C57)] rounded-xl overflow-hidden border border-[#f2b90d]/30 transition-all duration-300 hover:border-[#f2b90d] hover:shadow-[0_4px_20px_rgba(242,185,13,0.25)] shadow-xl"
                 >
                   <div className="absolute inset-0 bg-gradient-to-br from-[#f2b90d]/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
                   <div className="mb-8 relative">
@@ -167,7 +167,7 @@ export default function AttendancePage() {
             })}
           </div>
 
-          <div className="mt-16 w-full max-w-6xl p-6 rounded-xl bg-[#102C57] border border-slate-700 flex flex-wrap gap-8 justify-between items-center shadow-lg">
+          <div className="mt-16 w-full max-w-6xl p-6 rounded-xl bg-[var(--surface-navy,#102C57)] border border-slate-700 flex flex-wrap gap-8 justify-between items-center shadow-lg">
             <div className="flex items-center gap-4">
               <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]"></div>
               <span className="text-slate-300 text-sm">

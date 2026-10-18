@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/adminApi";
 import { requirePermissionKeys } from "@/lib/permissionGuard";
 import { getUserPermissions } from "@/lib/permissionsData";
-import { getSessionFromRequest } from "@/lib/sessionToken";
 
 function normalizeSku(value) {
   return String(value || "").trim().toUpperCase();
@@ -28,13 +27,7 @@ function isConfirmedPlanStatus(status) {
 
 async function hasPlanningManageAccess(request, userId, isAdmin = false) {
   if (isAdmin) return true;
-  const session = getSessionFromRequest(request, userId);
-  if (session?.isAdmin) return true;
-  if (Array.isArray(session?.permissions)) {
-    // "Manage" means global edit scope. Publishing/approving exceptions is not global edit.
-    return session.permissions.includes("production-line-planning-manage");
-  }
-  const permissionResult = await getUserPermissions(userId);
+  const permissionResult = await getUserPermissions(userId, { fresh: true });
   return Boolean(
     permissionResult?.isAdmin
     || permissionResult?.permissions?.includes("production-line-planning-manage")

@@ -4,32 +4,26 @@ import path from "node:path";
 import test from "node:test";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
-const globalsCss = fs.readFileSync(path.join(repoRoot, "src/app/globals.css"), "utf8");
+const bomCss = fs.readFileSync(path.join(repoRoot, "src/features/production-line/components/BomEditorPageClient.module.css"), "utf8");
+const bomEditorSource = fs.readFileSync(
+  path.join(repoRoot, "src/features/production-line/components/BomEditorPageClient.js"),
+  "utf8"
+);
 
-test("BOM table keeps a wide product name column and all cells in one grid row", () => {
-  assert.match(
-    globalsCss,
-    /grid-template-columns:\s*40px\s+170px\s+370px\s+90px\s+90px\s+310px\s+130px\s+65px;/,
-    "the product name track must be 370px while preserving the DOM column order"
-  );
-
-  assert.match(
-    globalsCss,
-    /min-width:\s*1265px;/,
-    "the minimum row width must include the wider product name track"
-  );
-
-  assert.doesNotMatch(
-    globalsCss,
-    /\.bom-column-order[\s\S]*?:nth-child\(4\)[\s\S]*?grid-column:\s*5/,
-    "moving an earlier cell to a later grid column makes the next cell wrap onto another row"
-  );
+test("BOM uses the shared native table with a wide name column rather than separate CSS grids", () => {
+  assert.match(bomEditorSource, /<ReportTable tableClassName=\{styles.treeTable\}/);
+  assert.match(bomCss, /th:nth-child\(4\)\s*\{\s*width:26%!important/);
+  assert.doesNotMatch(bomEditorSource, /className="bom-column-order/);
 });
 
-test("BOM empty state spans the full grid width", () => {
+test("BOM empty state spans all eleven native columns", () => {
+  assert.match(bomEditorSource, /colSpan=\{11\}/);
+});
+
+test("BOM substitute picker shows one option per parent SKU", () => {
   assert.match(
-    globalsCss,
-    /\.bom-column-order\s*>\s*tbody\s*>\s*tr\s*>\s*td\[colspan\]\s*\{[\s\S]*?grid-column:\s*1\s*\/\s*-1;/,
-    "a colspan cell must explicitly span every CSS Grid track"
+    bomEditorSource,
+    /const substituteOptionsByCode = new Map\(\);[\s\S]*?substituteOptionsByCode\.has\(code\)[\s\S]*?Array\.from\(substituteOptionsByCode\.values\(\)\)/,
+    "trade-code expansion must not render duplicate substitute options for the same parent SKU"
   );
 });
